@@ -142,12 +142,14 @@ kill -9 <PID>
 
 重点改顶部 `:root { ... }` 里的颜色变量。
 
-### 2) 想改 LTC 输出参数（帧率/声卡/Gain/采样率）
+### 2) 想改 LTC 输出参数（帧率/声卡/Gain/采样率/播放源模式）
 去这个文件：
 - `config/user_settings.json`
 
 找到 `sync.ltc`：
 ```json
+"sourceMode": "master",
+"masterPlayer": 1,
 "ltc": {
   "enabled": false,
   "fps": 25,
@@ -157,6 +159,8 @@ kill -9 <PID>
 }
 ```
 可改项：
+- `sourceMode`：`master`（跟随主机）或 `manual`（手动指定）
+- `masterPlayer`：手动模式时使用哪个播放器（1~4）
 - `fps`：帧率（24/25/30）
 - `deviceName`：声卡名关键字（default=系统默认）
 - `gainDb`：输出音量（分贝，建议 -12 到 -3）

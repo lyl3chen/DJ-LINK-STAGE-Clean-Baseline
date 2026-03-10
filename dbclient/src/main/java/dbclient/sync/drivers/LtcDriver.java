@@ -14,6 +14,10 @@ public class LtcDriver implements OutputDriver {
     private volatile double signalLevel = 0.0;
     private volatile String activeDevice = "-";
     private volatile String lastError = "";
+    private volatile String outputState = "IDLE";
+    private volatile boolean sourcePlaying = false;
+    private volatile boolean sourceActive = false;
+    private volatile long lastSourceUpdateMs = 0L;
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private SourceDataLine line;
@@ -27,18 +31,19 @@ public class LtcDriver implements OutputDriver {
         String deviceName = strCfg("deviceName", "default");
 
         try {
-            AudioFormat fmt = new AudioFormat(sampleRate, 16, 1, true, false);
-            line = openLine(fmt, deviceName);
+            AudioFormat fmt = chooseAndOpenLine(sampleRate, deviceName);
             activeDevice = line.getLineInfo().toString();
             line.start();
             running = true;
+            outputState = "RUNNING";
             lastError = "";
-            System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + sampleRate + " gainDb=" + numCfg("gainDb",-8.0));
+            System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + (int)fmt.getSampleRate() + " gainDb=" + numCfg("gainDb",-8.0));
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
             audioThread.setDaemon(true);
             audioThread.start();
         } catch (Exception e) {
             running = false;
+            outputState = "ERROR";
             lastError = e.getMessage() == null ? e.toString() : e.getMessage();
             activeDevice = "-";
             System.out.println("[LTC] start failed: " + lastError);
@@ -47,6 +52,7 @@ public class LtcDriver implements OutputDriver {
 
     public synchronized void stop() {
         running = false;
+        outputState = "STOPPED";
         signalLevel = 0.0;
         if (audioThread != null) {
             try { audioThread.join(300); } catch (InterruptedException ignored) {}
@@ -65,6 +71,12 @@ public class LtcDriver implements OutputDriver {
     public void update(Map<String, Object> state) {
         if (!running || state == null) return;
         Object t = state.get("masterTimeSec");
+        Object sp = state.get("sourcePlaying");
+        Object sa = state.get("sourceActive");
+        sourcePlaying = Boolean.TRUE.equals(sp);
+        sourceActive = Boolean.TRUE.equals(sa);
+        lastSourceUpdateMs = System.currentTimeMillis();
+
         if (t instanceof Number) {
             seconds = ((Number) t).doubleValue();
             int fps = intCfg("fps", 25);
@@ -78,13 +90,16 @@ public class LtcDriver implements OutputDriver {
         m.put("running", running);
         m.put("seconds", seconds);
         m.put("fps", fps);
-        m.put("sampleRate", intCfg("sampleRate", 48000));
+        m.put("sampleRate", line != null ? (int) line.getFormat().getSampleRate() : intCfg("sampleRate", 48000));
         m.put("deviceName", strCfg("deviceName", "default"));
         m.put("activeDevice", activeDevice);
         m.put("gainDb", numCfg("gainDb", -8.0));
         m.put("frame", frameInSecond);
         m.put("signalLevel", signalLevel);
         m.put("timecode", toTimecode(seconds, fps));
+        m.put("outputState", outputState);
+        m.put("sourcePlaying", sourcePlaying);
+        m.put("sourceActive", sourceActive);
         m.put("error", lastError);
         return m;
     }
@@ -100,6 +115,25 @@ public class LtcDriver implements OutputDriver {
         double phase = 0.0;
 
         while (running && line != null && line.isOpen()) {
+            final long now = System.currentTimeMillis();
+            final boolean sourceFresh = (now - lastSourceUpdateMs) <= 500;
+            final boolean shouldOutput = sourceFresh && sourceActive && sourcePlaying;
+
+            if (!shouldOutput) {
+                outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
+                signalLevel = 0.0;
+                for (int i = 0; i < out.length; i++) out[i] = 0;
+                try {
+                  line.write(out, 0, out.length);
+                } catch (Exception e) {
+                  lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
+                  outputState = "ERROR";
+                  running = false;
+                }
+                continue;
+            }
+
+            outputState = "OUTPUTTING";
             double peak = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
                 double t = seconds + (i / (double) sampleRate);
@@ -120,16 +154,38 @@ public class LtcDriver implements OutputDriver {
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
             signalLevel = peak;
-            line.write(out, 0, out.length);
+            try {
+              line.write(out, 0, out.length);
+            } catch (Exception e) {
+              lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
+              outputState = "ERROR";
+              running = false;
+            }
         }
 
         if (running && (line == null || !line.isOpen())) {
             lastError = "音频输出设备不可用或已断开";
+            outputState = "ERROR";
             running = false;
         }
     }
 
-    private SourceDataLine openLine(AudioFormat fmt, String preferredName) throws LineUnavailableException {
+    private AudioFormat chooseAndOpenLine(int requestedSampleRate, String preferredName) throws LineUnavailableException {
+        int[] rates = new int[] { requestedSampleRate, 48000, 44100 };
+        for (int r : rates) {
+            try {
+                AudioFormat fmt = new AudioFormat(r, 16, 1, true, false);
+                SourceDataLine l = openLineWithFormat(fmt, preferredName);
+                if (l != null) {
+                    line = l;
+                    return fmt;
+                }
+            } catch (Exception ignored) {}
+        }
+        throw new LineUnavailableException("No supported sample rate for selected device");
+    }
+
+    private SourceDataLine openLineWithFormat(AudioFormat fmt, String preferredName) throws LineUnavailableException {
         Mixer.Info[] infos = AudioSystem.getMixerInfo();
         if (preferredName != null && !preferredName.trim().isEmpty() && !"default".equalsIgnoreCase(preferredName)) {
             for (Mixer.Info info : infos) {
