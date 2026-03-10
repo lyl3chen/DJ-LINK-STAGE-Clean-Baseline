@@ -63,7 +63,8 @@
     .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
     .ltc-meter { height:14px; border:1px solid #2f425e; border-radius:4px; background:#0a121d; overflow:hidden; width:260px; }
     .ltc-meter > div { height:100%; width:0%; background:linear-gradient(90deg,#19d66b,#83ff3f); transition:width .08s linear; }
-    .ltc-timecode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 34px; letter-spacing: 2px; color:#d9eeff; font-weight:700; }
+    .ltc-timecode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 34px; letter-spacing: 2px; color:#d9eeff; font-weight:700; transition: color .15s ease; }
+    .ltc-timecode.dim { color:#7f8ea4; }
     .diag-card { border:1px solid #2f425e; border-radius:6px; background:#0b1320; padding:8px; font-size:12px; color:#b9d8ff; }
     .diag-card.error { border-color:#8b2c2c; background:#210d0d; color:#ff9c9c; }
     .ltc-snapshot { font-size:12px; color:#b9d8ff; }
@@ -1030,7 +1031,11 @@
 
         const tc = ltc.timecode || '00:00:00:00';
         const tcEl = document.getElementById('ltcTimecode');
-        if (tcEl) tcEl.textContent = tc;
+        if (tcEl) {
+          tcEl.textContent = tc;
+          const outputting = String(ltc.outputState || '').toUpperCase() === 'OUTPUTTING';
+          tcEl.classList.toggle('dim', !outputting);
+        }
 
         const diag = document.getElementById('ltcDiag');
         if (diag) {
