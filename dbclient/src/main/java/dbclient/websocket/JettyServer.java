@@ -286,21 +286,24 @@ public class JettyServer {
     private static List<Map<String, Object>> listAudioDevices() {
         List<Map<String, Object>> list = new ArrayList<>();
         Mixer.Info[] infos = AudioSystem.getMixerInfo();
+        int idx = 1;
         for (Mixer.Info info : infos) {
             try {
                 javax.sound.sampled.Mixer mixer = AudioSystem.getMixer(info);
+                javax.sound.sampled.Line.Info[] src = mixer.getSourceLineInfo();
                 boolean canOutput = false;
-                for (javax.sound.sampled.Line.Info li : mixer.getSourceLineInfo()) {
+                for (javax.sound.sampled.Line.Info li : src) {
                     if (li.toString().contains("SourceDataLine")) { canOutput = true; break; }
                 }
-                if (!canOutput) continue;
+                if (!canOutput) continue; // 过滤只能录音的设备
 
                 Map<String, Object> m = new ConcurrentHashMap<>();
-                // value 用底层 name，label 给人看的型号名
-                m.put("name", info.getName());
-                m.put("label", buildDeviceLabel(info));
+                m.put("index", idx++);
+                m.put("name", info.getName());           // 底层代号（用于选择）
                 m.put("vendor", info.getVendor());
-                m.put("desc", info.getDescription());
+                m.put("desc", info.getDescription());    // 更友好的描述
+                m.put("label", buildDeviceLabel(info));  // 友好名
+                m.put("sourceLineCount", src.length);
                 list.add(m);
             } catch (Exception ignored) {}
         }
@@ -309,9 +312,12 @@ public class JettyServer {
 
     private static String buildDeviceLabel(Mixer.Info info) {
         String name = info.getName() == null ? "" : info.getName().trim();
+        String desc = info.getDescription() == null ? "" : info.getDescription().trim();
         String low = name.toLowerCase();
         if (low.contains("default")) return "系统默认输出";
-        // 如: "Port PCH [hw:0]" -> "Port PCH"
+        if (!desc.isEmpty() && !desc.toLowerCase().contains("direct audio device")) {
+            return desc;
+        }
         int idx = name.indexOf("[");
         if (idx > 0) {
             String shortName = name.substring(0, idx).trim();

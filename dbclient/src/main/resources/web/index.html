@@ -900,11 +900,12 @@
       });
     }
 
-    function activateTab(tab) {
+    async function activateTab(tab) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
       document.getElementById('panel-dashboard').classList.toggle('active', tab === 'dashboard');
       document.getElementById('panel-io').classList.toggle('active', tab === 'io');
       document.getElementById('panel-commander').classList.toggle('active', tab === 'commander');
+      if (tab === 'io') await loadSettings();
     }
 
     function refreshManualPlayerOptions(selected = 1) {
@@ -934,15 +935,20 @@
       sel.innerHTML = '';
       const def = document.createElement('option');
       def.value = 'default';
-      def.textContent = 'default (系统默认)';
+      def.textContent = '0. 系统默认输出 (default)';
       sel.appendChild(def);
-      (devices || []).forEach(d => {
+      (devices || []).forEach((d, i) => {
         const name = (d && d.name) ? String(d.name) : '';
         const label = (d && d.label) ? String(d.label) : name;
         if (!name) return;
+        const code = (() => {
+          const m = name.match(/\[(.*?)\]/);
+          return m ? m[1] : name;
+        })();
+        const index = Number(d && d.index) || (i + 1);
         const o = document.createElement('option');
         o.value = name;
-        o.textContent = label;
+        o.textContent = `${index}. ${label} (${code})`;
         sel.appendChild(o);
       });
       sel.value = selected || 'default';
@@ -1366,6 +1372,7 @@
     }
 
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);

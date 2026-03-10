@@ -102,6 +102,8 @@ public class SyncOutputManager {
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
+                    derived.put("sourcePlaying", Boolean.TRUE.equals(chosen.get("playing")));
+                    derived.put("sourceActive", Boolean.TRUE.equals(chosen.get("active")));
                 }
             }
         }
@@ -116,6 +118,8 @@ public class SyncOutputManager {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("masterTimeSec", 0.0);
         state.put("masterBpm", 120.0);
+        state.put("sourcePlaying", false);
+        state.put("sourceActive", false);
         state.put("semantic", new LinkedHashMap<>(lastSemantic));
         return state;
     }

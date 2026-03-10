@@ -122,6 +122,10 @@ public class LtcDriver implements OutputDriver {
             if (!shouldOutput) {
                 outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
                 signalLevel = 0.0;
+                if (!sourcePlaying) {
+                    seconds = 0.0;
+                    frameInSecond = 0;
+                }
                 for (int i = 0; i < out.length; i++) out[i] = 0;
                 try {
                   line.write(out, 0, out.length);
