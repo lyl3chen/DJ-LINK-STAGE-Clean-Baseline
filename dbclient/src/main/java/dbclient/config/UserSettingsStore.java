@@ -110,6 +110,7 @@ public class UserSettingsStore {
         )));
         m.put("sync", new LinkedHashMap<>(Map.of(
                 "enabled", true,
+                "sourceMode", "master",
                 "masterPlayer", 1,
                 "ltc", new LinkedHashMap<>(Map.of(
                         "enabled", false,

@@ -45,19 +45,63 @@ public class SyncOutputManager {
         broadcastState(buildDerivedState());
     }
 
+    @SuppressWarnings("unchecked")
     public synchronized void onPlayersState(Map<String, Object> playersState) {
         Map<String, Object> derived = buildDerivedState();
         if (playersState != null) {
             Object players = playersState.get("players");
             if (players instanceof List) {
                 List<?> list = (List<?>) players;
-                if (!list.isEmpty() && list.get(0) instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> first = (Map<String, Object>) list.get(0);
-                    Object ms = first.get("currentTimeMs");
-                    Object bpm = first.get("bpm");
-                    if (ms instanceof Number) derived.put("masterTimeSec", ((Number) ms).doubleValue()/1000.0);
+                Map<String, Object> chosen = null;
+
+                Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
+                Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+                String sourceMode = String.valueOf(sync.getOrDefault("sourceMode", "master"));
+                int selectedPlayer = sync.get("masterPlayer") instanceof Number ? ((Number) sync.get("masterPlayer")).intValue() : 1;
+
+                // A) 手动模式：优先使用指定 player（可播放或暂停都跟随它的时间）
+                if ("manual".equalsIgnoreCase(sourceMode)) {
+                    for (Object o : list) {
+                        if (!(o instanceof Map)) continue;
+                        Map<String, Object> p = (Map<String, Object>) o;
+                        int num = p.get("number") instanceof Number ? ((Number) p.get("number")).intValue() : -1;
+                        if (num == selectedPlayer && Boolean.TRUE.equals(p.get("active"))) {
+                            chosen = p; break;
+                        }
+                    }
+                }
+
+                // B) 跟随 master（默认）
+                if (chosen == null) {
+                    for (Object o : list) {
+                        if (!(o instanceof Map)) continue;
+                        Map<String, Object> p = (Map<String, Object>) o;
+                        if (Boolean.TRUE.equals(p.get("master")) && Boolean.TRUE.equals(p.get("active"))) {
+                            chosen = p; break;
+                        }
+                    }
+                }
+
+                // C) 兜底：任何在播放的 deck
+                if (chosen == null) {
+                    for (Object o : list) {
+                        if (!(o instanceof Map)) continue;
+                        Map<String, Object> p = (Map<String, Object>) o;
+                        if (Boolean.TRUE.equals(p.get("playing")) && Boolean.TRUE.equals(p.get("active"))) { chosen = p; break; }
+                    }
+                }
+
+                if (chosen != null) {
+                    Object ms = chosen.get("currentTimeMs");
+                    if (!(ms instanceof Number)) ms = chosen.get("beatTimeMs");
+                    Object bpm = chosen.get("bpm");
+                    if (ms instanceof Number) {
+                        double sec = ((Number) ms).doubleValue()/1000.0;
+                        derived.put("masterTimeSec", sec);
+                    }
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
+                    derived.put("sourcePlayer", chosen.get("number"));
+                    derived.put("sourceMode", sourceMode);
                 }
             }
         }

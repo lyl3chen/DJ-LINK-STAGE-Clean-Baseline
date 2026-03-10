@@ -609,6 +609,8 @@
     <div class="io-setup">
       <div class="cfg-card">
         <h3>Sync Output Manager</h3>
+        <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
+        <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
         <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
         <div class="cfg-row"><label>LTC 声卡名</label><input id="cfgLtcDevice" type="text" value="default" placeholder="default 或设备名关键字" /></div>
@@ -905,6 +907,27 @@
       document.getElementById('panel-commander').classList.toggle('active', tab === 'commander');
     }
 
+    function refreshManualPlayerOptions(selected = 1) {
+      const sel = document.getElementById('cfgManualPlayer');
+      if (!sel) return;
+      const online = (players || []).filter(p => p.active !== false).map(p => Number(p.number)).filter(n => n >= 1 && n <= 4);
+      const uniq = [...new Set(online)].sort((a,b)=>a-b);
+      sel.innerHTML = '';
+      uniq.forEach(n => {
+        const o = document.createElement('option');
+        o.value = String(n);
+        o.textContent = `Player ${n}`;
+        sel.appendChild(o);
+      });
+      if (!uniq.length) {
+        const o = document.createElement('option');
+        o.value = '1';
+        o.textContent = 'Player 1';
+        sel.appendChild(o);
+      }
+      sel.value = String(selected || uniq[0] || 1);
+    }
+
     async function loadSettings() {
       try {
         const r = await fetch('/api/config');
@@ -913,6 +936,8 @@
         const ltc = sync.ltc || {};
         const mtc = sync.mtc || {};
         const link = sync.abletonLink || {};
+        document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
+        refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
         document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
@@ -928,6 +953,8 @@
     async function saveIoConfig() {
       const patch = {
         sync: {
+          sourceMode: document.getElementById('cfgSourceMode').value || 'master',
+          masterPlayer: Number(document.getElementById('cfgManualPlayer').value || 1),
           ltc: {
             enabled: document.getElementById('cfgLtcEnabled').checked,
             fps: Number(document.getElementById('cfgLtcFps').value || 25),
@@ -1064,6 +1091,8 @@
       miniGrid.innerHTML = '';
 
       const active = players.filter(p => p.number !== 4 && p.active !== false).sort((a,b)=>a.number-b.number);
+      const manualSel = document.getElementById('cfgManualPlayer');
+      if (manualSel) refreshManualPlayerOptions(Number(manualSel.value || 1));
       const activeNums = new Set(active.map(p => p.number));
       for (const k of [...playheadAnim.keys()]) { if (!activeNums.has(k)) playheadAnim.delete(k); }
       for (const k of [...zoomWindowAnchor.keys()]) { if (!activeNums.has(k)) zoomWindowAnchor.delete(k); }

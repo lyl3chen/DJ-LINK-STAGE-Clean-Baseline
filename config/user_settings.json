@@ -5,9 +5,10 @@
   },
   "sync": {
     "enabled": true,
+    "sourceMode": "master",
     "masterPlayer": 1.0,
     "ltc": {
-      "enabled": false,
+      "enabled": true,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
