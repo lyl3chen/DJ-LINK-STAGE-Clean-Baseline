@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
  * Unified Jetty Server for HTTP + WebSocket.
  */
 public class JettyServer {
+    // 这是后端总枢纽：处理HTTP接口、WebSocket广播、并驱动同步输出状态。
     
     private static final Gson gson = new Gson();
     private static Server server;
@@ -36,6 +37,7 @@ public class JettyServer {
     private static final UserSettingsStore settingsStore = UserSettingsStore.getInstance();
     private static final AiAgentService aiAgentService = AiAgentService.getInstance();
     
+    // 启动统一服务：加载配置并对外提供 8080 的 API + WS。
     public static void start(int port) throws Exception {
         syncOutputManager.applySettings();
         server = new Server(new java.net.InetSocketAddress("0.0.0.0", port));
@@ -242,6 +244,7 @@ public class JettyServer {
     
     public static void updateState(Object players) { playersStateCache = players; }
     
+    // 语义事件入口：收到 beat/section/track 事件后，同时推送给前端和输出引擎。
     public static void pushEvent(String type, Integer player, Map<String, Object> data) {
         syncOutputManager.onSemanticEvent(type, player, data);
         Map<String, Object> event = new ConcurrentHashMap<>();

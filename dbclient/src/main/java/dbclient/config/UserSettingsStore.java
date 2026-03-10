@@ -16,6 +16,7 @@ import java.util.*;
  * Persistent settings for modular services and UI.
  */
 public class UserSettingsStore {
+    // 这是“设置管家”：负责把配置读写到 config/user_settings.json。
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Type MAP_TYPE = new TypeToken<Map<String, Object>>(){}.getType();
     private static final Path SETTINGS_PATH = Paths.get("..", "config", "user_settings.json");

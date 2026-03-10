@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class AbletonLinkDriver implements OutputDriver {
+    // 这是 Ableton Link 占位驱动：先跟随主 BPM，后续再接入真实 Link 会话。
     private volatile boolean running;
     private volatile double tempo = 120.0;
 

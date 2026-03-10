@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class LtcDriver implements OutputDriver {
+    // 这是 LTC 占位驱动：先打通数据流，后续再接真实编码和声卡输出。
     private volatile boolean running;
     private volatile double seconds;
     private Map<String, Object> cfg = new LinkedHashMap<>();
