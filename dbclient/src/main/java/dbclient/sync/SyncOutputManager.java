@@ -13,15 +13,13 @@ public class SyncOutputManager {
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
-    private final SyncClockSmoother smoother = new SyncClockSmoother(5, 30);
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
-    private volatile double smoothedSec = 0.0;
+    private volatile double lastTimeSec = 0.0;
 
     public static SyncOutputManager getInstance() { return INSTANCE; }
 
     private SyncOutputManager() {
-        smoother.reset(0.0, System.nanoTime());
         register(new LtcDriver());
         register(new MtcDriver());
         register(new AbletonLinkDriver());
@@ -100,12 +98,9 @@ public class SyncOutputManager {
                     Object ms = chosen.get("currentTimeMs");
                     if (!(ms instanceof Number)) ms = chosen.get("beatTimeMs");
                     Object bpm = chosen.get("bpm");
-                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
-                    if (ms instanceof Number) {
-                        smoother.update(nowSec, System.nanoTime());
-                    }
-                    smoothedSec = smoother.get(System.nanoTime());
-                    derived.put("masterTimeSec", smoothedSec);
+                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : lastTimeSec;
+                    if (ms instanceof Number) lastTimeSec = nowSec;
+                    derived.put("masterTimeSec", lastTimeSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
@@ -131,7 +126,7 @@ public class SyncOutputManager {
 
     private Map<String, Object> buildDerivedState() {
         Map<String, Object> state = new LinkedHashMap<>();
-        state.put("masterTimeSec", 0.0);
+        state.put("masterTimeSec", lastTimeSec);
         state.put("masterBpm", 120.0);
         state.put("sourcePlaying", false);
         state.put("sourceActive", false);
@@ -147,7 +142,7 @@ public class SyncOutputManager {
         out.put("drivers", ds);
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer);
-        out.put("timecode", toTimecode(smoothedSec, 25));
+        out.put("timecode", toTimecode(lastTimeSec, 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
     }

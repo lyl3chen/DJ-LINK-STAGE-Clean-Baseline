@@ -98,7 +98,7 @@ public class LtcDriver implements OutputDriver {
         m.put("gainDb", numCfg("gainDb", -8.0));
         m.put("frame", frameInSecond);
         m.put("signalLevel", signalLevel);
-        m.put("timecode", toTimecode(displaySeconds(), fps));
+        m.put("timecode", toTimecode(seconds, fps));
         m.put("outputState", outputState);
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
@@ -118,31 +118,6 @@ public class LtcDriver implements OutputDriver {
         double phase = 0.0;
 
         while (running && line != null && line.isOpen()) {
-            final long now = System.currentTimeMillis();
-            final boolean sourceFresh = (now - lastSourceUpdateMs) <= 500;
-            final boolean shouldOutput = sourceFresh && sourceActive && sourcePlaying;
-
-            if (!shouldOutput) {
-                outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
-                signalLevel = 0.0;
-                // 最终规则：PAUSE 驻留最后帧；STOP/OFFLINE/ERROR 归零。
-                if (!sourceFresh || !"PAUSED".equalsIgnoreCase(sourceState)) {
-                    seconds = 0.0;
-                    frameInSecond = 0;
-                }
-                for (int i = 0; i < out.length; i++) out[i] = 0;
-                try {
-                  line.write(out, 0, out.length);
-                } catch (Exception e) {
-                  lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
-                  outputState = "ERROR";
-                  seconds = 0.0;
-                  frameInSecond = 0;
-                  running = false;
-                }
-                continue;
-            }
-
             outputState = "OUTPUTTING";
             double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
@@ -235,13 +210,6 @@ public class LtcDriver implements OutputDriver {
     private String strCfg(String key, String def) {
         Object v = cfg.get(key);
         return v == null ? def : String.valueOf(v);
-    }
-
-    private double displaySeconds() {
-        if (!sourcePlaying) return seconds;
-        long dt = Math.max(0, System.currentTimeMillis() - lastSourceUpdateMs);
-        double add = Math.min(0.12, dt / 1000.0);
-        return Math.max(0.0, seconds + add);
     }
 
     private String toTimecode(double sec, int fps) {
