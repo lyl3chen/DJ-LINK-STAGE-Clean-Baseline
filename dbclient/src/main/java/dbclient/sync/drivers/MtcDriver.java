@@ -72,7 +72,7 @@ public class MtcDriver implements OutputDriver {
         if (!shouldOutput) {
             outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
             // 最终规则：PAUSE 驻留；STOP/OFFLINE/ERROR 归零。
-            if (!"PAUSED".equalsIgnoreCase(sourceState)) {
+            if (!sourceFresh || !"PAUSED".equalsIgnoreCase(sourceState)) {
                 seconds = 0.0;
                 qfCounter = 0;
             }
@@ -84,7 +84,7 @@ public class MtcDriver implements OutputDriver {
         lastQuarterFrameSentAt = now;
 
         try {
-            sendQuarterFrame(seconds);
+            sendQuarterFrame(displaySeconds());
             pulseAtMs = now;
             outputState = "OUTPUTTING";
         } catch (Exception e) {
@@ -107,6 +107,13 @@ public class MtcDriver implements OutputDriver {
         m.put("sourceActive", sourceActive);
         m.put("sourceState", sourceState);
         return m;
+    }
+
+    private double displaySeconds() {
+        if (!sourcePlaying) return seconds;
+        long dt = Math.max(0, System.currentTimeMillis() - lastSourceUpdateMs);
+        double add = Math.min(0.12, dt / 1000.0);
+        return Math.max(0.0, seconds + add);
     }
 
     private void sendQuarterFrame(double sec) throws InvalidMidiDataException {

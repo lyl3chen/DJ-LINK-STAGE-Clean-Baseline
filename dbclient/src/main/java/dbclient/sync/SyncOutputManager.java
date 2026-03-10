@@ -107,7 +107,9 @@ public class SyncOutputManager {
                     derived.put("sourcePlaying", playing);
                     derived.put("sourceActive", active);
                     double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
-                    String sourceState = !active ? "OFFLINE" : (playing ? "PLAYING" : (nowSec > 0.05 ? "PAUSED" : "STOPPED"));
+                    int beat = chosen.get("beat") instanceof Number ? ((Number) chosen.get("beat")).intValue() : -1;
+                    // 规则：非播放时，beat=-1 视为 STOPPED；否则视为 PAUSED（驻留）
+                    String sourceState = !active ? "OFFLINE" : (playing ? "PLAYING" : (beat < 0 || nowSec <= 0.05 ? "STOPPED" : "PAUSED"));
                     derived.put("sourceState", sourceState);
                 }
             }
