@@ -604,6 +604,9 @@
         <h3>Sync Output Manager</h3>
         <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
+        <div class="cfg-row"><label>LTC 声卡名</label><input id="cfgLtcDevice" type="text" value="default" placeholder="default 或设备名关键字" /></div>
+        <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
+        <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
         <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
@@ -902,6 +905,9 @@
         const link = sync.abletonLink || {};
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
+        document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
+        document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
+        document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
@@ -912,7 +918,13 @@
     async function saveIoConfig() {
       const patch = {
         sync: {
-          ltc: { enabled: document.getElementById('cfgLtcEnabled').checked, fps: Number(document.getElementById('cfgLtcFps').value || 25) },
+          ltc: {
+            enabled: document.getElementById('cfgLtcEnabled').checked,
+            fps: Number(document.getElementById('cfgLtcFps').value || 25),
+            deviceName: (document.getElementById('cfgLtcDevice').value || 'default').trim(),
+            gainDb: Number(document.getElementById('cfgLtcGain').value || -8),
+            sampleRate: Number(document.getElementById('cfgLtcSampleRate').value || 48000)
+          },
           mtc: { enabled: document.getElementById('cfgMtcEnabled').checked },
           abletonLink: { enabled: document.getElementById('cfgLinkEnabled').checked }
         },

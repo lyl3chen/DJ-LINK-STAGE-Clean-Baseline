@@ -9,7 +9,10 @@
     "ltc": {
       "enabled": false,
       "fps": 25,
-      "start": "00:00:00:00"
+      "start": "00:00:00:00",
+      "sampleRate": 48000,
+      "gainDb": -8,
+      "deviceName": "default"
     },
     "mtc": {
       "enabled": false,

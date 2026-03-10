@@ -111,7 +111,14 @@ public class UserSettingsStore {
         m.put("sync", new LinkedHashMap<>(Map.of(
                 "enabled", true,
                 "masterPlayer", 1,
-                "ltc", new LinkedHashMap<>(Map.of("enabled", false, "fps", 25, "start", "00:00:00:00")),
+                "ltc", new LinkedHashMap<>(Map.of(
+                        "enabled", false,
+                        "fps", 25,
+                        "start", "00:00:00:00",
+                        "sampleRate", 48000,
+                        "gainDb", -8,
+                        "deviceName", "default"
+                )),
                 "mtc", new LinkedHashMap<>(Map.of("enabled", false, "midiPort", "")),
                 "abletonLink", new LinkedHashMap<>(Map.of("enabled", false, "quantum", 4))
         )));

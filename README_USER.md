@@ -48,7 +48,7 @@
 - `dbclient/src/main/java/dbclient/sync/OutputDriver.java`
   - 驱动统一接口（start/stop/update/status）。
 - `dbclient/src/main/java/dbclient/sync/drivers/LtcDriver.java`
-  - LTC驱动占位。
+  - LTC音频输出驱动（从主时钟生成时间码音频，输出到声卡）。
 - `dbclient/src/main/java/dbclient/sync/drivers/MtcDriver.java`
   - MTC驱动占位。
 - `dbclient/src/main/java/dbclient/sync/drivers/AbletonLinkDriver.java`
@@ -142,15 +142,25 @@ kill -9 <PID>
 
 重点改顶部 `:root { ... }` 里的颜色变量。
 
-### 2) 想改默认 LTC 帧率
+### 2) 想改 LTC 输出参数（帧率/声卡/Gain/采样率）
 去这个文件：
 - `config/user_settings.json`
 
-找到：
+找到 `sync.ltc`：
 ```json
-"ltc": { "enabled": false, "fps": 25 }
+"ltc": {
+  "enabled": false,
+  "fps": 25,
+  "deviceName": "default",
+  "gainDb": -8,
+  "sampleRate": 48000
+}
 ```
-把 `25` 改成你要的值（如 24/30）。
+可改项：
+- `fps`：帧率（24/25/30）
+- `deviceName`：声卡名关键字（default=系统默认）
+- `gainDb`：输出音量（分贝，建议 -12 到 -3）
+- `sampleRate`：采样率（常用 48000）
 
 ### 3) 想改 API Key（AI）
 还是这个文件：
