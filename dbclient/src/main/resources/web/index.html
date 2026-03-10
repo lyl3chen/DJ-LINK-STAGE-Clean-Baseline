@@ -618,6 +618,9 @@
         <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
         <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
         <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>MTC 端口</label><select id="cfgMtcPort"></select></div>
+        <div class="cfg-row"><label>MTC Signal</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">idle</span></div>
+        <div class="diag-card" id="mtcDiag">Status: Idle | Target: -</div>
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
@@ -956,6 +959,27 @@
       if (sel.value !== (selected || 'default')) sel.value = 'default';
     }
 
+    function refreshMidiDeviceOptions(devices, selected = 'default') {
+      const sel = document.getElementById('cfgMtcPort');
+      if (!sel) return;
+      sel.innerHTML = '';
+      const def = document.createElement('option');
+      def.value = 'default';
+      def.textContent = '0. 系统默认 MIDI 输出';
+      sel.appendChild(def);
+      (devices || []).forEach((d, i) => {
+        const name = (d && d.name) ? String(d.name) : '';
+        if (!name) return;
+        const index = Number(d && d.index) || (i + 1);
+        const o = document.createElement('option');
+        o.value = name;
+        o.textContent = `${index}. ${name}`;
+        sel.appendChild(o);
+      });
+      sel.value = selected || 'default';
+      if (sel.value !== (selected || 'default')) sel.value = 'default';
+    }
+
     async function loadSettings() {
       try {
         const r = await fetch('/api/config');
@@ -968,6 +992,7 @@
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
         refreshAudioDeviceOptions(runtime.audioDevices || [], String(ltc.deviceName || 'default'));
+        refreshMidiDeviceOptions(runtime.midiOutDevices || [], String(mtc.midiPort || 'default'));
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
@@ -991,7 +1016,10 @@
             gainDb: Number(document.getElementById('cfgLtcGain').value || -8),
             sampleRate: Number(document.getElementById('cfgLtcSampleRate').value || 48000)
           },
-          mtc: { enabled: document.getElementById('cfgMtcEnabled').checked },
+          mtc: {
+            enabled: document.getElementById('cfgMtcEnabled').checked,
+            midiPort: document.getElementById('cfgMtcPort').value || 'default'
+          },
           abletonLink: { enabled: document.getElementById('cfgLinkEnabled').checked }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
@@ -1044,10 +1072,31 @@
             diag.textContent = `ERROR: Device Busy or Not Found (${ltc.error})`;
           } else {
             diag.classList.remove('error');
-            const status = ltc.running ? 'Outputting' : 'Idle';
+            const status = String(ltc.outputState || 'IDLE').toUpperCase() === 'OUTPUTTING' ? 'Outputting' : 'Idle';
             const dev = ltc.activeDevice || ltc.deviceName || '-';
             const fps = ltc.fps || 25;
             diag.textContent = `Status: ${status} | Target: ${dev} | FPS: ${fps}`;
+          }
+        }
+
+        const mtc = (((j || {}).drivers || {}).mtc) || {};
+        const pulse = document.getElementById('mtcPulse');
+        const pulseText = document.getElementById('mtcPulseText');
+        const pulseAge = Date.now() - Number(mtc.pulseAtMs || 0);
+        const lit = pulseAge < 180 && String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
+        if (pulse) pulse.style.background = lit ? '#2dff7a' : '#2b3a52';
+        if (pulseText) pulseText.textContent = lit ? 'sending' : 'idle';
+
+        const mtcDiag = document.getElementById('mtcDiag');
+        if (mtcDiag) {
+          if (mtc.error) {
+            mtcDiag.classList.add('error');
+            mtcDiag.textContent = `ERROR: Device Busy or Not Found (${mtc.error})`;
+          } else {
+            mtcDiag.classList.remove('error');
+            const st = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING' ? 'Outputting' : 'Idle';
+            const target = mtc.activePort || mtc.midiPort || '-';
+            mtcDiag.textContent = `Status: ${st} | Target: ${target}`;
           }
         }
       } catch (_) {}

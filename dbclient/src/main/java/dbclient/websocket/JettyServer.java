@@ -15,6 +15,8 @@ import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
 import javax.servlet.http.*;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Mixer;
+import javax.sound.midi.MidiDevice;
+import javax.sound.midi.MidiSystem;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -279,6 +281,7 @@ public class JettyServer {
         if (settings != null) out.putAll(settings);
         Map<String, Object> rt = new ConcurrentHashMap<>();
         rt.put("audioDevices", listAudioDevices());
+        rt.put("midiOutDevices", listMidiOutDevices());
         out.put("_runtime", rt);
         return out;
     }
@@ -324,6 +327,26 @@ public class JettyServer {
             if (!shortName.isEmpty()) return shortName;
         }
         return name.isEmpty() ? "可用声卡" : name;
+    }
+
+    private static List<Map<String, Object>> listMidiOutDevices() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        MidiDevice.Info[] infos = MidiSystem.getMidiDeviceInfo();
+        int idx = 1;
+        for (MidiDevice.Info info : infos) {
+            try {
+                MidiDevice d = MidiSystem.getMidiDevice(info);
+                if (d.getMaxReceivers() == 0) continue;
+                Map<String, Object> m = new ConcurrentHashMap<>();
+                m.put("index", idx++);
+                m.put("name", info.getName());
+                m.put("vendor", info.getVendor());
+                m.put("desc", info.getDescription());
+                m.put("version", info.getVersion());
+                list.add(m);
+            } catch (Exception ignored) {}
+        }
+        return list;
     }
     
     public static class WsServlet extends WebSocketServlet {
