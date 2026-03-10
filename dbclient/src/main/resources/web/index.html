@@ -1058,11 +1058,12 @@
         if (bar) bar.style.width = `${levelPct}%`;
         if (txt) txt.textContent = `${levelPct}%`;
 
-        const tc = ltc.timecode || '00:00:00:00';
+        const mtc = (((j || {}).drivers || {}).mtc) || {};
+        const globalTc = j.timecode || ltc.timecode || '00:00:00:00';
         const tcEl = document.getElementById('ltcTimecode');
         if (tcEl) {
-          tcEl.textContent = tc;
-          const outputting = String(ltc.outputState || '').toUpperCase() === 'OUTPUTTING';
+          tcEl.textContent = globalTc;
+          const outputting = String(ltc.outputState || '').toUpperCase() === 'OUTPUTTING' || String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
           tcEl.classList.toggle('dim', !outputting);
         }
 
@@ -1080,7 +1081,6 @@
           }
         }
 
-        const mtc = (((j || {}).drivers || {}).mtc) || {};
         const pulse = document.getElementById('mtcPulse');
         const pulseText = document.getElementById('mtcPulseText');
         const mtcOut = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';

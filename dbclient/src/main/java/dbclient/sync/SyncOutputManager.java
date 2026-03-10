@@ -13,10 +13,15 @@ public class SyncOutputManager {
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
+    private final SyncClockSmoother smoother = new SyncClockSmoother(5, 30);
+    private volatile String sourceState = "OFFLINE";
+    private volatile Integer sourcePlayer = null;
+    private volatile double smoothedSec = 0.0;
 
     public static SyncOutputManager getInstance() { return INSTANCE; }
 
     private SyncOutputManager() {
+        smoother.reset(0.0, System.nanoTime());
         register(new LtcDriver());
         register(new MtcDriver());
         register(new AbletonLinkDriver());
@@ -95,10 +100,12 @@ public class SyncOutputManager {
                     Object ms = chosen.get("currentTimeMs");
                     if (!(ms instanceof Number)) ms = chosen.get("beatTimeMs");
                     Object bpm = chosen.get("bpm");
+                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
                     if (ms instanceof Number) {
-                        double sec = ((Number) ms).doubleValue()/1000.0;
-                        derived.put("masterTimeSec", sec);
+                        smoother.update(nowSec, System.nanoTime());
                     }
+                    smoothedSec = smoother.get(System.nanoTime());
+                    derived.put("masterTimeSec", smoothedSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
@@ -106,11 +113,12 @@ public class SyncOutputManager {
                     boolean active = !Boolean.FALSE.equals(chosen.get("active"));
                     derived.put("sourcePlaying", playing);
                     derived.put("sourceActive", active);
-                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
                     int beat = chosen.get("beat") instanceof Number ? ((Number) chosen.get("beat")).intValue() : -1;
                     // 规则：非播放时，beat=-1 视为 STOPPED；否则视为 PAUSED（驻留）
-                    String sourceState = !active ? "OFFLINE" : (playing ? "PLAYING" : (beat < 0 || nowSec <= 0.05 ? "STOPPED" : "PAUSED"));
-                    derived.put("sourceState", sourceState);
+                    String st = !active ? "OFFLINE" : (playing ? "PLAYING" : (beat < 0 || nowSec <= 0.05 ? "STOPPED" : "PAUSED"));
+                    sourceState = st;
+                    sourcePlayer = chosen.get("number") instanceof Number ? ((Number) chosen.get("number")).intValue() : null;
+                    derived.put("sourceState", st);
                 }
             }
         }
@@ -137,7 +145,19 @@ public class SyncOutputManager {
         Map<String, Object> ds = new LinkedHashMap<>();
         for (OutputDriver d : drivers.values()) ds.put(d.name(), d.status());
         out.put("drivers", ds);
+        out.put("sourceState", sourceState);
+        out.put("sourcePlayer", sourcePlayer);
+        out.put("timecode", toTimecode(smoothedSec, 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
+    }
+
+    private String toTimecode(double sec, int fps) {
+        int total = (int) Math.max(0, Math.floor(sec));
+        int hh = total / 3600;
+        int mm = (total % 3600) / 60;
+        int ss = total % 60;
+        int ff = (int) Math.floor((sec - Math.floor(sec)) * Math.max(1, fps));
+        return String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff);
     }
 }
