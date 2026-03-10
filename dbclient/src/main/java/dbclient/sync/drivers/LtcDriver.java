@@ -134,7 +134,7 @@ public class LtcDriver implements OutputDriver {
             }
 
             outputState = "OUTPUTTING";
-            double peak = 0.0;
+            double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
                 double t = seconds + (i / (double) sampleRate);
                 int bitClock = 160 * fps;
@@ -148,12 +148,14 @@ public class LtcDriver implements OutputDriver {
                 double s = Math.sin(phase);
                 double pulse = edge ? 1.0 : -1.0;
                 double mixed = (s * 0.35 + pulse * 0.65) * amp;
-                peak = Math.max(peak, Math.abs(mixed));
+                sumSq += mixed * mixed;
                 short v = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, (int) (mixed * 32767.0)));
                 out[i * 2] = (byte) (v & 0xff);
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
-            signalLevel = peak;
+            double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
+            // 平滑处理，避免电平条抖动过快
+            signalLevel = signalLevel * 0.55 + rms * 0.45;
             try {
               line.write(out, 0, out.length);
             } catch (Exception e) {

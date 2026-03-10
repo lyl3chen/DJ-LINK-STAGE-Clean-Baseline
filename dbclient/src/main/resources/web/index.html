@@ -613,7 +613,7 @@
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
         <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
-        <div class="cfg-row"><label>LTC 声卡名</label><input id="cfgLtcDevice" type="text" value="default" placeholder="default 或设备名关键字" /></div>
+        <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
         <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
         <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
         <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
@@ -928,6 +928,26 @@
       sel.value = String(selected || uniq[0] || 1);
     }
 
+    function refreshAudioDeviceOptions(devices, selected = 'default') {
+      const sel = document.getElementById('cfgLtcDevice');
+      if (!sel) return;
+      sel.innerHTML = '';
+      const def = document.createElement('option');
+      def.value = 'default';
+      def.textContent = 'default (系统默认)';
+      sel.appendChild(def);
+      (devices || []).forEach(d => {
+        const name = (d && d.name) ? String(d.name) : '';
+        if (!name) return;
+        const o = document.createElement('option');
+        o.value = name;
+        o.textContent = name;
+        sel.appendChild(o);
+      });
+      sel.value = selected || 'default';
+      if (sel.value !== (selected || 'default')) sel.value = 'default';
+    }
+
     async function loadSettings() {
       try {
         const r = await fetch('/api/config');
@@ -936,11 +956,12 @@
         const ltc = sync.ltc || {};
         const mtc = sync.mtc || {};
         const link = sync.abletonLink || {};
+        const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
+        refreshAudioDeviceOptions(runtime.audioDevices || [], String(ltc.deviceName || 'default'));
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
-        document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
         document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;

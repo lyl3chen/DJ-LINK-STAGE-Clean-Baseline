@@ -13,7 +13,11 @@ import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
 import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
 
 import javax.servlet.http.*;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Mixer;
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -69,7 +73,7 @@ public class JettyServer {
                     Map<String, Object> result = null;
                     
                     if (path.equals("/api/config")) {
-                        result = settingsStore.getAll();
+                        result = withRuntime(settingsStore.getAll());
                     } else if (path.equals("/api/sync/state")) {
                         result = syncOutputManager.getStatus();
                     } else if (path.equals("/api/scan")) {
@@ -167,7 +171,7 @@ public class JettyServer {
                     if (path.equals("/api/config")) {
                         settingsStore.patch(payload);
                         syncOutputManager.applySettings();
-                        response.getWriter().print(gson.toJson(Map.of("ok", true, "settings", settingsStore.getAll())));
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "settings", withRuntime(settingsStore.getAll()))));
                         return;
                     }
                     if (path.equals("/api/ai/command")) {
@@ -268,6 +272,29 @@ public class JettyServer {
         for (Session s : sessions) {
             try { if (s.isOpen()) s.getRemote().sendString(msg); } catch (IOException e) {}
         }
+    }
+
+    private static Map<String, Object> withRuntime(Map<String, Object> settings) {
+        Map<String, Object> out = new ConcurrentHashMap<>();
+        if (settings != null) out.putAll(settings);
+        Map<String, Object> rt = new ConcurrentHashMap<>();
+        rt.put("audioDevices", listAudioDevices());
+        out.put("_runtime", rt);
+        return out;
+    }
+
+    private static List<Map<String, Object>> listAudioDevices() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        Mixer.Info[] infos = AudioSystem.getMixerInfo();
+        for (Mixer.Info info : infos) {
+            Map<String, Object> m = new ConcurrentHashMap<>();
+            m.put("name", info.getName());
+            m.put("vendor", info.getVendor());
+            m.put("desc", info.getDescription());
+            m.put("version", info.getVersion());
+            list.add(m);
+        }
+        return list;
     }
     
     public static class WsServlet extends WebSocketServlet {
