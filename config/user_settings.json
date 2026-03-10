@@ -5,13 +5,13 @@
   },
   "sync": {
     "enabled": true,
-    "masterPlayer": 1,
+    "masterPlayer": 1.0,
     "ltc": {
       "enabled": false,
-      "fps": 25,
+      "fps": 25.0,
       "start": "00:00:00:00",
-      "sampleRate": 48000,
-      "gainDb": -8,
+      "sampleRate": 48000.0,
+      "gainDb": -8.0,
       "deviceName": "default"
     },
     "mtc": {
@@ -20,7 +20,7 @@
     },
     "abletonLink": {
       "enabled": false,
-      "quantum": 4
+      "quantum": 4.0
     },
     "consoleApi": {
       "enabled": true

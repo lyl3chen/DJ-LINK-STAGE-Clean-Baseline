@@ -6,7 +6,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class ConsoleApiDriver implements OutputDriver {
-    // 这是调试驱动：把收到的状态留在内存里，方便 API/UI 查看是否流转正常。
     private volatile boolean running;
     private volatile Map<String, Object> lastState = new LinkedHashMap<>();
 

@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Signal output scheduler (LTC/MTC/Link/Console API) with unified driver lifecycle.
  */
 public class SyncOutputManager {
-    // 这是输出调度总控：把语义事件和主时钟分发给 LTC/MTC/Link 等驱动。
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
@@ -27,7 +26,6 @@ public class SyncOutputManager {
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
 
     @SuppressWarnings("unchecked")
-    // 读取用户配置并启动/停止各驱动（比如勾选了 LTC 就启动 LTC 驱动）。
     public synchronized void applySettings() {
         Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
         Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());

@@ -8,7 +8,6 @@ import java.util.Map;
  */
 public class Main {
     
-    // 这是程序总入口：先启动HTTP/WS服务，再启动状态广播。
     public static void main(String[] args) throws Exception {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
         
@@ -49,7 +48,6 @@ public class Main {
         }
     }
     
-    // 这一段把 TriggerEngine 的事件桥接到 WebSocket 和同步输出引擎。
     private static void registerEventListener() {
         try {
             Class<?> teClass = Class.forName("djlink.trigger.TriggerEngine");

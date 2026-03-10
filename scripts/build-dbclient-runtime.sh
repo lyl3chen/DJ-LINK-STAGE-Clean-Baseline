@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="/home/shenlei/.openclaw/agents/dev/workspace"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DBC="$ROOT/dbclient"
 cd "$DBC"
 mvn -q -DskipTests compile

@@ -9,7 +9,6 @@ import java.util.Map;
  * Boilerplate AI rule parser: natural language -> trigger rule payload.
  */
 public class AiAgentService {
-    // 这是 AI 规则翻译器：把“人话需求”先转成可执行的触发规则（当前为占位逻辑）。
     private static final AiAgentService INSTANCE = new AiAgentService();
 
     public static AiAgentService getInstance() { return INSTANCE; }

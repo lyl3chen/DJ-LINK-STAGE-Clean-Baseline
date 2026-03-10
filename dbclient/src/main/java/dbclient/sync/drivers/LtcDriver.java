@@ -33,6 +33,7 @@ public class LtcDriver implements OutputDriver {
             line.start();
             running = true;
             lastError = "";
+            System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + sampleRate + " gainDb=" + numCfg("gainDb",-8.0));
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
             audioThread.setDaemon(true);
             audioThread.start();
@@ -40,6 +41,7 @@ public class LtcDriver implements OutputDriver {
             running = false;
             lastError = e.getMessage() == null ? e.toString() : e.getMessage();
             activeDevice = "-";
+            System.out.println("[LTC] start failed: " + lastError);
         }
     }
 
