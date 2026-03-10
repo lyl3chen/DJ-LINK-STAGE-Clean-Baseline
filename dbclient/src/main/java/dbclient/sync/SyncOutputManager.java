@@ -102,8 +102,9 @@ public class SyncOutputManager {
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
+                    // 某些设备状态包可能不带 active 字段；缺失时按在线可用处理，避免误判为离线。
                     derived.put("sourcePlaying", Boolean.TRUE.equals(chosen.get("playing")));
-                    derived.put("sourceActive", Boolean.TRUE.equals(chosen.get("active")));
+                    derived.put("sourceActive", !Boolean.FALSE.equals(chosen.get("active")));
                 }
             }
         }

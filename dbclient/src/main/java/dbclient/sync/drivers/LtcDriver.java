@@ -10,6 +10,8 @@ public class LtcDriver implements OutputDriver {
     // 这一段是真实 LTC 音频输出驱动：根据主时钟持续生成可被外部设备识别的时间码音频信号。
     private volatile boolean running;
     private volatile double seconds;
+    private volatile double anchorSeconds;
+    private volatile long anchorAtMs;
     private volatile int frameInSecond;
     private volatile double signalLevel = 0.0;
     private volatile String activeDevice = "-";
@@ -79,6 +81,8 @@ public class LtcDriver implements OutputDriver {
 
         if (t instanceof Number) {
             seconds = ((Number) t).doubleValue();
+            anchorSeconds = seconds;
+            anchorAtMs = System.currentTimeMillis();
             int fps = intCfg("fps", 25);
             frameInSecond = (int) Math.floor((seconds - Math.floor(seconds)) * Math.max(1, fps));
         }
@@ -87,8 +91,9 @@ public class LtcDriver implements OutputDriver {
     public Map<String, Object> status() {
         int fps = intCfg("fps", 25);
         Map<String, Object> m = new LinkedHashMap<>();
+        double shownSec = chasedSeconds();
         m.put("running", running);
-        m.put("seconds", seconds);
+        m.put("seconds", shownSec);
         m.put("fps", fps);
         m.put("sampleRate", line != null ? (int) line.getFormat().getSampleRate() : intCfg("sampleRate", 48000));
         m.put("deviceName", strCfg("deviceName", "default"));
@@ -96,7 +101,7 @@ public class LtcDriver implements OutputDriver {
         m.put("gainDb", numCfg("gainDb", -8.0));
         m.put("frame", frameInSecond);
         m.put("signalLevel", signalLevel);
-        m.put("timecode", toTimecode(seconds, fps));
+        m.put("timecode", toTimecode(shownSec, fps));
         m.put("outputState", outputState);
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
@@ -136,8 +141,9 @@ public class LtcDriver implements OutputDriver {
 
             outputState = "OUTPUTTING";
             double sumSq = 0.0;
+            double nowBase = chasedSeconds();
             for (int i = 0; i < bufferSamples; i++) {
-                double t = seconds + (i / (double) sampleRate);
+                double t = nowBase + (i / (double) sampleRate);
                 int bitClock = 160 * fps;
                 double bitPos = (t * bitClock) % 1.0;
                 boolean edge = bitPos < 0.5;
@@ -226,6 +232,14 @@ public class LtcDriver implements OutputDriver {
     private String strCfg(String key, String def) {
         Object v = cfg.get(key);
         return v == null ? def : String.valueOf(v);
+    }
+
+    private double chasedSeconds() {
+        if (!sourcePlaying) return seconds;
+        long at = anchorAtMs;
+        if (at <= 0) return seconds;
+        double chased = anchorSeconds + Math.max(0, (System.currentTimeMillis() - at)) / 1000.0;
+        return Math.max(0.0, chased);
     }
 
     private String toTimecode(double sec, int fps) {

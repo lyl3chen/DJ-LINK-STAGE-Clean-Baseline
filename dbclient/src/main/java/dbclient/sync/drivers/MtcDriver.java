@@ -18,6 +18,8 @@ public class MtcDriver implements OutputDriver {
     private volatile boolean sourceActive = false;
     private volatile long lastSourceUpdateMs = 0L;
     private volatile double seconds = 0.0;
+    private volatile double anchorSeconds = 0.0;
+    private volatile long anchorAtMs = 0L;
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private MidiDevice device;
@@ -63,7 +65,11 @@ public class MtcDriver implements OutputDriver {
         sourceActive = Boolean.TRUE.equals(state.get("sourceActive"));
         lastSourceUpdateMs = System.currentTimeMillis();
         Object t = state.get("masterTimeSec");
-        if (t instanceof Number) seconds = ((Number) t).doubleValue();
+        if (t instanceof Number) {
+            seconds = ((Number) t).doubleValue();
+            anchorSeconds = seconds;
+            anchorAtMs = System.currentTimeMillis();
+        }
 
         boolean sourceFresh = (System.currentTimeMillis() - lastSourceUpdateMs) <= 500;
         boolean shouldOutput = sourceFresh && sourcePlaying && sourceActive;
@@ -77,7 +83,7 @@ public class MtcDriver implements OutputDriver {
         lastQuarterFrameSentAt = now;
 
         try {
-            sendQuarterFrame(seconds);
+            sendQuarterFrame(chasedSeconds());
             pulseAtMs = now;
             outputState = "OUTPUTTING";
         } catch (Exception e) {
@@ -99,6 +105,12 @@ public class MtcDriver implements OutputDriver {
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
         return m;
+    }
+
+    private double chasedSeconds() {
+        if (!sourcePlaying) return seconds;
+        if (anchorAtMs <= 0) return seconds;
+        return Math.max(0.0, anchorSeconds + Math.max(0, (System.currentTimeMillis() - anchorAtMs)) / 1000.0);
     }
 
     private void sendQuarterFrame(double sec) throws InvalidMidiDataException {

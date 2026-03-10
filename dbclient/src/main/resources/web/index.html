@@ -1083,7 +1083,7 @@
         const pulse = document.getElementById('mtcPulse');
         const pulseText = document.getElementById('mtcPulseText');
         const pulseAge = Date.now() - Number(mtc.pulseAtMs || 0);
-        const lit = pulseAge < 180 && String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
+        const lit = pulseAge < 260;
         if (pulse) pulse.style.background = lit ? '#2dff7a' : '#2b3a52';
         if (pulseText) pulseText.textContent = lit ? '发送中' : '空闲';
 
