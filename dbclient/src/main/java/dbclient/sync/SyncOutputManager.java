@@ -13,6 +13,7 @@ public class SyncOutputManager {
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
+    private final TimecodeClock clock = new TimecodeClock();
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
     private volatile double lastTimeSec = 0.0;
@@ -98,14 +99,20 @@ public class SyncOutputManager {
                     Object ms = chosen.get("currentTimeMs");
                     if (!(ms instanceof Number)) ms = chosen.get("beatTimeMs");
                     Object bpm = chosen.get("bpm");
+                    Object pitch = chosen.get("pitch");
                     double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : lastTimeSec;
                     if (ms instanceof Number) lastTimeSec = nowSec;
-                    derived.put("masterTimeSec", lastTimeSec);
+                    boolean playing = Boolean.TRUE.equals(chosen.get("playing"));
+                    boolean active = !Boolean.FALSE.equals(chosen.get("active"));
+                    double speed = 1.0;
+                    if (pitch instanceof Number) speed = 1.0 + ((Number) pitch).doubleValue() / 100.0;
+                    clock.ingestReference(lastTimeSec, playing, speed);
+                    double outSec = clock.nowSeconds();
+
+                    derived.put("masterTimeSec", outSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
-                    boolean playing = Boolean.TRUE.equals(chosen.get("playing"));
-                    boolean active = !Boolean.FALSE.equals(chosen.get("active"));
                     derived.put("sourcePlaying", playing);
                     derived.put("sourceActive", active);
                     int beat = chosen.get("beat") instanceof Number ? ((Number) chosen.get("beat")).intValue() : -1;
@@ -126,11 +133,13 @@ public class SyncOutputManager {
 
     private Map<String, Object> buildDerivedState() {
         Map<String, Object> state = new LinkedHashMap<>();
-        state.put("masterTimeSec", lastTimeSec);
+        state.put("masterTimeSec", clock.nowSeconds());
+        state.put("rawTimeSec", lastTimeSec);
         state.put("masterBpm", 120.0);
         state.put("sourcePlaying", false);
         state.put("sourceActive", false);
         state.put("sourceState", "OFFLINE");
+        state.put("__clock", clock);
         state.put("semantic", new LinkedHashMap<>(lastSemantic));
         return state;
     }
@@ -142,7 +151,8 @@ public class SyncOutputManager {
         out.put("drivers", ds);
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer);
-        out.put("timecode", toTimecode(lastTimeSec, 25));
+        out.put("rawTimeSec", lastTimeSec);
+        out.put("timecode", toTimecode(clock.nowSeconds(), 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
     }

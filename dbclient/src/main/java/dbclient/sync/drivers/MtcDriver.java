@@ -1,6 +1,7 @@
 package dbclient.sync.drivers;
 
 import dbclient.sync.OutputDriver;
+import dbclient.sync.TimecodeClock;
 
 import javax.sound.midi.*;
 import java.util.LinkedHashMap;
@@ -19,11 +20,12 @@ public class MtcDriver implements OutputDriver {
     private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
     private volatile double seconds = 0.0;
+    private volatile TimecodeClock clock;
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private MidiDevice device;
     private Receiver receiver;
-    private long lastQuarterFrameSentAt = 0L;
+    private Thread sendThread;
 
     public String name() { return "mtc"; }
 
@@ -37,6 +39,10 @@ public class MtcDriver implements OutputDriver {
             running = true;
             outputState = "RUNNING";
             lastError = "";
+            sendThread = new Thread(this::sendLoop, "mtc-send-thread");
+            sendThread.setDaemon(true);
+            sendThread.setPriority(Thread.MAX_PRIORITY);
+            sendThread.start();
         } catch (Exception e) {
             running = false;
             outputState = "ERROR";
@@ -48,6 +54,10 @@ public class MtcDriver implements OutputDriver {
     public synchronized void stop() {
         running = false;
         outputState = "STOPPED";
+        if (sendThread != null) {
+            try { sendThread.join(300); } catch (InterruptedException ignored) {}
+            sendThread = null;
+        }
         if (receiver != null) {
             try { receiver.close(); } catch (Exception ignored) {}
             receiver = null;
@@ -66,17 +76,8 @@ public class MtcDriver implements OutputDriver {
         lastSourceUpdateMs = System.currentTimeMillis();
         Object t = state.get("masterTimeSec");
         if (t instanceof Number) seconds = ((Number) t).doubleValue();
-
-        long now = System.currentTimeMillis();
-        try {
-            sendQuarterFrame(seconds);
-            pulseAtMs = now;
-            outputState = "OUTPUTTING";
-        } catch (Exception e) {
-            outputState = "ERROR";
-            lastError = e.getMessage() == null ? e.toString() : e.getMessage();
-            running = false;
-        }
+        Object clk = state.get("__clock");
+        if (clk instanceof TimecodeClock) clock = (TimecodeClock) clk;
     }
 
     public Map<String, Object> status() {
@@ -92,6 +93,46 @@ public class MtcDriver implements OutputDriver {
         m.put("sourceActive", sourceActive);
         m.put("sourceState", sourceState);
         return m;
+    }
+
+    private void sendLoop() {
+        int fps = 25;
+        long intervalNs = (long) ((1_000_000_000.0 / fps) / 8.0); // 1000/FPS/8
+        long next = System.nanoTime();
+        while (running) {
+            long nowNs = System.nanoTime();
+            if (nowNs < next) {
+                try {
+                    long sleepMs = Math.max(0, (next - nowNs) / 1_000_000L);
+                    if (sleepMs > 0) Thread.sleep(sleepMs);
+                    else Thread.yield();
+                } catch (InterruptedException ignored) {}
+                continue;
+            }
+
+            long jitterNs = nowNs - next;
+            if (Math.abs(jitterNs) > 2_000_000L) {
+                System.out.println("[MTC] jitter(ms)=" + (jitterNs / 1_000_000.0));
+            }
+            next += intervalNs;
+
+            boolean sourceFresh = (System.currentTimeMillis() - lastSourceUpdateMs) <= 500;
+            if (!sourceFresh || !sourceActive || !sourcePlaying) {
+                outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
+                continue;
+            }
+
+            double sec = clock != null ? clock.nowSeconds() : seconds;
+            try {
+                sendQuarterFrame(sec);
+                pulseAtMs = System.currentTimeMillis();
+                outputState = "OUTPUTTING";
+            } catch (Exception e) {
+                outputState = "ERROR";
+                lastError = e.getMessage() == null ? e.toString() : e.getMessage();
+                running = false;
+            }
+        }
     }
 
     private void sendQuarterFrame(double sec) throws InvalidMidiDataException {

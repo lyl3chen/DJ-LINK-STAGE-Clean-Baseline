@@ -1,6 +1,7 @@
 package dbclient.sync.drivers;
 
 import dbclient.sync.OutputDriver;
+import dbclient.sync.TimecodeClock;
 
 import javax.sound.sampled.*;
 import java.util.LinkedHashMap;
@@ -19,6 +20,7 @@ public class LtcDriver implements OutputDriver {
     private volatile boolean sourceActive = false;
     private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
+    private volatile TimecodeClock clock;
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private SourceDataLine line;
@@ -41,6 +43,7 @@ public class LtcDriver implements OutputDriver {
             System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + (int)fmt.getSampleRate() + " gainDb=" + numCfg("gainDb",-8.0));
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
             audioThread.setDaemon(true);
+            audioThread.setPriority(Thread.MAX_PRIORITY);
             audioThread.start();
         } catch (Exception e) {
             running = false;
@@ -84,6 +87,8 @@ public class LtcDriver implements OutputDriver {
             int fps = intCfg("fps", 25);
             frameInSecond = (int) Math.floor((seconds - Math.floor(seconds)) * Math.max(1, fps));
         }
+        Object clk = state.get("__clock");
+        if (clk instanceof TimecodeClock) clock = (TimecodeClock) clk;
     }
 
     public Map<String, Object> status() {
@@ -119,9 +124,11 @@ public class LtcDriver implements OutputDriver {
 
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
+            double blockStartSec = clock != null ? clock.nowSeconds() : seconds;
+            seconds = blockStartSec;
             double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
-                double t = seconds + (i / (double) sampleRate);
+                double t = blockStartSec + (i / (double) sampleRate);
                 int bitClock = 160 * fps;
                 double bitPos = (t * bitClock) % 1.0;
                 boolean edge = bitPos < 0.5;
