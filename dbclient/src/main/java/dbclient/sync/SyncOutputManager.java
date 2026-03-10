@@ -32,8 +32,9 @@ public class SyncOutputManager {
         for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
             Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
             boolean enabled = Boolean.TRUE.equals(cfg.get("enabled"));
+            // 配置保存后强制重启驱动，确保 deviceName/fps/gain 等修改立即生效。
+            e.getValue().stop();
             if (enabled) e.getValue().start(cfg);
-            else e.getValue().stop();
         }
     }
 

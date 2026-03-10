@@ -63,6 +63,9 @@
     .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
     .ltc-meter { height:14px; border:1px solid #2f425e; border-radius:4px; background:#0a121d; overflow:hidden; width:260px; }
     .ltc-meter > div { height:100%; width:0%; background:linear-gradient(90deg,#19d66b,#83ff3f); transition:width .08s linear; }
+    .ltc-timecode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 34px; letter-spacing: 2px; color:#d9eeff; font-weight:700; }
+    .diag-card { border:1px solid #2f425e; border-radius:6px; background:#0b1320; padding:8px; font-size:12px; color:#b9d8ff; }
+    .diag-card.error { border-color:#8b2c2c; background:#210d0d; color:#ff9c9c; }
     .ltc-snapshot { font-size:12px; color:#b9d8ff; }
     .ltc-snapshot.error { color:#ff7b7b; font-weight:700; }
     .mixer-row {
@@ -615,7 +618,8 @@
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
-        <div class="cfg-row ltc-snapshot" id="ltcSnapshot">LTC 状态：未启动</div>
+        <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
+        <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
       </div>
       <div class="cfg-card"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
     </div>
@@ -938,7 +942,7 @@
       };
       const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
       const j = await r.json();
-      document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存' : '保存失败';
+      document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（LTC已热重载）' : '保存失败';
       loadSettings();
     }
 
@@ -969,18 +973,21 @@
         if (bar) bar.style.width = `${levelPct}%`;
         if (txt) txt.textContent = `${levelPct}%`;
 
-        const snap = document.getElementById('ltcSnapshot');
-        if (snap) {
+        const tc = ltc.timecode || '00:00:00:00';
+        const tcEl = document.getElementById('ltcTimecode');
+        if (tcEl) tcEl.textContent = tc;
+
+        const diag = document.getElementById('ltcDiag');
+        if (diag) {
           if (ltc.error) {
-            snap.classList.add('error');
-            snap.textContent = `LTC 错误：${ltc.error}`;
+            diag.classList.add('error');
+            diag.textContent = `ERROR: Device Busy or Not Found (${ltc.error})`;
           } else {
-            snap.classList.remove('error');
-            const runText = ltc.running ? '正在输出' : '未输出';
+            diag.classList.remove('error');
+            const status = ltc.running ? 'Outputting' : 'Idle';
             const dev = ltc.activeDevice || ltc.deviceName || '-';
             const fps = ltc.fps || 25;
-            const tc = ltc.timecode || '00:00:00:00';
-            snap.textContent = `LTC 状态：${runText} ｜ 声卡：${dev} ｜ 帧率：${fps}fps ｜ 时间码：${tc}`;
+            diag.textContent = `Status: ${status} | Target: ${dev} | FPS: ${fps}`;
           }
         }
       } catch (_) {}

@@ -164,12 +164,12 @@ kill -9 <PID>
 
 LTC 可视化验收（外行也能看懂）：
 1. 打开 I/O Setup，勾选 LTC Enabled 并保存
-2. 看“LTC 电平”绿条：播放时会跳动，停止时会下降
-3. 看“LTC 状态”文字：应显示
-   - 正在通过 [声卡名] 输出
-   - 当前 [fps] 帧
-   - 时间码数字会跟随 CDJ 时间推进
-4. 如果声卡不可用，状态会变成红色错误提示
+2. 看“LTC 电平”绿条：播放时会跳动，调大 gainDb 时跳得更高
+3. 看“Live Timecode”大字码：会实时滚动 `00:00:00:00`
+4. 看“诊断卡”文字：
+   - 正常时：`Status: Outputting | Target: [声卡名] | FPS: [25]`
+   - 设备异常时：红色 `ERROR: Device Busy or Not Found`
+5. 修改 deviceName/fps/gainDb 后点保存，驱动会热重载（无需重启软件）
 
 ### 3) 想改 API Key（AI）
 还是这个文件：
