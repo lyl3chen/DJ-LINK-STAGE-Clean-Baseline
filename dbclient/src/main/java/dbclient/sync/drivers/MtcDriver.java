@@ -27,6 +27,12 @@ public class MtcDriver implements OutputDriver {
     private Receiver receiver;
     private Thread sendThread;
 
+    // 当前一轮8个QF锁定的时间帧（避免跨帧混包）
+    private volatile int lockedHh = 0;
+    private volatile int lockedMm = 0;
+    private volatile int lockedSs = 0;
+    private volatile int lockedFf = 0;
+
     public String name() { return "mtc"; }
 
     public synchronized void start(Map<String, Object> config) {
@@ -124,7 +130,8 @@ public class MtcDriver implements OutputDriver {
 
             double sec = clock != null ? clock.nowSeconds() : seconds;
             try {
-                sendQuarterFrame(sec);
+                if (qfCounter == 0) lockCurrentFrame(sec);
+                sendQuarterFrameLocked();
                 pulseAtMs = System.currentTimeMillis();
                 outputState = "OUTPUTTING";
             } catch (Exception e) {
@@ -135,26 +142,28 @@ public class MtcDriver implements OutputDriver {
         }
     }
 
-    private void sendQuarterFrame(double sec) throws InvalidMidiDataException {
+    private void lockCurrentFrame(double sec) {
         int fps = 25;
         int total = (int) Math.max(0, Math.floor(sec));
-        int hh = (total / 3600) & 0x1F;
-        int mm = (total % 3600) / 60;
-        int ss = total % 60;
-        int ff = (int) Math.floor((sec - Math.floor(sec)) * fps);
+        lockedHh = (total / 3600) & 0x1F;
+        lockedMm = (total % 3600) / 60;
+        lockedSs = total % 60;
+        lockedFf = (int) Math.floor((sec - Math.floor(sec)) * fps);
+    }
 
+    private void sendQuarterFrameLocked() throws InvalidMidiDataException {
         int nibble;
         switch (qfCounter) {
-            case 0: nibble = ff & 0x0F; break;
-            case 1: nibble = (ff >> 4) & 0x01; break;
-            case 2: nibble = ss & 0x0F; break;
-            case 3: nibble = (ss >> 4) & 0x03; break;
-            case 4: nibble = mm & 0x0F; break;
-            case 5: nibble = (mm >> 4) & 0x03; break;
-            case 6: nibble = hh & 0x0F; break;
+            case 0: nibble = lockedFf & 0x0F; break;
+            case 1: nibble = (lockedFf >> 4) & 0x01; break;
+            case 2: nibble = lockedSs & 0x0F; break;
+            case 3: nibble = (lockedSs >> 4) & 0x03; break;
+            case 4: nibble = lockedMm & 0x0F; break;
+            case 5: nibble = (lockedMm >> 4) & 0x03; break;
+            case 6: nibble = lockedHh & 0x0F; break;
             default:
                 int rateFlag = 0x01; // 25fps
-                nibble = ((hh >> 4) & 0x01) | (rateFlag << 1);
+                nibble = ((lockedHh >> 4) & 0x01) | (rateFlag << 1);
                 break;
         }
 

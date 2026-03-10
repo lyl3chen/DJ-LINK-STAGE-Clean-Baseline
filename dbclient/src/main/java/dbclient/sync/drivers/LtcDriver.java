@@ -21,6 +21,10 @@ public class LtcDriver implements OutputDriver {
     private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
     private volatile TimecodeClock clock;
+    // LTC block 连续承接时间基准
+    private volatile boolean blockClockInit = false;
+    private volatile double nextBlockStartSec = 0.0;
+    private static final double BLOCK_RELOCK_THRESHOLD_SEC = 0.020; // 20ms
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private SourceDataLine line;
@@ -39,6 +43,8 @@ public class LtcDriver implements OutputDriver {
             line.start();
             running = true;
             outputState = "RUNNING";
+            blockClockInit = false;
+            nextBlockStartSec = 0.0;
             lastError = "";
             System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + (int)fmt.getSampleRate() + " gainDb=" + numCfg("gainDb",-8.0));
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
@@ -57,6 +63,7 @@ public class LtcDriver implements OutputDriver {
     public synchronized void stop() {
         running = false;
         outputState = "STOPPED";
+        blockClockInit = false;
         signalLevel = 0.0;
         if (audioThread != null) {
             try { audioThread.join(300); } catch (InterruptedException ignored) {}
@@ -108,6 +115,7 @@ public class LtcDriver implements OutputDriver {
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
         m.put("sourceState", sourceState);
+        m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("error", lastError);
         return m;
     }
@@ -122,9 +130,24 @@ public class LtcDriver implements OutputDriver {
         byte[] out = new byte[bufferSamples * 2];
         double phase = 0.0;
 
+        final double blockDurationSec = bufferSamples / (double) sampleRate;
+
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
-            double blockStartSec = clock != null ? clock.nowSeconds() : seconds;
+            double clockSec = clock != null ? clock.nowSeconds() : seconds;
+            if (!blockClockInit) {
+                nextBlockStartSec = clockSec;
+                blockClockInit = true;
+            } else {
+                // 优先连续承接上一块理论结束时间
+                nextBlockStartSec += blockDurationSec;
+                // 偏差大于阈值才重贴，避免块边界抖动
+                if (Math.abs(clockSec - nextBlockStartSec) > BLOCK_RELOCK_THRESHOLD_SEC) {
+                    nextBlockStartSec = clockSec;
+                }
+            }
+
+            double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
             double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
