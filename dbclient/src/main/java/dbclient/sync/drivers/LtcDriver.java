@@ -11,6 +11,9 @@ public class LtcDriver implements OutputDriver {
     private volatile boolean running;
     private volatile double seconds;
     private volatile int frameInSecond;
+    private volatile double signalLevel = 0.0;
+    private volatile String activeDevice = "-";
+    private volatile String lastError = "";
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private SourceDataLine line;
@@ -26,18 +29,23 @@ public class LtcDriver implements OutputDriver {
         try {
             AudioFormat fmt = new AudioFormat(sampleRate, 16, 1, true, false);
             line = openLine(fmt, deviceName);
+            activeDevice = line.getLineInfo().toString();
             line.start();
             running = true;
+            lastError = "";
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
             audioThread.setDaemon(true);
             audioThread.start();
         } catch (Exception e) {
             running = false;
+            lastError = e.getMessage() == null ? e.toString() : e.getMessage();
+            activeDevice = "-";
         }
     }
 
     public synchronized void stop() {
         running = false;
+        signalLevel = 0.0;
         if (audioThread != null) {
             try { audioThread.join(300); } catch (InterruptedException ignored) {}
             audioThread = null;
@@ -63,14 +71,19 @@ public class LtcDriver implements OutputDriver {
     }
 
     public Map<String, Object> status() {
+        int fps = intCfg("fps", 25);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
         m.put("seconds", seconds);
-        m.put("fps", intCfg("fps", 25));
+        m.put("fps", fps);
         m.put("sampleRate", intCfg("sampleRate", 48000));
         m.put("deviceName", strCfg("deviceName", "default"));
+        m.put("activeDevice", activeDevice);
         m.put("gainDb", numCfg("gainDb", -8.0));
         m.put("frame", frameInSecond);
+        m.put("signalLevel", signalLevel);
+        m.put("timecode", toTimecode(seconds, fps));
+        m.put("error", lastError);
         return m;
     }
 
@@ -85,6 +98,7 @@ public class LtcDriver implements OutputDriver {
         double phase = 0.0;
 
         while (running && line != null && line.isOpen()) {
+            double peak = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
                 double t = seconds + (i / (double) sampleRate);
                 int bitClock = 160 * fps;
@@ -98,11 +112,18 @@ public class LtcDriver implements OutputDriver {
                 double s = Math.sin(phase);
                 double pulse = edge ? 1.0 : -1.0;
                 double mixed = (s * 0.35 + pulse * 0.65) * amp;
+                peak = Math.max(peak, Math.abs(mixed));
                 short v = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, (int) (mixed * 32767.0)));
                 out[i * 2] = (byte) (v & 0xff);
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
+            signalLevel = peak;
             line.write(out, 0, out.length);
+        }
+
+        if (running && (line == null || !line.isOpen())) {
+            lastError = "音频输出设备不可用或已断开";
+            running = false;
         }
     }
 
@@ -144,5 +165,14 @@ public class LtcDriver implements OutputDriver {
     private String strCfg(String key, String def) {
         Object v = cfg.get(key);
         return v == null ? def : String.valueOf(v);
+    }
+
+    private String toTimecode(double sec, int fps) {
+        int total = (int) Math.max(0, Math.floor(sec));
+        int hh = total / 3600;
+        int mm = (total % 3600) / 60;
+        int ss = total % 60;
+        int ff = Math.max(0, Math.min(Math.max(1, fps) - 1, frameInSecond));
+        return String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff);
     }
 }
