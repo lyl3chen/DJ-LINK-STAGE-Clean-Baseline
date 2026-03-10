@@ -102,9 +102,13 @@ public class SyncOutputManager {
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
-                    // 某些设备状态包可能不带 active 字段；缺失时按在线可用处理，避免误判为离线。
-                    derived.put("sourcePlaying", Boolean.TRUE.equals(chosen.get("playing")));
-                    derived.put("sourceActive", !Boolean.FALSE.equals(chosen.get("active")));
+                    boolean playing = Boolean.TRUE.equals(chosen.get("playing"));
+                    boolean active = !Boolean.FALSE.equals(chosen.get("active"));
+                    derived.put("sourcePlaying", playing);
+                    derived.put("sourceActive", active);
+                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
+                    String sourceState = !active ? "OFFLINE" : (playing ? "PLAYING" : (nowSec > 0.05 ? "PAUSED" : "STOPPED"));
+                    derived.put("sourceState", sourceState);
                 }
             }
         }
@@ -121,6 +125,7 @@ public class SyncOutputManager {
         state.put("masterBpm", 120.0);
         state.put("sourcePlaying", false);
         state.put("sourceActive", false);
+        state.put("sourceState", "OFFLINE");
         state.put("semantic", new LinkedHashMap<>(lastSemantic));
         return state;
     }

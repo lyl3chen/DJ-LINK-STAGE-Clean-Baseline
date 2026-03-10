@@ -17,6 +17,7 @@ public class LtcDriver implements OutputDriver {
     private volatile String outputState = "IDLE";
     private volatile boolean sourcePlaying = false;
     private volatile boolean sourceActive = false;
+    private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
@@ -75,6 +76,7 @@ public class LtcDriver implements OutputDriver {
         Object sa = state.get("sourceActive");
         sourcePlaying = Boolean.TRUE.equals(sp);
         sourceActive = Boolean.TRUE.equals(sa);
+        sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
 
         if (t instanceof Number) {
@@ -100,6 +102,7 @@ public class LtcDriver implements OutputDriver {
         m.put("outputState", outputState);
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
+        m.put("sourceState", sourceState);
         m.put("error", lastError);
         return m;
     }
@@ -122,13 +125,19 @@ public class LtcDriver implements OutputDriver {
             if (!shouldOutput) {
                 outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
                 signalLevel = 0.0;
-                // 停止/暂停时保持最后一帧时间码驻留，仅静音输出，不清零。
+                // 最终规则：PAUSE 驻留最后帧；STOP/OFFLINE/ERROR 归零。
+                if (!"PAUSED".equalsIgnoreCase(sourceState)) {
+                    seconds = 0.0;
+                    frameInSecond = 0;
+                }
                 for (int i = 0; i < out.length; i++) out[i] = 0;
                 try {
                   line.write(out, 0, out.length);
                 } catch (Exception e) {
                   lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
                   outputState = "ERROR";
+                  seconds = 0.0;
+                  frameInSecond = 0;
                   running = false;
                 }
                 continue;

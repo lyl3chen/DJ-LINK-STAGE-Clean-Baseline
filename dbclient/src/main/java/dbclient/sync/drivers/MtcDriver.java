@@ -16,6 +16,7 @@ public class MtcDriver implements OutputDriver {
     private volatile long pulseAtMs = 0L;
     private volatile boolean sourcePlaying = false;
     private volatile boolean sourceActive = false;
+    private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
     private volatile double seconds = 0.0;
     private Map<String, Object> cfg = new LinkedHashMap<>();
@@ -61,6 +62,7 @@ public class MtcDriver implements OutputDriver {
         if (!running || state == null) return;
         sourcePlaying = Boolean.TRUE.equals(state.get("sourcePlaying"));
         sourceActive = Boolean.TRUE.equals(state.get("sourceActive"));
+        sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
         Object t = state.get("masterTimeSec");
         if (t instanceof Number) seconds = ((Number) t).doubleValue();
@@ -69,6 +71,11 @@ public class MtcDriver implements OutputDriver {
         boolean shouldOutput = sourceFresh && sourcePlaying && sourceActive;
         if (!shouldOutput) {
             outputState = sourceFresh ? (sourceActive ? "SILENT_SOURCE_STOP" : "SILENT_SOURCE_OFFLINE") : "SILENT_SOURCE_TIMEOUT";
+            // 最终规则：PAUSE 驻留；STOP/OFFLINE/ERROR 归零。
+            if (!"PAUSED".equalsIgnoreCase(sourceState)) {
+                seconds = 0.0;
+                qfCounter = 0;
+            }
             return;
         }
 
@@ -98,6 +105,7 @@ public class MtcDriver implements OutputDriver {
         m.put("pulseAtMs", pulseAtMs);
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
+        m.put("sourceState", sourceState);
         return m;
     }
 
