@@ -938,10 +938,11 @@
       sel.appendChild(def);
       (devices || []).forEach(d => {
         const name = (d && d.name) ? String(d.name) : '';
+        const label = (d && d.label) ? String(d.label) : name;
         if (!name) return;
         const o = document.createElement('option');
         o.value = name;
-        o.textContent = name;
+        o.textContent = label;
         sel.appendChild(o);
       });
       sel.value = selected || 'default';

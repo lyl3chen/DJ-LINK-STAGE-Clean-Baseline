@@ -287,14 +287,37 @@ public class JettyServer {
         List<Map<String, Object>> list = new ArrayList<>();
         Mixer.Info[] infos = AudioSystem.getMixerInfo();
         for (Mixer.Info info : infos) {
-            Map<String, Object> m = new ConcurrentHashMap<>();
-            m.put("name", info.getName());
-            m.put("vendor", info.getVendor());
-            m.put("desc", info.getDescription());
-            m.put("version", info.getVersion());
-            list.add(m);
+            try {
+                javax.sound.sampled.Mixer mixer = AudioSystem.getMixer(info);
+                boolean canOutput = false;
+                for (javax.sound.sampled.Line.Info li : mixer.getSourceLineInfo()) {
+                    if (li.toString().contains("SourceDataLine")) { canOutput = true; break; }
+                }
+                if (!canOutput) continue;
+
+                Map<String, Object> m = new ConcurrentHashMap<>();
+                // value 用底层 name，label 给人看的型号名
+                m.put("name", info.getName());
+                m.put("label", buildDeviceLabel(info));
+                m.put("vendor", info.getVendor());
+                m.put("desc", info.getDescription());
+                list.add(m);
+            } catch (Exception ignored) {}
         }
         return list;
+    }
+
+    private static String buildDeviceLabel(Mixer.Info info) {
+        String name = info.getName() == null ? "" : info.getName().trim();
+        String low = name.toLowerCase();
+        if (low.contains("default")) return "系统默认输出";
+        // 如: "Port PCH [hw:0]" -> "Port PCH"
+        int idx = name.indexOf("[");
+        if (idx > 0) {
+            String shortName = name.substring(0, idx).trim();
+            if (!shortName.isEmpty()) return shortName;
+        }
+        return name.isEmpty() ? "可用声卡" : name;
     }
     
     public static class WsServlet extends WebSocketServlet {
