@@ -655,6 +655,7 @@
     let renderQueued = false;
     let rafId = null;
     let userSettings = {};
+    let mtcPulseBlink = false;
     const RENDER_MIN_INTERVAL_MS = 33;
     const waveZoomByDeck = {1:2,2:2,3:2,4:2};
     const waveCanvasCache = new Map();
@@ -1082,10 +1083,11 @@
         const mtc = (((j || {}).drivers || {}).mtc) || {};
         const pulse = document.getElementById('mtcPulse');
         const pulseText = document.getElementById('mtcPulseText');
-        const pulseAge = Date.now() - Number(mtc.pulseAtMs || 0);
-        const lit = pulseAge < 260;
+        const mtcOut = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
+        mtcPulseBlink = mtcOut ? !mtcPulseBlink : false;
+        const lit = mtcOut && mtcPulseBlink;
         if (pulse) pulse.style.background = lit ? '#2dff7a' : '#2b3a52';
-        if (pulseText) pulseText.textContent = lit ? '发送中' : '空闲';
+        if (pulseText) pulseText.textContent = mtcOut ? '发送中' : '空闲';
 
         const mtcDiag = document.getElementById('mtcDiag');
         if (mtcDiag) {
