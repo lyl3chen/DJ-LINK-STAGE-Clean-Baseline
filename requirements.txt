@@ -1,0 +1,22 @@
+# DJ LINK STAGE dependency manifest
+# This project is primarily Java/Maven based.
+
+# Runtime/Build requirements:
+# - Java 17+
+# - Maven 3.8+
+
+# Python runtime packages (optional tooling)
+# (No mandatory pip dependencies currently.)
+
+# Phase-2 planned integrations (placeholder, not yet required in boilerplate build):
+# - python-rtmidi (MTC output helper, optional)
+# - pyltc (LTC encoding helper, optional)
+# - abletonlink (Link bridge helper, optional)
+# - openai / anthropic (AI agent service provider SDKs, optional)
+
+# Notes:
+# Java dependencies are managed in:
+# - djlink-service/pom.xml
+# - dbclient/pom.xml
+# - djlink-agent/pom.xml
+# - prodj-link-minimal/pom.xml

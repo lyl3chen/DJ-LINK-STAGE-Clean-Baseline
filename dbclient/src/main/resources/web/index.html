@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DJLINK 现场监控</title>
+  <style>
+    :root {
+      --bg: #080a0f;
+      --panel: #0e1118;
+      --panel-2: #121725;
+      --line: #233046;
+      --text: #d7e5ff;
+      --muted: #7f8ea8;
+      --cyan: #46b8ff;
+      --green: #2dff7a;
+      --orange: #ffb347;
+      --red: #ff4d6d;
+      --offline: #3e4556;
+      --wave-a: #2fd66a;
+      --wave-b: #4a7dff;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #06080d 0%, #0a0f18 100%);
+      color: var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #0b0f17;
+    }
+    .title {
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #9fd3ff;
+      font-size: 16px;
+    }
+    .header-stats {
+      display: flex;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--muted);
+      align-items: center;
+    }
+    .header-stats b { color: var(--text); }
+    .tabs { display:flex; gap:6px; padding:8px 12px; border-bottom:1px solid var(--line); background:#0a0f18; }
+    .tab-btn { border:1px solid #30435f; background:#0f1725; color:#c7d8f4; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:12px; font-weight:700; }
+    .tab-btn.active { border-color:#5fa8ff; color:#fff; background:#16263f; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .io-setup, .commander { padding:12px; display:grid; gap:10px; }
+    .cfg-card { border:1px solid #2f425e; background:#0f1624; border-radius:6px; padding:10px; }
+    .cfg-card h3 { margin:0 0 8px; font-size:13px; color:#a9cfff; }
+    .cfg-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+    .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
+    .mixer-row {
+      display:grid;
+      gap:8px;
+      grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+      padding:8px 12px 0;
+    }
+    .mixer-card {
+      border:1px solid #4d3b7a;
+      background:linear-gradient(180deg,#17112a,#100b1e);
+      border-radius:6px;
+      padding:6px 8px;
+      color:#d8cbff;
+      font-size:12px;
+    }
+    .mixer-card b{color:#fff;}
+    .scan-btn {
+      border: 1px solid #4a5f82;
+      background: linear-gradient(180deg,#12213b,#0a1426);
+      color: #dbe9ff;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .scan-btn.on {
+      border-color: #3aa96d;
+      background: linear-gradient(180deg,#12412a,#0c2d1f);
+      color: #c9ffe0;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ff4d6d;
+      display: inline-block;
+      margin-right: 6px;
+      box-shadow: 0 0 8px rgba(255,77,109,.6);
+    }
+    .dot.ok {
+      background: #2dff7a;
+      box-shadow: 0 0 8px rgba(45,255,122,.7);
+    }
+
+    .main {
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    /* Deck row card */
+    .deck {
+      --main-h: 108px;
+      border: 1px solid #2a3549;
+      background: linear-gradient(180deg,#04070c,#080f1b 40%, #060a12);
+      border-left: 4px solid #3a4d6b;
+      border-radius: 6px;
+      display: grid;
+      grid-template-columns: 1.4fr 4.6fr 8fr;
+      height: 126px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(120,140,180,.12);
+    }
+    .deck.playing { border-left-color: var(--green); box-shadow: inset 0 0 0 1px rgba(45,255,122,.15); }
+    .deck.master { box-shadow: inset 0 0 0 1px rgba(255,179,71,.35); }
+    .deck.onair-playing {
+      border-color: #ff4d4d;
+      box-shadow: inset 0 0 0 2px rgba(255,77,77,.55), 0 0 14px rgba(255,77,77,.25);
+    }
+    .deck.offline { opacity: .45; filter: grayscale(.2); }
+
+    .deck-left {
+      border-right: 1px solid var(--line);
+      padding: 8px 10px;
+      display: grid;
+      align-content: center;
+      gap: 6px;
+      background: #0b1019;
+    }
+    .deck-id { font-size: 18px; font-weight: 800; line-height: 1; color: #d6e8ff; letter-spacing:.3px; }
+    .chips { display: grid; gap: 4px; }
+    .chip {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 2px;
+      background: linear-gradient(180deg,#111b2d,#0a111e);
+      color: #d9e9ff;
+      border: 1px solid #3a5176;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 800;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      width: fit-content;
+      box-shadow: inset 0 0 0 1px rgba(160,190,240,.1);
+    }
+    .chip::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: #4d5f7f;
+      box-shadow: 0 0 6px rgba(100,120,160,.4) inset;
+      flex: 0 0 8px;
+    }
+    .chip.playing::before { background:#32ff86; box-shadow: 0 0 8px rgba(50,255,134,.85); }
+    .chip.master::before { background:#ffb347; box-shadow: 0 0 8px rgba(255,179,71,.85); }
+    .chip.onair::before { background:#ff3b30; box-shadow: 0 0 10px rgba(255,59,48,.9); }
+    .chip.online::before { background:#4fc3ff; box-shadow: 0 0 8px rgba(79,195,255,.8); }
+    .chip.offline::before { background:#747f93; box-shadow:none; }
+    .chip.playing { border-color:#2f8f62; }
+    .chip.master { border-color:#8a6b36; }
+    .chip.onair { border-color:#9a2f2f; color:#ffd5d2; background:linear-gradient(180deg,#4a1010,#2c0a0a); }
+    .chip.online { border-color:#356e92; }
+    .chip.offline { color:#a8b1bf; border-color:#4a5261; }
+
+    .deck-wave {
+      position: relative;
+      padding: 6px;
+      background: #060b13;
+      border-right: 1px solid #1d2a3f;
+      display: flex;
+      align-items: center;
+    }
+    .wave-stack { height: var(--main-h); width: 100%; display: flex; flex-direction: column; gap: 0; }
+    .wave-track {
+      width: 100%;
+      background: linear-gradient(180deg,#02050a,#0b121d 45%, #080d16);
+      border: 1px solid #334966;
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: inset 0 0 0 1px rgba(170,200,255,.08);
+    }
+    .wave-svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    .wave-canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    .wave-overview { display:block; height: 38px; margin-bottom: 4px; flex: 0 0 auto; }
+    .wave-zoom { height: calc(100% - 42px); min-height: 56px; flex: 1 1 auto; }
+    .zoom-window {
+      position: absolute;
+      top: 1px;
+      bottom: 1px;
+      border: 1px solid rgba(170,210,255,.7);
+      background: rgba(120,180,255,.08);
+      z-index: 5;
+      pointer-events: none;
+    }
+    .wave-sections { position:absolute; inset:0; z-index:2; pointer-events:none; }
+    .wave-section { position:absolute; top:0; bottom:0; border-right:1px solid rgba(255,255,255,.08); }
+    .wave-track::before {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; top: 50%;
+      height: 1px;
+      background: rgba(245,245,255,.24);
+      z-index: 1;
+    }
+    .bar {
+      flex: 1;
+      min-width: 1px;
+      border-radius: 1px;
+      opacity: .95;
+      z-index: 2;
+    }
+    .hotcue-main {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-left: 2px solid #ffd35e;
+      transform: translateX(-50%);
+      z-index: 7;
+      pointer-events: none;
+    }
+    .hotcue-main::after {
+      content: attr(data-cue);
+      position: absolute;
+      top: 0;
+      left: 2px;
+      font-size: 8px;
+      font-weight: 900;
+      color: var(--cue-color, #ffd35e);
+      background: rgba(0,0,0,.45);
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    .zoom-label {
+      position: absolute;
+      right: 4px;
+      top: 2px;
+      z-index: 8;
+      font-size: 9px;
+      color: #9fc0ef;
+      background: rgba(0,0,0,.45);
+      padding: 0 3px;
+      border-radius: 2px;
+    }
+    .wave-beatline {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      z-index: 6;
+      pointer-events: none;
+    }
+    .wave-beatline::before,
+    .wave-beatline::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      width: 1px;
+      height: 10px;
+      background: rgba(255,255,255,.88);
+    }
+    .wave-beatline::before { top: 2px; }
+    .wave-beatline::after { bottom: 2px; }
+    .wave-beatline.downbeat { width: 2px; }
+    .wave-beatline.downbeat::before,
+    .wave-beatline.downbeat::after {
+      width: 2px;
+      height: 15px;
+      background: rgba(255,66,66,.95);
+      box-shadow: 0 0 8px rgba(255,66,66,.45);
+    }
+    .beat-ruler {
+      display: none;
+      position: relative;
+      border: 1px solid #2a3952;
+      border-radius: 2px;
+      background: #0a111b;
+      overflow: hidden;
+    }
+    .beat-tick {
+      position: absolute;
+      bottom: 0;
+      width: 1px;
+      height: 6px;
+      background: rgba(255,255,255,.9);
+    }
+    .beat-tick.downbeat {
+      height: 9px;
+      width: 2px;
+      background: #ff3b30;
+    }
+
+    .playhead {
+      position: absolute;
+      top: -1px;
+      bottom: -1px;
+      width: 2px;
+      background: #ffd84d;
+      box-shadow: 0 0 12px rgba(255,216,77,.95);
+      z-index: 9;
+    }
+    .playhead::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: -4px;
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 7px solid #ffffff;
+      filter: drop-shadow(0 0 2px rgba(0,0,0,.9));
+    }
+
+    .deck-right {
+      --cell-h: 51px;
+      display: grid;
+      grid-template-columns: 26% 16% 58%;
+      gap: 6px;
+      padding: 6px 8px;
+      background: #0b1220;
+      align-items: center;
+    }
+
+    /* right-left column: time */
+    .time-col {
+      border: 1px solid #496089;
+      background: radial-gradient(120% 140% at 50% 20%, #102345, #060d1a 72%);
+      border-radius: 3px;
+      padding: 2px 6px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      text-align: center;
+      gap: 0;
+      box-shadow: inset 0 0 0 1px rgba(155,190,255,.24), inset 0 -10px 18px rgba(0,0,0,.25);
+      height: calc(var(--cell-h) * 2 + 6px);
+      box-sizing: border-box;
+    }
+    .time-rem {
+      font-size: 52px;
+      line-height: .88;
+      font-weight: 900;
+      color: #f3f8ff;
+      letter-spacing: .8px;
+      font-family: 'Orbitron','Eurostile','Arial Black',monospace;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 14px rgba(150,190,255,.52);
+      white-space: nowrap;
+    }
+    .time-sub {
+      font-size: 12px;
+      color: #b0c3e8;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      width: 100%;
+      text-align: center;
+    }
+    .bpm-col {
+      border: 1px solid #3e557b;
+      background: radial-gradient(120% 140% at 50% 20%, #0f1f3a, #091428 72%);
+      border-radius: 4px;
+      box-sizing: border-box;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 2px;
+      box-shadow: inset 0 0 0 1px rgba(170,200,255,.18);
+      height: calc(var(--cell-h) * 2 + 6px);
+    }
+    .bpm-col.master {
+      border-color: #ffd24d;
+      background: linear-gradient(180deg,#5a460e,#3a2e08);
+      box-shadow: inset 0 0 0 2px rgba(255,210,77,.55), 0 0 12px rgba(255,210,77,.32);
+    }
+    .bpm-label { font-size: 10px; color: #9eb4d8; letter-spacing: .5px; }
+    .bpm-value { font-size: 36px; line-height: .9; font-weight: 900; color: #f3f8ff; font-variant-numeric: tabular-nums; }
+
+    /* right-right column */
+    .info-col {
+      display: grid;
+      grid-template-rows: var(--cell-h) var(--cell-h);
+      gap: 6px;
+      min-width: 0;
+      align-content: center;
+    }
+    .track-box {
+      border: 1px solid #22304a;
+      border-radius: 5px;
+      background: #0b121d;
+      padding: 4px 7px;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 8px;
+      align-content: center;
+      align-items: center;
+      height: var(--cell-h);
+      box-sizing: border-box;
+    }
+    .cover {
+      width: 42px;
+      height: 42px;
+      border-radius: 4px;
+      border: 1px solid #314261;
+      background: linear-gradient(135deg,#324a73,#1a2740);
+      color: #c9ddff;
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex: 0 0 42px;
+    }
+    .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .track-lines { min-width: 0; display: grid; align-content: center; gap: 2px; }
+    .track-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #e8f1ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track-artist { display:none; }
+
+    .meta-box {
+      border: 1px solid #22304a;
+      border-radius: 5px;
+      background: #0b121d;
+      padding: 5px 8px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      align-items: center;
+      font-size: 10px;
+      overflow: hidden;
+      height: var(--cell-h);
+      box-sizing: border-box;
+    }
+    .kv b { color: #fff; font-size: 20px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .kv { color: #8ea3c8; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .mini-wrap {
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+      padding: 8px 10px 10px;
+      background: #070b12;
+    }
+    .mini-title { color: #7f8ea8; font-size: 10px; margin-bottom: 6px; letter-spacing: .8px; }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .mini {
+      border: 1px solid #1f2a3c;
+      background: linear-gradient(180deg,#04070c,#090f18);
+      border-radius: 3px;
+      padding: 6px;
+      box-shadow: inset 0 0 0 1px rgba(130,160,210,.12);
+    }
+    .mini.playing { border-color: #355991; }
+    .mini.offline { opacity: .5; }
+    .mini-head {
+      display: grid;
+      grid-template-columns: 54px 1fr 68px;
+      gap: 6px;
+      align-items: stretch;
+      margin-bottom: 6px;
+      min-width: 0;
+    }
+    .mini-player {
+      border: 1px solid #3a4d6a;
+      display: grid;
+      place-items: center;
+      background: #020407;
+    }
+    .mini-player small { color: #7c8cab; font-size: 8px; display:block; line-height:1; text-align:center; }
+    .mini-player b { color: #fff; font-size: 20px; line-height: 1.05; display:block; text-align:center; }
+    .mini-mid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 2px 6px;
+      align-content: center;
+      min-width: 0;
+      text-align: center;
+    }
+    .mini-k { color: #8191ad; font-size: 8px; letter-spacing: .4px; }
+    .mini-v { color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-bpm {
+      border: 1px solid #3a4d6a;
+      background: #050911;
+      display: grid;
+      place-items: center;
+      text-align: center;
+    }
+    .mini-bpm small { color: #8d9db9; font-size: 8px; line-height: 1; display:block; text-align:center; }
+    .mini-bpm b { color: #fff; font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; display:block; text-align:center; }
+    .mini-wave-wrap { position: relative; }
+    .mini-rgb {
+      height: 34px;
+      border: 1px solid #3b4f72;
+      border-radius: 2px;
+      overflow: hidden;
+      background: #0e1524;
+      box-shadow: inset 0 0 0 1px rgba(130,170,230,.08);
+      position: relative;
+    }
+    .mini-wave-svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
+    .mini-hotcue {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-left: 2px solid #ffce55;
+      transform: translateX(-50%);
+      z-index: 5;
+    }
+    .mini-hotcue::after {
+      content: attr(data-cue);
+      position: absolute;
+      top: -10px;
+      left: 1px;
+      font-size: 8px;
+      font-weight: 700;
+      color: var(--cue-color, #ffce55);
+      background: rgba(0,0,0,.45);
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    .mini-progress {
+      height: 4px;
+      background: #1d2a3f;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 5px;
+    }
+    .mini-progress > div {
+      height: 100%;
+      background: linear-gradient(90deg, #39a4ff, #2fd66a);
+      width: 0%;
+    }
+    .mini-track { margin-top: 3px; font-size: 10px; color: #a8bbda; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+
+    @media (max-width: 1300px) {
+      .deck { grid-template-columns: 1.2fr 4fr 8.8fr; height: 112px; }
+      .deck-right { grid-template-columns: 24% 16% 60%; gap: 5px; }
+      .time-rem { font-size: 38px; }
+      .bpm-value { font-size: 30px; }
+      .kv b { font-size: 14px; }
+      .cover { width: 40px; height: 40px; }
+      .track-box { grid-template-columns: 46px 1fr; min-height: 46px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">DJLINK • 现场监控</div>
+    <div class="header-stats">
+      <span><i class="dot" id="wsDot"></i><b id="wsStatus">连接断开</b></span>
+      <span>在线 <b id="onlineCount">0</b></span>
+      <span>主控 <b id="masterDeck">-</b></span>
+      <span>当前BPM <b id="globalBpm">-</b></span>
+      <button id="scanToggleBtn" class="scan-btn">开启扫描</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="io">I/O Setup</button>
+    <button class="tab-btn" data-tab="commander">Commander</button>
+  </div>
+
+  <section class="tab-panel active" id="panel-dashboard">
+    <div id="mixerRow" class="mixer-row"></div>
+    <div class="main" id="deckList"></div>
+    <div class="mini-wrap">
+      <div class="mini-title">MINI DECK OVERVIEW</div>
+      <div class="mini-grid" id="miniGrid"></div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="panel-io">
+    <div class="io-setup">
+      <div class="cfg-card">
+        <h3>Sync Output Manager</h3>
+        <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
+        <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
+      </div>
+      <div class="cfg-card"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
+    </div>
+  </section>
+
+  <section class="tab-panel" id="panel-commander">
+    <div class="commander">
+      <div class="cfg-card">
+        <h3>AI Trigger Commander</h3>
+        <div class="cfg-row"><label>API Key</label><input id="aiApiKey" type="password" placeholder="sk-..." style="width:320px" /></div>
+        <div class="cfg-row"><textarea id="aiPrompt" rows="4" style="width:100%" placeholder="例如：当进入drop时输出红色闪烁并提升LTC intensity"></textarea></div>
+        <div class="cfg-row"><button id="aiGenerateBtn" class="scan-btn">生成规则</button></div>
+      </div>
+      <div class="cfg-card"><h3>AI Rules</h3><pre id="aiRules" style="white-space:pre-wrap;color:#d3e4ff">[]</pre></div>
+    </div>
+  </section>
+
+  <script>
+    let ws;
+    let players = [];
+    let mixerChannels = [];
+    let lastRenderAt = 0;
+    let scanning = false;
+    let zoomRenderTimer = null;
+    let lastMixerPollAt = 0;
+    let renderQueued = false;
+    let rafId = null;
+    let userSettings = {};
+    const RENDER_MIN_INTERVAL_MS = 33;
+    const waveZoomByDeck = {1:2,2:2,3:2,4:2};
+    const waveCanvasCache = new Map();
+    const playheadAnim = new Map();
+    const zoomWindowAnchor = new Map();
+
+    function fmt(ms) {
+      if (ms == null || isNaN(ms)) return '--:--';
+      const s = Math.max(0, Math.floor(ms / 1000));
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return `${m}:${String(sec).padStart(2, '0')}`;
+    }
+
+    function getAnimatedCurrentMs(p, durationMs, nowMs) {
+      const raw = Number(p.currentTimeMs ?? p.beatTimeMs ?? 0);
+      const bpm = Number(p.bpm || 0);
+      const pitch = Number(p.pitch || 0);
+      const rate = (p.playing && bpm > 0) ? (1 + pitch / 100) : 0;
+      const prev = playheadAnim.get(p.number);
+      if (!prev || Math.abs(prev.raw - raw) > 220 || prev.playing !== !!p.playing) {
+        const next = { raw, at: nowMs, rate, playing: !!p.playing };
+        playheadAnim.set(p.number, next);
+        return Math.max(0, Math.min(durationMs || Infinity, raw));
+      }
+      const dt = Math.max(0, nowMs - prev.at);
+      const v = prev.raw + dt * prev.rate;
+      return Math.max(0, Math.min(durationMs || Infinity, v));
+    }
+
+    function getSmoothZoomStart(deck, target, span) {
+      const clamped = Math.max(0, Math.min(1 - span, target));
+      const prev = zoomWindowAnchor.get(deck);
+      if (prev == null || Math.abs(prev - clamped) > 0.20) {
+        zoomWindowAnchor.set(deck, clamped);
+        return clamped;
+      }
+      const next = prev + (clamped - prev) * 0.22;
+      zoomWindowAnchor.set(deck, next);
+      return Math.max(0, Math.min(1 - span, next));
+    }
+
+    function buildRgbWave(sample) {
+      if (!sample || !sample.length) return 'linear-gradient(90deg,#1b263a,#24344f,#1b263a)';
+      const n = 12;
+      const parts = [];
+      for (let i = 0; i < n; i++) {
+        const idx = Math.floor(i * (sample.length - 1) / (n - 1));
+        const v = Math.max(0, Math.min(255, sample[idx] || 0));
+        const r = Math.min(255, Math.round(v * 1.6));
+        const g = Math.min(255, Math.round(120 + v * 0.8));
+        const b = Math.min(255, Math.round(255 - v * 0.7));
+        parts.push(`rgb(${r},${g},${b}) ${(i/(n-1)*100).toFixed(1)}%`);
+      }
+      return `linear-gradient(90deg, ${parts.join(',')})`;
+    }
+
+    function wavePoint(norm, useDetail, detailHeights, detailColors, sample) {
+      let h = 8, r = 100, g = 140, b = 220;
+      if (useDetail) {
+        const x = Math.max(0, Math.min(1, norm)) * (detailHeights.length - 1);
+        const a = Math.floor(x), bb = Math.min(detailHeights.length - 1, a + 1);
+        const t = x - a;
+        const dh = detailHeights[a] * (1 - t) + detailHeights[bb] * t;
+        const normH = Math.max(0, Math.min(1, dh / 31));
+        h = Math.max(2, Math.min(110, Math.round(Math.pow(normH, 1.7) * 108 + 2))); // boost contrast
+        const c = detailColors[a] | 0;
+        r = (c >> 16) & 255; g = (c >> 8) & 255; b = c & 255;
+      } else {
+        let v = 10;
+        if (sample.length > 1) {
+          const x = Math.max(0, Math.min(1, norm)) * (sample.length - 1);
+          const a = Math.floor(x), bb = Math.min(sample.length - 1, a + 1);
+          const t = x - a;
+          v = sample[a] * (1 - t) + sample[bb] * t;
+        } else if (sample.length === 1) {
+          v = sample[0];
+        }
+        const normH = Math.max(0, Math.min(1, v / 127));
+        h = Math.max(2, Math.min(110, Math.round(Math.pow(normH, 1.7) * 108 + 2)));
+        r = Math.min(255, Math.round(v * 1.8));
+        g = Math.min(255, Math.round(80 + v * 0.95));
+        b = Math.min(255, Math.round(255 - v * 0.75));
+      }
+      return {h, r, g, b};
+    }
+
+    function hotCueColor(i) {
+      const colors = ['#00e5ff','#39ff14','#ff4d4d','#ff9f1a','#b366ff','#ffd400','#00c853','#ff4081'];
+      return colors[i % colors.length];
+    }
+
+    function buildThreeBandSvg(points, id, alpha=1, mode='mirror', zoom=2) {
+      // Detail-like strategy: per-column vertical lines + adaptive downsampling.
+      if (!points.length) return '';
+      const n = points.length;
+      const center = mode === 'top' ? 100 : 50;
+      const maxAmp = mode === 'top' ? 96 : 48;
+
+      let step = 1;
+      if (zoom < 1.4) step = 4;
+      else if (zoom < 2.2) step = 3;
+      else if (zoom < 3.2) step = 2;
+
+      const sampleAvg = (arr, i, key) => {
+        const to = Math.min(arr.length, i + step);
+        let sum = 0;
+        for (let j=i; j<to; j++) sum += arr[j][key];
+        return sum / Math.max(1, to - i);
+      };
+
+      let lines = '';
+      for (let i = 0; i < n; i += step) {
+        const x = ((i + step * 0.5) / n) * 100;
+        const h = sampleAvg(points, i, 'h');
+        const r = sampleAvg(points, i, 'r');
+        const g = sampleAvg(points, i, 'g');
+        const b = sampleAvg(points, i, 'b');
+
+        const amp = Math.max(1, Math.min(maxAmp, (h / 110) * maxAmp));
+
+        const rr = Math.min(255, Math.round(r * 0.74 + amp * 0.9));
+        const gg = Math.min(255, Math.round(g * 0.32));
+        const bb = Math.min(255, Math.round(b * 1.50 + g * 0.10));
+        const color = `rgba(${rr},${gg},${bb},${(0.78 * alpha).toFixed(3)})`;
+
+        if (mode === 'top') {
+          lines += `<line x1="${x.toFixed(3)}" y1="${center.toFixed(3)}" x2="${x.toFixed(3)}" y2="${(center-amp).toFixed(3)}" stroke="${color}" stroke-width="${step>1?1.1:0.9}"/>`;
+        } else {
+          lines += `<line x1="${x.toFixed(3)}" y1="${(center+amp).toFixed(3)}" x2="${x.toFixed(3)}" y2="${(center-amp).toFixed(3)}" stroke="${color}" stroke-width="${step>1?1.1:0.9}"/>`;
+        }
+      }
+
+      return `<svg class="wave-svg" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>`;
+    }
+
+    function pointsFingerprint(points) {
+      if (!points || !points.length) return 'empty';
+      const n = points.length;
+      const probe = Math.min(24, n);
+      let acc = `${n}|`;
+      for (let i = 0; i < probe; i++) {
+        const idx = Math.floor(i * (n - 1) / Math.max(1, probe - 1));
+        const p = points[idx];
+        acc += `${p.h|0},${p.r|0},${p.g|0},${p.b|0};`;
+      }
+      return acc;
+    }
+
+    function buildWaveImage(points, mode, w, h) {
+      const off = document.createElement('canvas');
+      off.width = w;
+      off.height = h;
+      const ctx = off.getContext('2d');
+      const n = points.length;
+      const step = mode === 'top-mini' ? 3 : (n > 900 ? 2 : 1);
+
+      if (mode === 'top' || mode === 'top-mini') {
+        const baseY = Math.round(h * 0.82);
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.moveTo(0, baseY + 1);
+        ctx.lineTo(w - 1, baseY + 1);
+        ctx.stroke();
+
+        for (let i = 0; i < n; i += step) {
+          const p = points[i];
+          const x = Math.round((i / Math.max(1, n - 1)) * (w - 1));
+          let ampBack = Math.max(1, Math.min(h * 0.60, (p.h / 110) * (h * 0.58)));
+          let ampFront = Math.max(1, Math.min(h * 0.60, ampBack * 0.72));
+          if (mode === 'top-mini') {
+            ampBack = Math.round(ampBack / 3) * 3;
+            ampFront = Math.round(ampFront / 3) * 3;
+          }
+          const r = Math.max(0, Math.min(255, p.r | 0));
+          const g = Math.max(0, Math.min(255, p.g | 0));
+          const b = Math.max(0, Math.min(255, p.b | 0));
+
+          const gLow = Math.round(g * 0.22);
+          const bHi = Math.min(255, Math.round(b * 1.12 + r * 0.08));
+          const rHi = Math.min(255, Math.round(r * 0.90));
+          const colW = Math.max(1, step + 1);
+          ctx.fillStyle = `rgba(${Math.round(rHi*0.72)},${Math.round(gLow*0.72)},${Math.round(bHi*0.72)},0.95)`;
+          ctx.fillRect(x, baseY - ampBack, colW, ampBack);
+          ctx.fillStyle = `rgba(${rHi},${gLow},${bHi},0.99)`;
+          ctx.fillRect(x, baseY - ampFront, colW, ampFront);
+        }
+      } else {
+        const center = Math.round(h / 2);
+        const baseHalf = Math.max(1, Math.round(h * 0.012));
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.fillRect(0, center - baseHalf, w, baseHalf * 2);
+
+        for (let i = 0; i < n; i += step) {
+          const p = points[i];
+          const x = Math.round((i / Math.max(1, n - 1)) * (w - 1));
+          const amp = Math.max(1, Math.min(h * 0.48, (p.h / 110) * (h * 0.46)));
+          const r = Math.max(0, Math.min(255, p.r | 0));
+          const g = Math.max(0, Math.min(255, p.g | 0));
+          const b = Math.max(0, Math.min(255, p.b | 0));
+          const gLow = Math.round(g * 0.20);
+          const bHi = Math.min(255, Math.round(b * 1.15 + r * 0.05));
+          const rHi = Math.min(255, Math.round(r * 0.92));
+          ctx.fillStyle = `rgba(${rHi},${gLow},${bHi},0.97)`;
+          ctx.fillRect(x, center - amp, Math.max(1, step + 1), amp * 2);
+        }
+      }
+      return off;
+    }
+
+    function drawWaveCanvas(canvas, points, mode='mirror') {
+      if (!canvas || !points || !points.length) return;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(rect.width * dpr));
+      const h = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+      const fp = pointsFingerprint(points);
+      const key = `${mode}|${w}x${h}|${fp}`;
+      let cached = waveCanvasCache.get(key);
+      if (!cached) {
+        cached = buildWaveImage(points, mode, w, h);
+        waveCanvasCache.set(key, cached);
+        if (waveCanvasCache.size > 64) {
+          const first = waveCanvasCache.keys().next().value;
+          if (first) waveCanvasCache.delete(first);
+        }
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(cached, 0, 0);
+    }
+
+    function scheduleRender(force = false) {
+      const now = Date.now();
+      if (!force && now - lastRenderAt < RENDER_MIN_INTERVAL_MS && renderQueued) return;
+      if (rafId) return;
+      renderQueued = true;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        renderQueued = false;
+        lastRenderAt = Date.now();
+        render();
+      });
+    }
+
+    function activateTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.getElementById('panel-dashboard').classList.toggle('active', tab === 'dashboard');
+      document.getElementById('panel-io').classList.toggle('active', tab === 'io');
+      document.getElementById('panel-commander').classList.toggle('active', tab === 'commander');
+    }
+
+    async function loadSettings() {
+      try {
+        const r = await fetch('/api/config');
+        userSettings = await r.json();
+        const sync = userSettings.sync || {};
+        const ltc = sync.ltc || {};
+        const mtc = sync.mtc || {};
+        const link = sync.abletonLink || {};
+        document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
+        document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
+        document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
+        document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
+        document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
+        document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
+      } catch (_) {}
+    }
+
+    async function saveIoConfig() {
+      const patch = {
+        sync: {
+          ltc: { enabled: document.getElementById('cfgLtcEnabled').checked, fps: Number(document.getElementById('cfgLtcFps').value || 25) },
+          mtc: { enabled: document.getElementById('cfgMtcEnabled').checked },
+          abletonLink: { enabled: document.getElementById('cfgLinkEnabled').checked }
+        },
+        ai: { api_key: document.getElementById('aiApiKey').value || '' }
+      };
+      const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
+      const j = await r.json();
+      document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存' : '保存失败';
+      loadSettings();
+    }
+
+    async function generateAiRule() {
+      const prompt = document.getElementById('aiPrompt').value || '';
+      if (!prompt.trim()) return;
+      const r = await fetch('/api/ai/command', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ prompt }) });
+      const j = await r.json();
+      if (j.rule) {
+        const list = userSettings.aiRules || [];
+        list.push(j.rule);
+        userSettings.aiRules = list;
+        document.getElementById('aiRules').textContent = JSON.stringify(list, null, 2);
+      }
+    }
+
+    async function refreshSyncState() {
+      try {
+        const r = await fetch('/api/sync/state');
+        const j = await r.json();
+        document.getElementById('syncStatus').textContent = JSON.stringify(j, null, 2);
+      } catch (_) {}
+    }
+
+    async function refreshScanStatus() {
+      try {
+        const r = await fetch('/api/scan');
+        const j = await r.json();
+        scanning = !!j.scanning;
+        const btn = document.getElementById('scanToggleBtn');
+        if (btn) {
+          btn.textContent = scanning ? '关闭扫描' : '开启扫描';
+          btn.classList.toggle('on', scanning);
+        }
+      } catch (_) {}
+    }
+
+    async function toggleScan() {
+      try {
+        const target = scanning ? 0 : 1;
+        const r = await fetch(`/api/scan/toggle?enabled=${target}`);
+        const j = await r.json();
+        scanning = !!j.scanning;
+        if (!scanning) players = [];
+        scheduleRender(true);
+        refreshScanStatus();
+      } catch (_) {}
+    }
+
+    async function refreshMixerState() {
+      try {
+        const r = await fetch('/api/mixer/state');
+        const j = await r.json();
+        mixerChannels = (j.channels || []).filter(c => c.active);
+        scheduleRender();
+      } catch (_) {}
+    }
+
+    function connectWS() {
+      ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('wsDot').classList.add('ok');
+        document.getElementById('wsStatus').textContent = '连接正常';
+      };
+
+      ws.onclose = () => {
+        document.getElementById('wsDot').classList.remove('ok');
+        document.getElementById('wsStatus').textContent = '连接断开';
+        setTimeout(connectWS, 2000);
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'STATE') {
+            players = msg.players || [];
+            const now = Date.now();
+            scheduleRender();
+            if (now - lastMixerPollAt > 2000) {
+              lastMixerPollAt = now;
+              refreshMixerState();
+            }
+          }
+        } catch (_) {}
+      };
+    }
+
+    function render() {
+      const deckList = document.getElementById('deckList');
+      const miniGrid = document.getElementById('miniGrid');
+      deckList.innerHTML = '';
+      miniGrid.innerHTML = '';
+
+      const active = players.filter(p => p.number !== 4 && p.active !== false).sort((a,b)=>a.number-b.number);
+      const activeNums = new Set(active.map(p => p.number));
+      for (const k of [...playheadAnim.keys()]) { if (!activeNums.has(k)) playheadAnim.delete(k); }
+      for (const k of [...zoomWindowAnchor.keys()]) { if (!activeNums.has(k)) zoomWindowAnchor.delete(k); }
+      document.getElementById('onlineCount').textContent = active.length;
+      const cols = Math.max(1, active.length);
+      miniGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      const master = active.find(p => p.master);
+      document.getElementById('masterDeck').textContent = master ? `D${master.number}` : '-';
+
+      const mixerRow = document.getElementById('mixerRow');
+      mixerRow.innerHTML = '';
+      mixerChannels.filter(c => c.active).sort((a,b)=>a.player-b.player).forEach(c => {
+        const el = document.createElement('div');
+        el.className = 'mixer-card';
+        el.innerHTML = `<div><b>MIXER CH ${c.player}</b></div><div>PLAY: <b>${c.playing?'ON':'OFF'}</b></div><div>ON-AIR: <b>${c.onAir?'YES':'NO'}</b></div>`;
+        mixerRow.appendChild(el);
+      });
+      const playingBpms = active.filter(p => p.playing && p.bpm != null).map(p => {
+        const base = Number(p.bpm);
+        const pitch = Number(p.pitch || 0);
+        return base * (1 + pitch / 100);
+      });
+      const gbpm = playingBpms.length ? (playingBpms.reduce((a,b)=>a+b,0)/playingBpms.length) : null;
+      document.getElementById('globalBpm').textContent = gbpm ? gbpm.toFixed(1) : '-';
+
+      for (const p of active) {
+        const deck = document.createElement('div');
+        deck.className = 'deck' + (p.playing ? ' playing' : '') + (p.master ? ' master' : '') + ((p.playing && p.onAir) ? ' onair-playing' : '');
+
+        const t = p.track || {};
+        const title = t.title || '---';
+        const artist = t.artist || '';
+        const artworkUrl = t.artworkAvailable ? (t.artworkUrl || '') : '';
+        const coverHtml = artworkUrl
+          ? `<img src="${artworkUrl}" alt="cover" onerror="this.remove()">`
+          : `${(title||'?').charAt(0)}`;
+
+        const durationMs = p.durationMs ?? ((t.duration || 0) * 1000);
+        const nowMs = Date.now();
+        const currentMsRaw = Number(p.currentTimeMs ?? p.beatTimeMs ?? 0);
+        const currentMs = getAnimatedCurrentMs(p, durationMs, nowMs);
+        const remainingMs = Math.max(0, durationMs - currentMs);
+        const ratioRaw = durationMs > 0 ? Math.max(0, Math.min(1, currentMsRaw / durationMs)) : 0;
+        const ratio = durationMs > 0 ? Math.max(0, Math.min(1, currentMs / durationMs)) : 0;
+
+        const sample = (p.analysis && p.analysis.previewSample) ? p.analysis.previewSample : [];
+        const detailHeights = (p.analysis && p.analysis.detailSampleHeights) ? p.analysis.detailSampleHeights : [];
+        const detailColors = (p.analysis && p.analysis.detailSampleColors) ? p.analysis.detailSampleColors : [];
+        const useDetail = detailHeights.length > 64 && detailHeights.length === detailColors.length;
+
+        const hotcues = (p.analysis && p.analysis.hotCueTimesMs) ? p.analysis.hotCueTimesMs.slice(0, 8) : [];
+
+        const zoom = Math.max(1, Math.min(8, Number(waveZoomByDeck[p.number] || 2)));
+        const overviewPts = [];
+        const zoomPts = [];
+
+        const nOverview = useDetail ? 320 : 260;
+        for (let i=0;i<nOverview;i++) {
+          const norm = i / Math.max(1, (nOverview - 1));
+          const pt = wavePoint(norm, useDetail, detailHeights, detailColors, sample);
+          // Keep strong amplitude for mini overview so peaks can reach top of mini window
+          overviewPts.push({ h: Math.max(2, Math.round(pt.h * 0.95)), r: pt.r, g: pt.g, b: pt.b });
+        }
+
+        const nZoom = useDetail ? 900 : 420;
+        const span = Math.max(0.05, 1 / zoom);
+        const zTarget = ratio - span / 2;
+        const zStart = getSmoothZoomStart(p.number, zTarget, span);
+        const zoomLeftPct = (zStart * 100).toFixed(2);
+        const zoomWidthPct = (span * 100).toFixed(2);
+
+        const beatTicksMsForShape = (p.analysis && p.analysis.beatTicksMs) ? p.analysis.beatTicksMs : [];
+        let beatIdx = 0;
+        for (let i=0;i<nZoom;i++) {
+          const norm = zStart + (i / Math.max(1, (nZoom - 1))) * span;
+          const tMs = norm * durationMs;
+          while (beatIdx + 1 < beatTicksMsForShape.length && Number(beatTicksMsForShape[beatIdx + 1]) <= tMs) beatIdx++;
+          const prevBeat = beatTicksMsForShape.length ? Number(beatTicksMsForShape[beatIdx]) : -1;
+          const dt = prevBeat >= 0 ? (tMs - prevBeat) : 9999;
+
+          const pt = wavePoint(norm, useDetail, detailHeights, detailColors, sample);
+          // Knife-cut beat attack: instant onset at beat, then quick decay.
+          if (dt >= 0 && dt < 75) {
+            pt.h = Math.min(110, Math.max(pt.h, Math.round(pt.h * 1.35 + 8)));
+          } else if (dt >= 75 && dt < 150) {
+            pt.h = Math.min(110, Math.max(pt.h, Math.round(pt.h * 1.12 + 3)));
+          }
+          zoomPts.push(pt);
+        }
+
+        const waveOverviewSvg = buildThreeBandSvg(overviewPts, `ov-${p.number}`, 0.98, 'top', Math.max(1, zoom * 0.7));
+        const waveZoomSvg = buildThreeBandSvg(zoomPts, `zm-${p.number}`, 1.0, 'mirror', zoom);
+        const overviewCanvasId = `ovCanvas-${p.number}`;
+        const sectionBandsHtml = (() => {
+          const buckets = 8;
+          const arr = [];
+          for (let i = 0; i < buckets; i++) {
+            const from = Math.floor(i * overviewPts.length / buckets);
+            const to = Math.max(from + 1, Math.floor((i + 1) * overviewPts.length / buckets));
+            let sum = 0;
+            for (let j = from; j < to; j++) sum += overviewPts[j].h;
+            const avg = sum / Math.max(1, to - from);
+            const op = Math.max(0.05, Math.min(0.28, avg / 220));
+            arr.push(`<span class="wave-section" style="left:${(i*100/buckets).toFixed(2)}%;width:${(100/buckets).toFixed(2)}%;background:rgba(120,170,255,${op.toFixed(3)})"></span>`);
+          }
+          return arr.join('');
+        })();
+
+        const hotcueOverview = durationMs > 0
+          ? hotcues.map((ms, i) => {
+              const c = hotCueColor(i);
+              return `<span class="hotcue-main" data-cue="${String.fromCharCode(65+i)}" style="left:${Math.max(0, Math.min(100, (ms/durationMs*100))).toFixed(2)}%;border-left-color:${c};--cue-color:${c}"></span>`;
+            }).join('')
+          : '';
+        const hotcueZoom = durationMs > 0
+          ? hotcues.map((ms, i) => {
+              const pos = ms / durationMs;
+              if (pos < zStart || pos > (zStart + span)) return '';
+              const c = hotCueColor(i);
+              const rel = ((pos - zStart) / span) * 100;
+              return `<span class="hotcue-main" data-cue="${String.fromCharCode(65+i)}" style="left:${Math.max(0, Math.min(100, rel)).toFixed(2)}%;border-left-color:${c};--cue-color:${c}"></span>`;
+            }).join('')
+          : '';
+
+        const effectiveBpm = p.bpm != null ? (Number(p.bpm) * (1 + Number(p.pitch || 0)/100)) : null;
+        const pitchSigned = p.pitch != null ? `${Number(p.pitch) >= 0 ? '+' : ''}${Number(p.pitch).toFixed(2)}%` : '--';
+        let beatTicksHtml = '';
+        let beatLinesHtml = '';
+        const tStart = zStart * durationMs;
+        const tEnd = (zStart + span) * durationMs;
+
+        const beatTicksMs = (p.analysis && p.analysis.beatTicksMs) ? p.analysis.beatTicksMs : [];
+        const beatTicksInBar = (p.analysis && p.analysis.beatTicksInBar) ? p.analysis.beatTicksInBar : [];
+
+        if (durationMs > 0 && beatTicksMs.length && beatTicksInBar.length) {
+          // prodj-link-like beat density: zoomed-out sparse, zoomed-in dense.
+          const showMode = zoom < 4.6 ? 'downbeat' : 'all';
+          const bpmNow = effectiveBpm || p.bpm || 120;
+          const beatVisualDelayMs = (60000 / bpmNow) * 0.08;
+          let lastRel = -999;
+          const minRelGap = showMode === 'all' ? 0.9 : 2.2;
+          for (let i = 0; i < beatTicksMs.length; i++) {
+            const t = Number(beatTicksMs[i]) + beatVisualDelayMs;
+            if (!Number.isFinite(t) || t < tStart || t > tEnd) continue;
+            const rel = ((t - tStart) / Math.max(1, (tEnd - tStart))) * 100;
+            if (rel - lastRel < minRelGap) continue;
+            const beatInBar = Number(beatTicksInBar[i] || 1);
+            const down = beatInBar === 1;
+            if (showMode === 'downbeat' && !down) continue;
+
+            beatLinesHtml += `<span class="wave-beatline ${down ? 'downbeat' : ''}" style="left:${rel.toFixed(2)}%"></span>`;
+            beatTicksHtml += `<span class="beat-tick ${down ? 'downbeat' : ''}" style="left:${rel.toFixed(2)}%"></span>`;
+            lastRel = rel;
+          }
+        }
+
+        const chips = [];
+        chips.push(`<span class="chip ${p.active ? 'online':'offline'}">${p.active ? 'ONLINE':'OFFLINE'}</span>`);
+        chips.push(`<span class="chip ${p.playing?'playing':''}">${p.playing?'PLAY':'STOP'}</span>`);
+        if (p.onAir) chips.push('<span class="chip onair">ON-AIR</span>');
+        if (p.master) chips.push('<span class="chip master">MASTER</span>');
+
+        deck.innerHTML = `
+          <div class="deck-left">
+            <div class="deck-id">PLAYER ${p.number}</div>
+            <div class="chips">${chips.join('')}</div>
+          </div>
+          <div class="deck-wave">
+            <div class="wave-stack" data-zoom-deck="${p.number}">
+              <div class="wave-track wave-overview">
+                <div class="wave-sections">${sectionBandsHtml}</div>
+                <canvas class="wave-canvas" id="${overviewCanvasId}"></canvas>
+                ${hotcueOverview}
+                <div class="zoom-window" style="left:${zoomLeftPct}%;width:${zoomWidthPct}%"></div>
+              </div>
+              <div class="wave-track wave-zoom">
+                <canvas class="wave-canvas" id="waveCanvas-${p.number}"></canvas>
+                ${beatLinesHtml}
+                ${hotcueZoom}
+                <div class="playhead" style="left:${(((ratio - zStart) / span)*100).toFixed(2)}%"></div>
+                <div class="zoom-label">ZOOM x${zoom.toFixed(1)}</div>
+              </div>
+              <div class="beat-ruler">${beatTicksHtml}</div>
+            </div>
+          </div>
+          <div class="deck-right">
+            <div class="time-col">
+              <div class="time-rem">${fmt(remainingMs)}</div>
+              <div class="time-sub">NOW ${fmt(currentMs)} / TOTAL ${fmt(durationMs)}</div>
+            </div>
+            <div class="bpm-col ${p.master?'master':''}">
+              <div class="bpm-value">${effectiveBpm!=null?effectiveBpm.toFixed(1):'--'}</div>
+              <div class="bpm-label">BPM</div>
+            </div>
+            <div class="info-col">
+              <div class="track-box">
+                <div class="cover">${coverHtml}</div>
+                <div class="track-lines">
+                  <div class="track-title">${title}${artist ? ' - ' + artist : ''}</div>
+                  <div class="track-artist"></div>
+                </div>
+              </div>
+              <div class="meta-box">
+                <span class="kv">TEMPO <b>${pitchSigned}</b></span>
+                <span class="kv">BEAT <b>${p.beat ?? '--'}</b></span>
+                <span class="kv">PLAY <b>${p.playing?'ON':'OFF'}</b></span>
+              </div>
+            </div>
+          </div>
+        `;
+        deckList.appendChild(deck);
+        const ovCanvas = deck.querySelector(`#${overviewCanvasId}`);
+        if (ovCanvas) drawWaveCanvas(ovCanvas, overviewPts, 'top');
+        const waveCanvas = deck.querySelector(`#waveCanvas-${p.number}`);
+        if (waveCanvas) drawWaveCanvas(waveCanvas, zoomPts, 'mirror');
+
+        const mini = document.createElement('div');
+        mini.className = 'mini' + (p.playing ? ' playing' : '') + (p.master ? ' master' : '');
+        const miniBpm = effectiveBpm != null ? effectiveBpm.toFixed(1) : '--';
+        const tempoText = p.pitch != null ? `${Number(p.pitch) >= 0 ? '+' : ''}${Number(p.pitch).toFixed(2)}%` : '--';
+        const miniCanvasId = `miniCanvas-${p.number}`;
+        const secRemain = (p.currentSection && Number.isFinite(p.currentSection.endTimeMs))
+          ? Math.max(0, Math.round((Number(p.currentSection.endTimeMs) - currentMs) / 1000))
+          : null;
+        const hotcueHtml = durationMs > 0
+          ? hotcues.map((ms, i) => {
+              const c = hotCueColor(i);
+              return `<span class="mini-hotcue" data-cue="${String.fromCharCode(65+i)}" style="left:${Math.max(0, Math.min(100, (ms/durationMs*100))).toFixed(2)}%;border-left-color:${c};--cue-color:${c}"></span>`;
+            }).join('')
+          : '';
+
+        mini.innerHTML = `
+          <div class="mini-head">
+            <div class="mini-player"><div><small>PLAYER</small><b>${p.number}</b></div></div>
+            <div class="mini-mid">
+              <div class="mini-k">REMAIN</div><div class="mini-k">TEMPO</div>
+              <div class="mini-v">${fmt(remainingMs)}</div><div class="mini-v">${tempoText}</div>
+            </div>
+            <div class="mini-bpm"><div><small>BPM</small><b>${miniBpm}</b></div></div>
+          </div>
+          <div class="mini-wave-wrap">${hotcueHtml}<div class="mini-rgb"><canvas class="wave-canvas" id="${miniCanvasId}"></canvas></div></div>
+          <div class="mini-progress"><div style="width:${(ratio*100).toFixed(2)}%"></div></div>
+          <div class="mini-track">${p.master?'[MASTER] ':''}${title}${secRemain!=null?` • 段落余 ${secRemain}s`:''}</div>
+        `;
+        miniGrid.appendChild(mini);
+        const miniCanvas = mini.querySelector(`#${miniCanvasId}`);
+        if (miniCanvas) drawWaveCanvas(miniCanvas, overviewPts, 'top-mini');
+      }
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
+    document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
+    document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
+    document.getElementById('deckList')?.addEventListener('wheel', (e) => {
+      const box = e.target.closest('[data-zoom-deck]');
+      if (!box) return;
+      e.preventDefault();
+      const d = Number(box.getAttribute('data-zoom-deck'));
+      const cur = Number(waveZoomByDeck[d] || 2);
+      const next = Math.max(1, Math.min(8, cur + (e.deltaY > 0 ? -0.3 : 0.3)));
+      waveZoomByDeck[d] = Math.round(next * 10) / 10;
+      if (zoomRenderTimer) clearTimeout(zoomRenderTimer);
+      zoomRenderTimer = setTimeout(() => { scheduleRender(true); zoomRenderTimer = null; }, 50);
+    }, { passive: false });
+    refreshScanStatus();
+    refreshMixerState();
+    loadSettings();
+    refreshSyncState();
+    setInterval(refreshScanStatus, 5000);
+    setInterval(refreshMixerState, 5000);
+    setInterval(refreshSyncState, 1000);
+    // python-prodj-link-like continuous playhead progression
+    setInterval(() => {
+      if (players.some(p => p.playing)) scheduleRender();
+    }, 25);
+    connectWS();
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+{
+  "ui": {
+    "tab": "dashboard",
+    "darkMode": true
+  },
+  "sync": {
+    "enabled": true,
+    "masterPlayer": 1,
+    "ltc": {
+      "enabled": false,
+      "fps": 25,
+      "start": "00:00:00:00"
+    },
+    "mtc": {
+      "enabled": false,
+      "midiPort": ""
+    },
+    "abletonLink": {
+      "enabled": false,
+      "quantum": 4
+    },
+    "consoleApi": {
+      "enabled": true
+    }
+  },
+  "ai": {
+    "enabled": false,
+    "api_key": "",
+    "model": ""
+  },
+  "aiRules": []
+}
