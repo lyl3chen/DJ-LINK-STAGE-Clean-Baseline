@@ -24,6 +24,7 @@ public class AbletonLinkBridgeProcess {
 
     private Thread outThread;
     private Thread errThread;
+    private volatile boolean expectedStop = false;
 
     public synchronized Map<String, Object> start() {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -52,6 +53,7 @@ public class AbletonLinkBridgeProcess {
             pb.redirectErrorStream(false);
 
             process = pb.start();
+            expectedStop = false;
             startedAt = System.currentTimeMillis();
             lastError = "";
             lastExitCode = null;
@@ -100,6 +102,7 @@ public class AbletonLinkBridgeProcess {
                 out.putAll(status());
                 return out;
             }
+            expectedStop = true;
             process.destroy();
             try {
                 process.waitFor();
@@ -111,6 +114,10 @@ public class AbletonLinkBridgeProcess {
                 } catch (Exception ignored) {}
             }
             lastExitReason = "stopped by API";
+            // 手动停止属于正常行为，不应显示错误。
+            if (lastExitCode != null && (lastExitCode == 143 || lastExitCode == 0)) {
+                lastError = "";
+            }
             process = null;
             startedAt = 0L;
             out.put("ok", true);
@@ -169,6 +176,11 @@ public class AbletonLinkBridgeProcess {
             try {
                 int ec = p.waitFor();
                 lastExitCode = ec;
+                if (expectedStop) {
+                    if (lastExitReason == null || lastExitReason.isBlank()) lastExitReason = "stopped by API";
+                    if (ec == 143 || ec == 0) lastError = "";
+                    return;
+                }
                 if (lastExitReason == null || lastExitReason.isBlank()) lastExitReason = "bridge process exited (code=" + ec + ")";
                 if (lastError == null || lastError.isBlank()) {
                     if (ec != 0) lastError = "bridge exited with code " + ec;
