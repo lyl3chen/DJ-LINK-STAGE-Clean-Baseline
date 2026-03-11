@@ -50,9 +50,11 @@
 - `dbclient/src/main/java/dbclient/sync/drivers/LtcDriver.java`
   - LTC音频输出驱动（从主时钟生成时间码音频，输出到声卡）。
 - `dbclient/src/main/java/dbclient/sync/drivers/MtcDriver.java`
-  - MTC驱动占位。
+  - MTC驱动（已实现独立发送循环和抖动观测字段）。
 - `dbclient/src/main/java/dbclient/sync/drivers/AbletonLinkDriver.java`
-  - Ableton Link驱动占位。
+  - Ableton Link 驱动上层入口（已改为 lib-carabiner 单路实现）。
+- `dbclient/src/main/java/dbclient/sync/drivers/CarabinerLinkEngine.java`
+  - lib-carabiner 的核心封装：负责 Runner 启停、消息收发、自动重连、状态汇总。
 - `dbclient/src/main/java/dbclient/sync/drivers/ConsoleApiDriver.java`
   - 控制台状态输出驱动（调试用）。
 - `dbclient/src/main/java/dbclient/ai/AiAgentService.java`
@@ -146,7 +148,7 @@ kill -9 <PID>
 去这个文件：
 - `config/user_settings.json`
 
-找到 `sync.ltc`：
+找到 `sync`：
 ```json
 "sourceMode": "master",
 "masterPlayer": 1,
@@ -156,15 +158,26 @@ kill -9 <PID>
   "deviceName": "default",
   "gainDb": -8,
   "sampleRate": 48000
+},
+"mtc": {
+  "enabled": false,
+  "midiPort": ""
+},
+"abletonLink": {
+  "enabled": true,
+  "port": 17000,
+  "updateIntervalMs": 20
 }
 ```
 可改项：
 - `sourceMode`：`master`（跟随主机）或 `manual`（手动指定）
 - `masterPlayer`：手动模式时使用哪个播放器（1~4）
-- `fps`：帧率（24/25/30）
-- `deviceName`：声卡名关键字（default=系统默认）
-- `gainDb`：输出音量（分贝，建议 -12 到 -3）
-- `sampleRate`：采样率（常用 48000）
+- `ltc.fps`：帧率（24/25/30）
+- `ltc.deviceName`：声卡名关键字（default=系统默认）
+- `ltc.gainDb`：输出音量（分贝，建议 -12 到 -3）
+- `ltc.sampleRate`：采样率（常用 48000）
+- `abletonLink.port`：Carabiner 控制端口（默认 17000）
+- `abletonLink.updateIntervalMs`：Carabiner 更新周期（默认 20ms）
 
 LTC 可视化验收（外行也能看懂）：
 1. 打开 I/O Setup，勾选 LTC Enabled 并保存
@@ -214,9 +227,22 @@ LTC 可视化验收（外行也能看懂）：
 
 ---
 
-## 七、现在的项目结构（一句话）
+## 七、今天已落地的关键更新（给未来自己看）
 
-**设备采集（djlink-service） → 事件与状态聚合（dbclient） → 输出引擎（SyncOutputManager） → API/WS推送（JettyServer） → 三Tab UI展示（index.html）**。
+1. **Ableton Link 路线已统一为 lib-carabiner（Java 单路）**
+   - 已移除旧 Node/C++/UDP 自研 bridge，避免双实现冲突。
+   - 现由 `CarabinerLinkEngine` 负责：`canRunCarabiner()`、`start()/stop()`、消息解析、断线重连。
+2. **I/O Setup 语义已统一**
+   - `Ableton Link Enabled` 直接代表启停 Carabiner。
+   - 不再使用旧 Bridge Start/Stop 按钮语义。
+3. **时码显示稳定性修复**
+   - 当 LTC/MTC 未启用，或源状态为 `OFFLINE/STOPPED` 时，Live Timecode 强制归零，避免残留时间。
+4. **同步全开不卡界面**
+   - `applySettings()` 改异步，Carabiner 连接改非阻塞，避免保存配置时页面卡死。
+
+## 八、现在的项目结构（一句话）
+
+**设备采集（djlink-service） → 事件与状态聚合（dbclient） → 输出引擎（SyncOutputManager + LTC/MTC/CarabinerLink） → API/WS推送（JettyServer） → 三Tab UI展示（index.html）**。
 
 如果你只记一件事：
 - **界面改动看 `index.html`**

@@ -11,7 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Minimal Java-side manager for lib-carabiner Runner + TCP message stream.
+ * lib-carabiner 引擎封装（中文说明）：
+ * 1) 负责启动/停止 Carabiner Runner；
+ * 2) 通过本地 TCP（默认 127.0.0.1:17000）收发文本协议消息；
+ * 3) 将 status/version 等消息解析成前端可读状态；
+ * 4) 在断管（Broken pipe）或读异常时自动重连，避免界面长期报错。
  */
 public class CarabinerLinkEngine {
     private final Runner runner = Runner.getInstance();
@@ -41,6 +45,12 @@ public class CarabinerLinkEngine {
     private int updateIntervalMs = 20;
     private volatile long lastReconnectAttempt = 0L;
 
+    /**
+     * 启动 Carabiner：
+     * - 先做平台可运行检查；
+     * - 再设置端口和更新间隔；
+     * - 最后异步连接 TCP，避免阻塞保存配置接口。
+     */
     @SuppressWarnings("unchecked")
     public synchronized void start(Map<String, Object> cfg) {
         supported = runner.canRunCarabiner();
@@ -87,6 +97,11 @@ public class CarabinerLinkEngine {
         if (pingThread != null) pingThread.interrupt();
     }
 
+    /**
+     * 接收上游（SyncOutputManager）派生出来的播放源状态：
+     * - bpm：当前应输出给 Link 的目标 BPM（已按当前业务逻辑计算）
+     * - playing：统一播放态（用于避免 Carabiner 内部 start 字段和界面语义冲突）
+     */
     public synchronized void updateFromSource(Double bpm, Boolean playing) {
         if (bpm != null && bpm > 0 && Double.isFinite(bpm)) desiredTempo = bpm;
         if (playing != null) desiredPlaying = playing;
@@ -145,6 +160,10 @@ public class CarabinerLinkEngine {
         }
     }
 
+    /**
+     * 尝试连接 Carabiner TCP 端口并拉起读写线程。
+     * 这里采用重试窗口（次数+间隔），用于覆盖“进程刚启动端口未就绪”的瞬态。
+     */
     private void connectAndListen() throws Exception {
         IOException last = null;
         for (int i = 0; i < 100; i++) {
@@ -165,6 +184,11 @@ public class CarabinerLinkEngine {
         throw new IOException("unable to connect to carabiner port " + port + ": " + (last == null ? "unknown" : last.getMessage()));
     }
 
+    /**
+     * 启动两个线程：
+     * - readThread：持续读取 Carabiner 输出并解析
+     * - pingThread：周期发送 status/version/bpm（bpm 做变化阈值控制）
+     */
     private void startThreads() {
         readThread = new Thread(() -> {
             try {
@@ -206,6 +230,12 @@ public class CarabinerLinkEngine {
         pingThread.start();
     }
 
+    /**
+     * 自动重连：
+     * - 1秒节流，避免连续异常时刷爆重连；
+     * - 重连成功后清空 error；
+     * - 失败则保留最新错误信息供 UI 诊断。
+     */
     private synchronized void tryReconnect() {
         long now = System.currentTimeMillis();
         if (now - lastReconnectAttempt < 1000) return;

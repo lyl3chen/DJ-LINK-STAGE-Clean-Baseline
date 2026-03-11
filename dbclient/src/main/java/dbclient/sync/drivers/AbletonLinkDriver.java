@@ -6,7 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Ableton Link driver backed ONLY by lib-carabiner.
+ * Ableton Link 上层驱动（仅 lib-carabiner 路线）。
+ * 说明：
+ * - 这里不再管理任何 Node/C++ bridge 进程；
+ * - 仅负责把统一播放源状态喂给 CarabinerLinkEngine；
+ * - 再把引擎状态整理成 /api/sync/state 可读字段。
  */
 public class AbletonLinkDriver implements OutputDriver {
     private volatile boolean running;
@@ -33,6 +37,11 @@ public class AbletonLinkDriver implements OutputDriver {
         running = false;
     }
 
+    /**
+     * 跟随统一播放源模式：
+     * - 使用 SyncOutputManager 派生的 masterBpm/sourcePlaying/sourcePlayer/sourceState；
+     * - 按当前业务需求，Link 侧 BPM 会叠加 sourcePitchPct（变速后速度）。
+     */
     public void update(Map<String, Object> state) {
         if (state == null) return;
         Object bpm = state.get("masterBpm");
