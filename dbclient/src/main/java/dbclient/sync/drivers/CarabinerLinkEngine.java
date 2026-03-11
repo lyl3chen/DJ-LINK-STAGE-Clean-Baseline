@@ -28,6 +28,7 @@ public class CarabinerLinkEngine {
     private volatile String version = "";
     private volatile double desiredTempo = 120.0;
     private volatile boolean desiredPlaying = false;
+    private volatile long carabinerStartRaw = 0L;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -94,6 +95,12 @@ public class CarabinerLinkEngine {
         m.put("version", version);
         m.put("lastMessageType", lastMessageType);
         m.put("lastUpdateTs", lastUpdateTs);
+        m.put("carabinerStartRaw", carabinerStartRaw);
+        if (running && numPeers == 0) {
+            m.put("linkNotice", "Carabiner is running, but no Link peers discovered yet.");
+        } else {
+            m.put("linkNotice", "");
+        }
         m.put("error", error);
         return m;
     }
@@ -119,7 +126,9 @@ public class CarabinerLinkEngine {
                 if (bpm instanceof Number) tempo = ((Number) bpm).doubleValue();
                 if (beat instanceof Number) beatPosition = ((Number) beat).doubleValue();
                 if (peers instanceof Number) numPeers = ((Number) peers).intValue();
-                if (start instanceof Number) playing = ((Number) start).longValue() > 0L;
+                if (start instanceof Number) carabinerStartRaw = ((Number) start).longValue();
+                // 统一跟随系统播放源语义，避免与 sourcePlaying 产生误导性分叉。
+                playing = desiredPlaying;
             }
             error = "";
         } catch (Exception e) {
