@@ -38,6 +38,7 @@ public class CarabinerLinkEngine {
 
     private int port = 17000;
     private int updateIntervalMs = 20;
+    private volatile long lastReconnectAttempt = 0L;
 
     @SuppressWarnings("unchecked")
     public synchronized void start(Map<String, Object> cfg) {
@@ -164,7 +165,10 @@ public class CarabinerLinkEngine {
                     onLine(line.trim());
                 }
             } catch (Exception e) {
-                if (running) error = "carabiner read failed: " + e.getMessage();
+                if (running) {
+                    error = "carabiner read failed: " + e.getMessage();
+                    tryReconnect();
+                }
             }
         }, "carabiner-read");
         readThread.setDaemon(true);
@@ -178,13 +182,35 @@ public class CarabinerLinkEngine {
                     writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
                     writer.flush();
                 } catch (Exception e) {
-                    if (running) error = "carabiner write failed: " + e.getMessage();
+                    if (running) {
+                        error = "carabiner write failed: " + e.getMessage();
+                        tryReconnect();
+                    }
                 }
                 try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             }
         }, "carabiner-ping");
         pingThread.setDaemon(true);
         pingThread.start();
+    }
+
+    private synchronized void tryReconnect() {
+        long now = System.currentTimeMillis();
+        if (now - lastReconnectAttempt < 1000) return;
+        lastReconnectAttempt = now;
+        try {
+            if (socket != null) socket.close();
+        } catch (Exception ignored) {}
+        socket = null;
+        reader = null;
+        writer = null;
+
+        try {
+            connectAndListen();
+            error = "";
+        } catch (Exception e) {
+            error = "carabiner reconnect failed: " + e.getMessage();
+        }
     }
 
     private static int intCfg(Map<String, Object> cfg, String key, int def) {
