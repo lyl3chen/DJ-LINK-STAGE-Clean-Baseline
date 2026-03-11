@@ -22,11 +22,21 @@ let backendVersion = '';
 let backendInitError = '';
 let peerDetectionWorking = 'unknown'; // true | false | unknown
 
+function markAckOnly(reason) {
+  backendMode = 'ack-only';
+  backendLoaded = false;
+  backendInitError = reason || 'unknown reason';
+  linkError = backendInitError;
+  peerDetectionWorking = 'unknown';
+  console.warn(`[link-bridge] fallback to ack-only: ${backendInitError}`);
+}
+
 try {
-  // Optional dependency. If unavailable, bridge still works in ACK mode.
+  // 优先尝试真实 Ableton Link backend
   // eslint-disable-next-line import/no-extraneous-dependencies
   const AbletonLink = require('abletonlink');
   backendLoaded = true;
+  console.log('[link-bridge] abletonlink loaded');
   try {
     // 尝试读取版本号（可选）
     // eslint-disable-next-line import/no-extraneous-dependencies
@@ -37,34 +47,24 @@ try {
     link = new AbletonLink(120);
     linkEnabled = true;
     backendMode = 'abletonlink-active';
+    backendInitError = '';
+    linkError = '';
     const canReadPeers = (
       typeof link.numPeers === 'function' ||
       typeof link.getNumPeers === 'function' ||
       typeof link.peers === 'number'
     );
     peerDetectionWorking = canReadPeers ? 'true' : 'false';
-    console.log(`[link-bridge] Ableton Link backend enabled version=${backendVersion || 'unknown'} peerDetectionWorking=${peerDetectionWorking}`);
+    console.log(`[link-bridge] backend init success mode=${backendMode} version=${backendVersion || 'unknown'} peerDetectionWorking=${peerDetectionWorking}`);
   } catch (e) {
-    backendMode = 'abletonlink-failed';
-    backendInitError = `abletonlink init failed: ${e.message || e}`;
-    linkError = backendInitError;
-    peerDetectionWorking = 'unknown';
-    console.warn(`[link-bridge] ${backendInitError}`);
+    markAckOnly(`abletonlink init failed: ${e.message || e}`);
   }
 } catch (e) {
   const em = String((e && e.message) || e || '');
   if (em.includes('Cannot find module')) {
-    backendMode = 'ack-only';
-    backendLoaded = false;
-    backendInitError = 'abletonlink package not installed';
-    linkError = '';
-    console.log('[link-bridge] abletonlink package not installed; running ACK-only mode');
+    markAckOnly('abletonlink package not installed');
   } else {
-    backendMode = 'abletonlink-failed';
-    backendLoaded = false;
-    backendInitError = `abletonlink require failed: ${em}`;
-    linkError = backendInitError;
-    console.warn(`[link-bridge] ${backendInitError}`);
+    markAckOnly(`abletonlink require failed: ${em}`);
   }
 }
 
