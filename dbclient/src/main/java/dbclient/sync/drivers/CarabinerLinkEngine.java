@@ -26,6 +26,8 @@ public class CarabinerLinkEngine {
     private volatile boolean playing = false;
     private volatile int numPeers = 0;
     private volatile String version = "";
+    private volatile double desiredTempo = 120.0;
+    private volatile boolean desiredPlaying = false;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -75,6 +77,11 @@ public class CarabinerLinkEngine {
         if (pingThread != null) pingThread.interrupt();
     }
 
+    public synchronized void updateFromSource(Double bpm, Boolean playing) {
+        if (bpm != null && bpm > 0 && Double.isFinite(bpm)) desiredTempo = bpm;
+        if (playing != null) desiredPlaying = playing;
+    }
+
     public synchronized Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
@@ -122,7 +129,7 @@ public class CarabinerLinkEngine {
 
     private void connectAndListen() throws Exception {
         IOException last = null;
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 100; i++) {
             try {
                 Socket s = new Socket();
                 s.connect(new InetSocketAddress("127.0.0.1", port), 800);
@@ -134,7 +141,7 @@ public class CarabinerLinkEngine {
                 return;
             } catch (IOException e) {
                 last = e;
-                try { Thread.sleep(120); } catch (InterruptedException ignored) {}
+                try { Thread.sleep(150); } catch (InterruptedException ignored) {}
             }
         }
         throw new IOException("unable to connect to carabiner port " + port + ": " + (last == null ? "unknown" : last.getMessage()));
@@ -159,6 +166,7 @@ public class CarabinerLinkEngine {
                 try {
                     writer.write("status\n");
                     writer.write("version\n");
+                    writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
                     writer.flush();
                 } catch (Exception e) {
                     if (running) error = "carabiner write failed: " + e.getMessage();
