@@ -134,6 +134,12 @@ public class AbletonLinkDriver implements OutputDriver {
         m.put("maxPeersSeen", 0);
         m.put("lastPeerChangeTs", 0L);
         m.put("peerSampleCount", 0L);
+        m.put("firstPeerSeenTs", 0L);
+        m.put("lastPeerEventTs", 0L);
+        m.put("peerEventCount", 0L);
+        m.put("interfacesSummary", "");
+        m.put("primaryInterfaceHint", "");
+        m.put("discoveryActive", "unknown");
         m.put("lastAckTs", 0);
 
         if (bridge != null) {
@@ -143,6 +149,12 @@ public class AbletonLinkDriver implements OutputDriver {
             m.put("maxPeersSeen", bs.getOrDefault("maxPeersSeen", 0));
             m.put("lastPeerChangeTs", bs.getOrDefault("lastPeerChangeTs", 0L));
             m.put("peerSampleCount", bs.getOrDefault("peerSampleCount", 0L));
+            m.put("firstPeerSeenTs", bs.getOrDefault("firstPeerSeenTs", 0L));
+            m.put("lastPeerEventTs", bs.getOrDefault("lastPeerEventTs", 0L));
+            m.put("peerEventCount", bs.getOrDefault("peerEventCount", 0L));
+            m.put("interfacesSummary", bs.getOrDefault("interfacesSummary", ""));
+            m.put("primaryInterfaceHint", bs.getOrDefault("primaryInterfaceHint", ""));
+            m.put("discoveryActive", bs.getOrDefault("discoveryActive", "unknown"));
             m.put("lastAckTs", ackTs);
             // 仅当收到过 ACK 时，才用 bridge client 的后端字段覆盖进程字段。
             if (ackTs > 0) {

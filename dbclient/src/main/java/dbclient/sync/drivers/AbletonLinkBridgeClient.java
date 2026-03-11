@@ -35,6 +35,12 @@ public class AbletonLinkBridgeClient {
     private volatile int maxPeersSeen = 0;
     private volatile long lastPeerChangeTs = 0L;
     private volatile long peerSampleCount = 0L;
+    private volatile long firstPeerSeenTs = 0L;
+    private volatile long lastPeerEventTs = 0L;
+    private volatile long peerEventCount = 0L;
+    private volatile String interfacesSummary = "";
+    private volatile String primaryInterfaceHint = "";
+    private volatile String discoveryActive = "unknown";
 
     public AbletonLinkBridgeClient(String host, int sendPort, int listenPort) {
         this.host = host;
@@ -110,6 +116,12 @@ public class AbletonLinkBridgeClient {
         m.put("maxPeersSeen", maxPeersSeen);
         m.put("lastPeerChangeTs", lastPeerChangeTs);
         m.put("peerSampleCount", peerSampleCount);
+        m.put("firstPeerSeenTs", firstPeerSeenTs);
+        m.put("lastPeerEventTs", lastPeerEventTs);
+        m.put("peerEventCount", peerEventCount);
+        m.put("interfacesSummary", interfacesSummary);
+        m.put("primaryInterfaceHint", primaryInterfaceHint);
+        m.put("discoveryActive", discoveryActive);
         return m;
     }
 
@@ -135,6 +147,12 @@ public class AbletonLinkBridgeClient {
                 Object mps = m.get("maxPeersSeen");
                 Object lpct = m.get("lastPeerChangeTs");
                 Object psc = m.get("peerSampleCount");
+                Object fpst = m.get("firstPeerSeenTs");
+                Object lpet = m.get("lastPeerEventTs");
+                Object pec = m.get("peerEventCount");
+                Object ifs = m.get("interfacesSummary");
+                Object pih = m.get("primaryInterfaceHint");
+                Object da = m.get("discoveryActive");
                 bridgeRunning = Boolean.TRUE.equals(r);
                 if (p instanceof Number) numPeers = ((Number) p).intValue();
                 if (t instanceof Number) lastAckTs = ((Number) t).longValue();
@@ -147,6 +165,12 @@ public class AbletonLinkBridgeClient {
                 if (mps instanceof Number) maxPeersSeen = ((Number) mps).intValue();
                 if (lpct instanceof Number) lastPeerChangeTs = ((Number) lpct).longValue();
                 if (psc instanceof Number) peerSampleCount = ((Number) psc).longValue();
+                if (fpst instanceof Number) firstPeerSeenTs = ((Number) fpst).longValue();
+                if (lpet instanceof Number) lastPeerEventTs = ((Number) lpet).longValue();
+                if (pec instanceof Number) peerEventCount = ((Number) pec).longValue();
+                interfacesSummary = ifs == null ? "" : String.valueOf(ifs);
+                primaryInterfaceHint = pih == null ? "" : String.valueOf(pih);
+                discoveryActive = da == null ? "unknown" : String.valueOf(da);
             } catch (Exception ex) {
                 if (running) error = "bridge recv failed: " + ex.getMessage();
             }

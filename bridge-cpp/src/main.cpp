@@ -3,6 +3,8 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -97,6 +99,44 @@ long long nowMs() {
   return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
+std::string collectInterfacesSummary(std::string& primaryHint) {
+  primaryHint.clear();
+  std::ostringstream oss;
+  bool first = true;
+
+  ifaddrs* ifaddr = nullptr;
+  if (getifaddrs(&ifaddr) == -1) {
+    return "ifaddrs_error";
+  }
+
+  for (ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+    if (!ifa->ifa_addr) continue;
+    if (ifa->ifa_addr->sa_family != AF_INET) continue;
+    if ((ifa->ifa_flags & IFF_UP) == 0) continue;
+
+    char ip[INET_ADDRSTRLEN] = {0};
+    auto* sa = reinterpret_cast<sockaddr_in*>(ifa->ifa_addr);
+    if (!inet_ntop(AF_INET, &sa->sin_addr, ip, sizeof(ip))) continue;
+
+    std::string ifname = ifa->ifa_name ? ifa->ifa_name : "unknown";
+    std::string ipStr = ip;
+    if (ipStr == "127.0.0.1") continue;
+
+    if (!first) oss << "; ";
+    first = false;
+    oss << ifname << "=" << ipStr;
+
+    if (primaryHint.empty() && ifname.find("docker") == std::string::npos && ifname.find("veth") == std::string::npos) {
+      primaryHint = ifname + "(" + ipStr + ")";
+    }
+  }
+
+  freeifaddrs(ifaddr);
+  if (primaryHint.empty()) primaryHint = "unknown";
+  auto out = oss.str();
+  return out.empty() ? "none" : out;
+}
+
 } // namespace
 
 int main() {
@@ -118,6 +158,9 @@ int main() {
   std::string backendInitError;
   std::string backendVersion = "ableton-link-cpp";
   std::string peerDetectionWorking = "true";
+  std::string primaryInterfaceHint;
+  std::string interfacesSummary = collectInterfacesSummary(primaryInterfaceHint);
+  std::string discoveryActive = "unknown";
 
   std::cerr << "[cpp-link-bridge] abletonlink loaded" << std::endl;
 
@@ -156,6 +199,7 @@ int main() {
 
   std::cerr << "[cpp-link-bridge] listening udp://" << host << ":" << listenPort
             << ", ack=>udp://" << ackHost << ":" << ackPort << std::endl;
+  std::cerr << "[cpp-link-bridge] interfaces=" << interfacesSummary << " primary=" << primaryInterfaceHint << std::endl;
 
   char buf[4096];
   SyncPayload payload;
@@ -164,6 +208,9 @@ int main() {
   long long lastPeerChangeTs = 0;
   long long peerSampleCount = 0;
   std::size_t lastPeers = 0;
+  long long firstPeerSeenTs = 0;
+  long long lastPeerEventTs = 0;
+  long long peerEventCount = 0;
 
   while (gRunning) {
     sockaddr_in srcAddr{};
@@ -210,7 +257,13 @@ int main() {
     if (peers != lastPeers) {
       lastPeers = peers;
       lastPeerChangeTs = ts;
+      lastPeerEventTs = ts;
+      peerEventCount++;
+      if (peers > 0 && firstPeerSeenTs == 0) firstPeerSeenTs = ts;
+      std::cerr << "[cpp-link-bridge] peer-event peers=" << peers << " eventCount=" << peerEventCount << " ts=" << ts << std::endl;
     }
+
+    discoveryActive = (peerEventCount > 0 || peerSampleCount > 0) ? "true" : "unknown";
 
     std::ostringstream oss;
     oss << "{"
@@ -226,7 +279,13 @@ int main() {
         << "\"backendInitError\":\"" << jsonEscape(backendInitError) << "\","
         << "\"maxPeersSeen\":" << maxPeersSeen << ","
         << "\"lastPeerChangeTs\":" << lastPeerChangeTs << ","
-        << "\"peerSampleCount\":" << peerSampleCount
+        << "\"peerSampleCount\":" << peerSampleCount << ","
+        << "\"firstPeerSeenTs\":" << firstPeerSeenTs << ","
+        << "\"lastPeerEventTs\":" << lastPeerEventTs << ","
+        << "\"peerEventCount\":" << peerEventCount << ","
+        << "\"interfacesSummary\":\"" << jsonEscape(interfacesSummary) << "\","
+        << "\"primaryInterfaceHint\":\"" << jsonEscape(primaryInterfaceHint) << "\","
+        << "\"discoveryActive\":\"" << discoveryActive << "\""
         << "}";
 
     const auto ack = oss.str();
