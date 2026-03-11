@@ -100,14 +100,28 @@ public class SyncOutputManager {
                     if (!(ms instanceof Number)) ms = chosen.get("beatTimeMs");
                     Object bpm = chosen.get("bpm");
                     Object pitch = chosen.get("pitch");
-                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : lastTimeSec;
-                    if (ms instanceof Number) lastTimeSec = nowSec;
                     boolean playing = Boolean.TRUE.equals(chosen.get("playing"));
                     boolean active = !Boolean.FALSE.equals(chosen.get("active"));
+
+                    double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : lastTimeSec;
+                    if (ms instanceof Number) {
+                        lastTimeSec = nowSec;
+                    } else if (!playing) {
+                        // 换歌到未播放且时间字段缺失时，避免沿用上一首结尾时间。
+                        nowSec = 0.0;
+                        lastTimeSec = 0.0;
+                    }
+
+                    int beat = chosen.get("beat") instanceof Number ? ((Number) chosen.get("beat")).intValue() : -1;
+                    boolean stoppedLike = !playing && (beat < 0 || nowSec <= 0.05);
+                    if (stoppedLike) {
+                        lastTimeSec = 0.0;
+                    }
+
                     double speed = 1.0;
                     if (pitch instanceof Number) speed = 1.0 + ((Number) pitch).doubleValue() / 100.0;
                     clock.ingestReference(lastTimeSec, playing, speed);
-                    double outSec = clock.nowSeconds();
+                    double outSec = stoppedLike ? 0.0 : clock.nowSeconds();
 
                     derived.put("masterTimeSec", outSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
@@ -115,12 +129,17 @@ public class SyncOutputManager {
                     derived.put("sourceMode", sourceMode);
                     derived.put("sourcePlaying", playing);
                     derived.put("sourceActive", active);
-                    int beat = chosen.get("beat") instanceof Number ? ((Number) chosen.get("beat")).intValue() : -1;
                     // 规则：非播放时，beat=-1 视为 STOPPED；否则视为 PAUSED（驻留）
                     String st = !active ? "OFFLINE" : (playing ? "PLAYING" : (beat < 0 || nowSec <= 0.05 ? "STOPPED" : "PAUSED"));
                     sourceState = st;
                     sourcePlayer = chosen.get("number") instanceof Number ? ((Number) chosen.get("number")).intValue() : null;
                     derived.put("sourceState", st);
+                } else {
+                    // 没有可用源时，回到离线并归零时码，避免显示残留时间。
+                    sourceState = "OFFLINE";
+                    sourcePlayer = null;
+                    lastTimeSec = 0.0;
+                    clock.ingestReference(0.0, false, 1.0);
                 }
             }
         }
@@ -151,8 +170,18 @@ public class SyncOutputManager {
         out.put("drivers", ds);
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer);
-        out.put("rawTimeSec", lastTimeSec);
-        out.put("timecode", toTimecode(clock.nowSeconds(), 25));
+
+        boolean ltcEnabled = ds.get("ltc") instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) ds.get("ltc")).get("running"));
+        boolean mtcEnabled = ds.get("mtc") instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) ds.get("mtc")).get("running"));
+        boolean anyTcEnabled = ltcEnabled || mtcEnabled;
+
+        double displaySec = clock.nowSeconds();
+        if (!anyTcEnabled || "OFFLINE".equals(sourceState) || "STOPPED".equals(sourceState)) {
+            displaySec = 0.0;
+        }
+
+        out.put("rawTimeSec", anyTcEnabled ? lastTimeSec : 0.0);
+        out.put("timecode", toTimecode(displaySec, 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
     }
