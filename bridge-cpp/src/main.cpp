@@ -9,6 +9,7 @@
 #include <cmath>
 #include <csignal>
 #include <cstring>
+#include <cerrno>
 #include <iostream>
 #include <regex>
 #include <sstream>
@@ -142,6 +143,12 @@ int main() {
     return 3;
   }
 
+  // 关键：给 recvfrom 设置超时，保证收到 SIGTERM 后主循环能尽快退出，避免被管理器强杀(137)。
+  timeval tv{};
+  tv.tv_sec = 0;
+  tv.tv_usec = 200 * 1000; // 200ms
+  setsockopt(recvSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
   sockaddr_in ackAddr{};
   ackAddr.sin_family = AF_INET;
   ackAddr.sin_port = htons(static_cast<uint16_t>(ackPort));
@@ -158,7 +165,11 @@ int main() {
     socklen_t srcLen = sizeof(srcAddr);
     const ssize_t n = recvfrom(recvSock, buf, sizeof(buf) - 1, 0,
                                reinterpret_cast<sockaddr*>(&srcAddr), &srcLen);
-    if (n <= 0) continue;
+    if (n <= 0) {
+      if (!gRunning) break;
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
+      continue;
+    }
 
     buf[n] = '\0';
     std::string msg(buf, static_cast<size_t>(n));

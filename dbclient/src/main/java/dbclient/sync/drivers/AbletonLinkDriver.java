@@ -122,6 +122,7 @@ public class AbletonLinkDriver implements OutputDriver {
         m.put("bridgeLastExitReason", ps.getOrDefault("bridgeLastExitReason", ""));
         m.put("bridgeLastStdout", ps.getOrDefault("bridgeLastStdout", ""));
         m.put("bridgeLastStderr", ps.getOrDefault("bridgeLastStderr", ""));
+        m.put("bridgeKilledByManager", ps.getOrDefault("bridgeKilledByManager", false));
 
         // 默认先放“进程视角”的后端状态，避免 bridge client 未收到 ACK 时误报。
         m.put("backendMode", ps.getOrDefault("backendMode", "ack-only"));

@@ -25,6 +25,8 @@ public class AbletonLinkBridgeProcess {
     private Thread outThread;
     private Thread errThread;
     private volatile boolean expectedStop = false;
+    private volatile boolean killedByManager = false;
+    private long launchSeq = 0L;
 
     public synchronized Map<String, Object> start() {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -58,7 +60,10 @@ public class AbletonLinkBridgeProcess {
             pb.redirectErrorStream(false);
 
             process = pb.start();
+            launchSeq++;
+            final long seq = launchSeq;
             expectedStop = false;
+            killedByManager = false;
             startedAt = System.currentTimeMillis();
             lastError = "";
             lastExitCode = null;
@@ -69,7 +74,7 @@ public class AbletonLinkBridgeProcess {
             backendLoaded = false;
             backendInitError = "";
 
-            startPumpThreads(process);
+            startPumpThreads(process, seq);
 
             // 给子进程一点启动时间，避免“瞬间退出还显示 started”
             try { Thread.sleep(300); } catch (InterruptedException ignored) {}
@@ -108,9 +113,11 @@ public class AbletonLinkBridgeProcess {
                 return out;
             }
             expectedStop = true;
+            killedByManager = false;
             process.destroy();
             try {
-                if (!process.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS) && process.isAlive()) {
+                if (!process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS) && process.isAlive()) {
+                    killedByManager = true;
                     process.destroyForcibly();
                     process.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
                 }
@@ -152,6 +159,7 @@ public class AbletonLinkBridgeProcess {
         m.put("bridgeLastExitReason", lastExitReason == null ? "" : lastExitReason);
         m.put("bridgeLastStdout", tail(lastStdout, 800));
         m.put("bridgeLastStderr", tail(lastStderr, 800));
+        m.put("bridgeKilledByManager", killedByManager);
 
         m.put("backendMode", backendMode);
         m.put("backendLoaded", backendLoaded);
@@ -171,9 +179,9 @@ public class AbletonLinkBridgeProcess {
         return alive;
     }
 
-    private void startPumpThreads(Process p) {
-        outThread = new Thread(() -> pump(p.getInputStream(), false), "link-bridge-stdout");
-        errThread = new Thread(() -> pump(p.getErrorStream(), true), "link-bridge-stderr");
+    private void startPumpThreads(Process p, long seq) {
+        outThread = new Thread(() -> pump(p.getInputStream(), false, seq), "link-bridge-stdout");
+        errThread = new Thread(() -> pump(p.getErrorStream(), true, seq), "link-bridge-stderr");
         outThread.setDaemon(true);
         errThread.setDaemon(true);
         outThread.start();
@@ -182,10 +190,11 @@ public class AbletonLinkBridgeProcess {
         Thread watcher = new Thread(() -> {
             try {
                 int ec = p.waitFor();
+                if (seq != launchSeq) return; // 旧进程结束，不污染新状态
                 lastExitCode = ec;
                 if (expectedStop) {
                     if (lastExitReason == null || lastExitReason.isBlank()) lastExitReason = "stopped by API";
-                    if (ec == 143 || ec == 0) lastError = "";
+                    if (ec == 143 || ec == 137 || ec == 0) lastError = "";
                     return;
                 }
                 if (lastExitReason == null || lastExitReason.isBlank()) lastExitReason = "bridge process exited (code=" + ec + ")";
@@ -198,18 +207,20 @@ public class AbletonLinkBridgeProcess {
         watcher.start();
     }
 
-    private void pump(InputStream in, boolean stderr) {
+    private void pump(InputStream in, boolean stderr, long seq) {
         try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
+                if (seq != launchSeq) continue; // 旧进程输出不覆盖新状态
                 if (stderr) {
                     lastStderr = appendLine(lastStderr, line, 4000);
                 } else {
                     lastStdout = appendLine(lastStdout, line, 4000);
                 }
-                parseBackendHints(line);
+                parseBackendHints(line, seq);
             }
         } catch (Exception e) {
+            if (seq != launchSeq) return;
             if (stderr) {
                 lastStderr = appendLine(lastStderr, "[pump-error] " + e.getMessage(), 4000);
             } else {
@@ -218,7 +229,8 @@ public class AbletonLinkBridgeProcess {
         }
     }
 
-    private void parseBackendHints(String line) {
+    private void parseBackendHints(String line, long seq) {
+        if (seq != launchSeq) return;
         if (line == null) return;
         String s = line.trim();
         if (s.contains("abletonlink loaded")) {
