@@ -598,6 +598,7 @@
   </div>
 
   <section class="tab-panel active" id="panel-dashboard">
+    <div class="diag-card" id="dashboardLinkStatus">Ableton Link: loading...</div>
     <div id="mixerRow" class="mixer-row"></div>
     <div class="main" id="deckList"></div>
     <div class="mini-wrap">
@@ -1116,23 +1117,38 @@
         }
 
         const link = (((j || {}).drivers || {}).abletonLink) || {};
+        const running = !!link.running;
+        const enabled = !!link.enabled;
+        const peers = Number(link.numPeers || 0);
+        const tempo = Number(link.tempo || 0).toFixed(2);
+        const beat = Number(link.beatPosition || 0).toFixed(3);
+        const playing = !!link.playing;
+        const supported = !!link.carabinerSupported;
+        const cm = !!link.carabinerRunning;
+        const version = String(link.version || '');
+        const lastTs = Number(link.lastUpdateTs || 0);
+        const lastText = lastTs > 0 ? new Date(lastTs).toLocaleTimeString() : '-';
+        const err = String(link.error || '');
+
         const linkDiag = document.getElementById('linkDiag');
         if (linkDiag) {
-          const running = !!link.running;
-          const enabled = !!link.enabled;
-          const peers = Number(link.numPeers || 0);
-          const tempo = Number(link.tempo || 0).toFixed(2);
-          const beat = Number(link.beatPosition || 0).toFixed(3);
-          const playing = !!link.playing;
-          const supported = !!link.carabinerSupported;
-          const cm = !!link.carabinerRunning;
-          const err = String(link.error || '');
           if (err) {
             linkDiag.classList.add('error');
             linkDiag.textContent = `Link 错误：${err}`;
           } else {
             linkDiag.classList.remove('error');
             linkDiag.textContent = `Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | carabiner=${supported ? (cm ? 'Running' : 'Stopped') : 'Unsupported'} | tempo=${tempo} beat=${beat} playing=${playing ? 'Y' : 'N'} | peers=${peers}`;
+          }
+        }
+
+        const dashboardLink = document.getElementById('dashboardLinkStatus');
+        if (dashboardLink) {
+          if (err) {
+            dashboardLink.classList.add('error');
+            dashboardLink.textContent = `Ableton Link ERROR: ${err}`;
+          } else {
+            dashboardLink.classList.remove('error');
+            dashboardLink.textContent = `Ableton Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | carabiner=${supported ? (cm ? 'Running' : 'Stopped') : 'Unsupported'} | peers=${peers} | version=${version || '-'} | last=${lastText}`;
           }
         }
       } catch (_) {}
