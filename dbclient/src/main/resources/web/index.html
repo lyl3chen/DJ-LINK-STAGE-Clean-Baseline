@@ -598,6 +598,7 @@
   </div>
 
   <section class="tab-panel active" id="panel-dashboard">
+    <div class="diag-card" id="dashboardStatus">状态加载中...</div>
     <div id="mixerRow" class="mixer-row"></div>
     <div class="main" id="deckList"></div>
     <div class="mini-wrap">
@@ -1070,6 +1071,13 @@
 
         const mtc = (((j || {}).drivers || {}).mtc) || {};
         const globalTc = j.timecode || ltc.timecode || '00:00:00:00';
+
+        const dashboardStatus = document.getElementById('dashboardStatus');
+        if (dashboardStatus) {
+          const srcState = String(j.sourceState || 'OFFLINE');
+          const srcPlayer = j.sourcePlayer == null ? '-' : j.sourcePlayer;
+          dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | Live Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'}`;
+        }
         const tcEl = document.getElementById('ltcTimecode');
         if (tcEl) {
           tcEl.textContent = globalTc;
@@ -1158,6 +1166,12 @@
     }
 
     async function toggleScan() {
+      const btn = document.getElementById('scanToggleBtn');
+      const prevText = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '切换中...';
+      }
       try {
         const target = scanning ? 0 : 1;
         const r = await fetch(`/api/scan/toggle?enabled=${target}`);
@@ -1165,8 +1179,14 @@
         scanning = !!j.scanning;
         if (!scanning) players = [];
         scheduleRender(true);
-        refreshScanStatus();
-      } catch (_) {}
+        await refreshScanStatus();
+      } catch (_) {
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          if (btn.textContent === '切换中...') btn.textContent = prevText || (scanning ? '关闭扫描' : '开启扫描');
+        }
+      }
     }
 
     async function refreshMixerState() {
