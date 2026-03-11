@@ -137,6 +137,7 @@ public class SyncOutputManager {
 
                     derived.put("masterTimeSec", outSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
+                    if (pitch instanceof Number) derived.put("sourcePitchPct", ((Number) pitch).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
                     derived.put("sourcePlaying", playing);
