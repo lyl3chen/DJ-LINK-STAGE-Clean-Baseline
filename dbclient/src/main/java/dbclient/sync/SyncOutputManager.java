@@ -136,13 +136,7 @@ public class SyncOutputManager {
                     double outSec = stoppedLike ? 0.0 : clock.nowSeconds();
 
                     derived.put("masterTimeSec", outSec);
-                    if (bpm instanceof Number) {
-                        double playingBpm = ((Number) bpm).doubleValue();
-                        // 统一使用“去除 pitch 后”的原始 BPM，避免输出链路跟随变速后的速度。
-                        double baseBpm = Math.abs(speed) < 1e-6 ? playingBpm : (playingBpm / speed);
-                        if (!Double.isFinite(baseBpm) || baseBpm <= 0) baseBpm = playingBpm;
-                        derived.put("masterBpm", baseBpm);
-                    }
+                    if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
                     derived.put("sourcePlaying", playing);
