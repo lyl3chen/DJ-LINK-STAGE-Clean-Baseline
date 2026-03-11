@@ -123,10 +123,8 @@ public class UserSettingsStore {
                 "mtc", new LinkedHashMap<>(Map.of("enabled", false, "midiPort", "")),
                 "abletonLink", new LinkedHashMap<>(Map.of(
                         "enabled", false,
-                        "quantum", 4,
-                        "bridgeHost", "127.0.0.1",
-                        "bridgeSendPort", 19110,
-                        "bridgeListenPort", 19111
+                        "port", 17000,
+                        "updateIntervalMs", 20
                 ))
         )));
         m.put("ai", new LinkedHashMap<>(Map.of(
@@ -142,6 +140,20 @@ public class UserSettingsStore {
     private static void ensureDefaults(Map<String, Object> map) {
         Map<String, Object> def = defaultSettings();
         mergeMissing(map, def);
+
+        // 清理旧自研 bridge 残留配置，统一切换到 lib-carabiner 配置语义。
+        Object syncObj = map.get("sync");
+        if (syncObj instanceof Map) {
+            Map<String, Object> sync = (Map<String, Object>) syncObj;
+            Object linkObj = sync.get("abletonLink");
+            if (linkObj instanceof Map) {
+                Map<String, Object> link = (Map<String, Object>) linkObj;
+                link.remove("bridgeHost");
+                link.remove("bridgeSendPort");
+                link.remove("bridgeListenPort");
+                link.remove("quantum");
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

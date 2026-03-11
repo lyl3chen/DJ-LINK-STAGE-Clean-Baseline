@@ -8,7 +8,7 @@
     "sourceMode": "master",
     "masterPlayer": 1.0,
     "ltc": {
-      "enabled": true,
+      "enabled": false,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
@@ -17,11 +17,12 @@
     },
     "mtc": {
       "enabled": false,
-      "midiPort": ""
+      "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
-      "enabled": false,
-      "quantum": 4.0
+      "enabled": true,
+      "port": 17000.0,
+      "updateIntervalMs": 20.0
     },
     "consoleApi": {
       "enabled": true

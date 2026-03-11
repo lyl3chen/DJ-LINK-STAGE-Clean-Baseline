@@ -622,12 +622,9 @@
         <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
         <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
-        <div class="cfg-row"><label>Bridge Host</label><input id="cfgLinkHost" type="text" value="127.0.0.1" /></div>
-        <div class="cfg-row"><label>Bridge Send Port</label><input id="cfgLinkSendPort" type="number" value="19110" step="1" /></div>
-        <div class="cfg-row"><label>Bridge Listen Port</label><input id="cfgLinkListenPort" type="number" value="19111" step="1" /></div>
-        <div class="cfg-row"><button id="linkBridgeStartBtn" class="scan-btn">Start Bridge</button><button id="linkBridgeStopBtn" class="scan-btn" style="margin-left:8px">Stop Bridge</button></div>
-        <div class="diag-card" id="linkBridgeDiag">Bridge: stopped | pid: - | started: -</div>
-        <div class="diag-card" id="linkDiag">Link: Idle | peers: 0 | ack: -</div>
+        <div class="cfg-row"><label>Carabiner Port</label><input id="cfgLinkPort" type="number" value="17000" step="1" /></div>
+        <div class="cfg-row"><label>Update Interval (ms)</label><input id="cfgLinkUpdateMs" type="number" value="20" step="1" /></div>
+        <div class="diag-card" id="linkDiag">Link: Idle</div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
         <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
@@ -1006,9 +1003,8 @@
         document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
-        document.getElementById('cfgLinkHost').value = String(link.bridgeHost || '127.0.0.1');
-        document.getElementById('cfgLinkSendPort').value = String(link.bridgeSendPort || 19110);
-        document.getElementById('cfgLinkListenPort').value = String(link.bridgeListenPort || 19111);
+        document.getElementById('cfgLinkPort').value = String(link.port || 17000);
+        document.getElementById('cfgLinkUpdateMs').value = String(link.updateIntervalMs || 20);
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
       } catch (_) {}
@@ -1032,9 +1028,8 @@
           },
           abletonLink: {
             enabled: document.getElementById('cfgLinkEnabled').checked,
-            bridgeHost: (document.getElementById('cfgLinkHost').value || '127.0.0.1').trim(),
-            bridgeSendPort: Number(document.getElementById('cfgLinkSendPort').value || 19110),
-            bridgeListenPort: Number(document.getElementById('cfgLinkListenPort').value || 19111)
+            port: Number(document.getElementById('cfgLinkPort').value || 17000),
+            updateIntervalMs: Number(document.getElementById('cfgLinkUpdateMs').value || 20)
           }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
@@ -1045,27 +1040,6 @@
       loadSettings();
     }
 
-    async function startLinkBridge() {
-      try {
-        const r = await fetch('/api/sync/ableton-link/bridge/start', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: '{}' });
-        const j = await r.json();
-        document.getElementById('ioSaveMsg').textContent = j.ok ? 'Bridge 已启动' : `Bridge 启动失败: ${j.error || 'unknown'}`;
-        refreshSyncState();
-      } catch (e) {
-        document.getElementById('ioSaveMsg').textContent = `Bridge 启动失败: ${e && e.message ? e.message : e}`;
-      }
-    }
-
-    async function stopLinkBridge() {
-      try {
-        const r = await fetch('/api/sync/ableton-link/bridge/stop', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: '{}' });
-        const j = await r.json();
-        document.getElementById('ioSaveMsg').textContent = j.ok ? 'Bridge 已停止' : `Bridge 停止失败: ${j.error || 'unknown'}`;
-        refreshSyncState();
-      } catch (e) {
-        document.getElementById('ioSaveMsg').textContent = `Bridge 停止失败: ${e && e.message ? e.message : e}`;
-      }
-    }
 
     async function generateAiRule() {
       const prompt = document.getElementById('aiPrompt').value || '';
@@ -1142,39 +1116,23 @@
         }
 
         const link = (((j || {}).drivers || {}).abletonLink) || {};
-        const bridgeDiag = document.getElementById('linkBridgeDiag');
-        if (bridgeDiag) {
-          const br = !!link.bridgeRunning;
-          const pid = Number(link.bridgePid || 0);
-          const st = Number(link.bridgeStartedAt || 0);
-          const stText = st > 0 ? new Date(st).toLocaleTimeString() : '-';
-          const berr = String(link.bridgeError || '');
-          if (berr) {
-            bridgeDiag.classList.add('error');
-            bridgeDiag.textContent = `Bridge: ${br ? 'running' : 'stopped'} | pid: ${pid || '-'} | started: ${stText} | error: ${berr}`;
-          } else {
-            bridgeDiag.classList.remove('error');
-            bridgeDiag.textContent = `Bridge: ${br ? 'running' : 'stopped'} | pid: ${pid || '-'} | started: ${stText}`;
-          }
-        }
-
         const linkDiag = document.getElementById('linkDiag');
         if (linkDiag) {
-          const ackTs = Number(link.lastAckTs || 0);
-          const ackText = ackTs > 0 ? new Date(ackTs).toLocaleTimeString() : '-';
           const running = !!link.running;
           const enabled = !!link.enabled;
           const peers = Number(link.numPeers || 0);
           const tempo = Number(link.tempo || 0).toFixed(2);
           const beat = Number(link.beatPosition || 0).toFixed(3);
           const playing = !!link.playing;
+          const supported = !!link.carabinerSupported;
+          const cm = !!link.carabinerRunning;
           const err = String(link.error || '');
           if (err) {
             linkDiag.classList.add('error');
             linkDiag.textContent = `Link 错误：${err}`;
           } else {
             linkDiag.classList.remove('error');
-            linkDiag.textContent = `Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | tempo=${tempo} beat=${beat} playing=${playing ? 'Y' : 'N'} | peers=${peers} | ack=${ackText}`;
+            linkDiag.textContent = `Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | carabiner=${supported ? (cm ? 'Running' : 'Stopped') : 'Unsupported'} | tempo=${tempo} beat=${beat} playing=${playing ? 'Y' : 'N'} | peers=${peers}`;
           }
         }
       } catch (_) {}
@@ -1506,8 +1464,6 @@
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
-    document.getElementById('linkBridgeStartBtn')?.addEventListener('click', startLinkBridge);
-    document.getElementById('linkBridgeStopBtn')?.addEventListener('click', stopLinkBridge);
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
     document.getElementById('deckList')?.addEventListener('wheel', (e) => {

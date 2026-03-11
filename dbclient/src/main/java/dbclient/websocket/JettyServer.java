@@ -78,8 +78,6 @@ public class JettyServer {
                         result = withRuntime(settingsStore.getAll());
                     } else if (path.equals("/api/sync/state")) {
                         result = syncOutputManager.getStatus();
-                    } else if (path.equals("/api/sync/ableton-link/bridge")) {
-                        result = syncOutputManager.abletonLinkBridgeStatus();
                     } else if (path.equals("/api/scan")) {
                         result = (Map<String, Object>) dmClass.getMethod("getScanStatus").invoke(dm);
                     } else if (path.equals("/api/scan/toggle")) {
@@ -183,16 +181,6 @@ public class JettyServer {
                         @SuppressWarnings("unchecked")
                         Map<String, Object> trackMeta = payload.get("trackMeta") instanceof Map ? (Map<String, Object>) payload.get("trackMeta") : Map.of();
                         Map<String, Object> out = aiAgentService.createAndPersistRule(prompt, trackMeta);
-                        response.getWriter().print(gson.toJson(out));
-                        return;
-                    }
-                    if (path.equals("/api/sync/ableton-link/bridge/start")) {
-                        Map<String, Object> out = syncOutputManager.startAbletonLinkBridge();
-                        response.getWriter().print(gson.toJson(out));
-                        return;
-                    }
-                    if (path.equals("/api/sync/ableton-link/bridge/stop")) {
-                        Map<String, Object> out = syncOutputManager.stopAbletonLinkBridge();
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
