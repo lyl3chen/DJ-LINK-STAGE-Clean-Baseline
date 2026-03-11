@@ -38,16 +38,21 @@ public class AbletonLinkBridgeProcess {
 
             String userDir = System.getProperty("user.dir", ".");
             File workDir = new File(userDir);
-            File script = new File(workDir, "../scripts/ableton-link-bridge.js");
-            if (!script.exists()) {
-                lastError = "bridge script not found: " + script.getAbsolutePath();
+            File bin = new File(workDir, "../bin/ableton-link-bridge");
+            if (!bin.exists()) {
+                lastError = "bridge binary not found: " + bin.getAbsolutePath() + " (build bridge-cpp first)";
                 out.put("ok", false);
                 out.put("error", lastError);
                 out.putAll(status());
                 return out;
             }
 
-            ProcessBuilder pb = new ProcessBuilder("node", script.getAbsolutePath());
+            if (!bin.canExecute()) {
+                //noinspection ResultOfMethodCallIgnored
+                bin.setExecutable(true);
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(bin.getAbsolutePath());
             pb.directory(workDir);
             // 不 merge，分别抓 stdout/stderr，便于 API 回传退出原因。
             pb.redirectErrorStream(false);
@@ -105,9 +110,11 @@ public class AbletonLinkBridgeProcess {
             expectedStop = true;
             process.destroy();
             try {
-                process.waitFor();
+                if (!process.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS) && process.isAlive()) {
+                    process.destroyForcibly();
+                    process.waitFor(1200, java.util.concurrent.TimeUnit.MILLISECONDS);
+                }
             } catch (InterruptedException ignored) {}
-            if (process.isAlive()) process.destroyForcibly();
             if (process != null) {
                 try {
                     lastExitCode = process.exitValue();
