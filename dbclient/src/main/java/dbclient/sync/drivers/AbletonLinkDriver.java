@@ -118,16 +118,33 @@ public class AbletonLinkDriver implements OutputDriver {
         m.put("bridgePid", ps.getOrDefault("bridgePid", 0L));
         m.put("bridgeStartedAt", ps.getOrDefault("bridgeStartedAt", 0L));
         m.put("bridgeError", ps.getOrDefault("bridgeError", ""));
+        m.put("bridgeExitCode", ps.getOrDefault("bridgeExitCode", 0));
+        m.put("bridgeLastExitReason", ps.getOrDefault("bridgeLastExitReason", ""));
+        m.put("bridgeLastStdout", ps.getOrDefault("bridgeLastStdout", ""));
+        m.put("bridgeLastStderr", ps.getOrDefault("bridgeLastStderr", ""));
+
+        // 默认先放“进程视角”的后端状态，避免 bridge client 未收到 ACK 时误报。
+        m.put("backendMode", ps.getOrDefault("backendMode", "ack-only"));
+        m.put("backendLoaded", ps.getOrDefault("backendLoaded", false));
+        m.put("backendInitError", ps.getOrDefault("backendInitError", ""));
+        m.put("backendVersion", "");
+        m.put("peerDetectionWorking", "unknown");
+        m.put("numPeers", 0);
+        m.put("lastAckTs", 0);
 
         if (bridge != null) {
             Map<String, Object> bs = bridge.status();
+            long ackTs = bs.get("lastAckTs") instanceof Number ? ((Number) bs.get("lastAckTs")).longValue() : 0L;
             m.put("numPeers", bs.getOrDefault("numPeers", 0));
-            m.put("lastAckTs", bs.getOrDefault("lastAckTs", 0));
-            m.put("backendMode", bs.getOrDefault("backendMode", "ack-only"));
-            m.put("backendLoaded", bs.getOrDefault("backendLoaded", false));
-            m.put("backendVersion", bs.getOrDefault("backendVersion", ""));
-            m.put("peerDetectionWorking", bs.getOrDefault("peerDetectionWorking", "unknown"));
-            m.put("backendInitError", bs.getOrDefault("backendInitError", ""));
+            m.put("lastAckTs", ackTs);
+            // 仅当收到过 ACK 时，才用 bridge client 的后端字段覆盖进程字段。
+            if (ackTs > 0) {
+                m.put("backendMode", bs.getOrDefault("backendMode", m.get("backendMode")));
+                m.put("backendLoaded", bs.getOrDefault("backendLoaded", m.get("backendLoaded")));
+                m.put("backendVersion", bs.getOrDefault("backendVersion", ""));
+                m.put("peerDetectionWorking", bs.getOrDefault("peerDetectionWorking", "unknown"));
+                m.put("backendInitError", bs.getOrDefault("backendInitError", m.get("backendInitError")));
+            }
             if (error == null || error.isEmpty()) {
                 Object be = bs.get("error");
                 String ee = be == null ? "" : String.valueOf(be);
@@ -137,13 +154,6 @@ public class AbletonLinkDriver implements OutputDriver {
                 m.put("error", error);
             }
         } else {
-            m.put("numPeers", 0);
-            m.put("lastAckTs", 0);
-            m.put("backendMode", "ack-only");
-            m.put("backendLoaded", false);
-            m.put("backendVersion", "");
-            m.put("peerDetectionWorking", "unknown");
-            m.put("backendInitError", "");
             String ee = error == null ? "" : error;
             if (ee.isEmpty()) ee = String.valueOf(ps.getOrDefault("bridgeError", ""));
             m.put("error", ee);
