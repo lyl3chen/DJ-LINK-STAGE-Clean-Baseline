@@ -99,15 +99,28 @@ long long nowMs() {
   return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
 
-std::string collectInterfacesSummary(std::string& primaryHint) {
+bool isVirtualIface(const std::string& ifname) {
+  return ifname.find("docker") == 0 || ifname.find("br-") == 0 || ifname.find("veth") == 0 ||
+         ifname.find("virbr") == 0 || ifname.find("vmnet") == 0 || ifname.find("lo") == 0;
+}
+
+std::string collectInterfacesSummary(std::string& primaryHint, std::string& physicalSummary, std::string& virtualSummary) {
   primaryHint.clear();
-  std::ostringstream oss;
-  bool first = true;
+  physicalSummary.clear();
+  virtualSummary.clear();
+
+  std::ostringstream all;
+  bool firstAll = true;
+  bool firstPhys = true;
+  bool firstVirt = true;
 
   ifaddrs* ifaddr = nullptr;
   if (getifaddrs(&ifaddr) == -1) {
     return "ifaddrs_error";
   }
+
+  const char* hintEnv = std::getenv("LINK_IFACE_HINT");
+  std::string hint = hintEnv ? hintEnv : "";
 
   for (ifaddrs* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
     if (!ifa->ifa_addr) continue;
@@ -122,18 +135,39 @@ std::string collectInterfacesSummary(std::string& primaryHint) {
     std::string ipStr = ip;
     if (ipStr == "127.0.0.1") continue;
 
-    if (!first) oss << "; ";
-    first = false;
-    oss << ifname << "=" << ipStr;
+    const bool virt = isVirtualIface(ifname);
+    const std::string item = ifname + "=" + ipStr;
 
-    if (primaryHint.empty() && ifname.find("docker") == std::string::npos && ifname.find("veth") == std::string::npos) {
-      primaryHint = ifname + "(" + ipStr + ")";
+    if (!firstAll) all << "; ";
+    firstAll = false;
+    all << item;
+
+    if (virt) {
+      if (!firstVirt) virtualSummary += "; ";
+      firstVirt = false;
+      virtualSummary += item;
+    } else {
+      if (!firstPhys) physicalSummary += "; ";
+      firstPhys = false;
+      physicalSummary += item;
+
+      if (!hint.empty() && ifname == hint) {
+        primaryHint = ifname + "(" + ipStr + ") [hint-match]";
+      }
+      if (primaryHint.empty()) {
+        primaryHint = ifname + "(" + ipStr + ")";
+      }
     }
   }
 
   freeifaddrs(ifaddr);
-  if (primaryHint.empty()) primaryHint = "unknown";
-  auto out = oss.str();
+  if (physicalSummary.empty()) physicalSummary = "none";
+  if (virtualSummary.empty()) virtualSummary = "none";
+  if (primaryHint.empty()) {
+    primaryHint = hint.empty() ? "unknown" : ("hint=" + hint + " (no-match)");
+  }
+
+  auto out = all.str();
   return out.empty() ? "none" : out;
 }
 
@@ -159,8 +193,12 @@ int main() {
   std::string backendVersion = "ableton-link-cpp";
   std::string peerDetectionWorking = "true";
   std::string primaryInterfaceHint;
-  std::string interfacesSummary = collectInterfacesSummary(primaryInterfaceHint);
+  std::string physicalInterfaces;
+  std::string virtualInterfaces;
+  std::string interfacesSummary = collectInterfacesSummary(primaryInterfaceHint, physicalInterfaces, virtualInterfaces);
   std::string discoveryActive = "unknown";
+  const char* hintEnv = std::getenv("LINK_IFACE_HINT");
+  std::string ifaceHint = hintEnv ? hintEnv : "";
 
   std::cerr << "[cpp-link-bridge] abletonlink loaded" << std::endl;
 
@@ -199,7 +237,9 @@ int main() {
 
   std::cerr << "[cpp-link-bridge] listening udp://" << host << ":" << listenPort
             << ", ack=>udp://" << ackHost << ":" << ackPort << std::endl;
-  std::cerr << "[cpp-link-bridge] interfaces=" << interfacesSummary << " primary=" << primaryInterfaceHint << std::endl;
+  std::cerr << "[cpp-link-bridge] iface-hint=" << (ifaceHint.empty() ? "(none)" : ifaceHint)
+            << " primary=" << primaryInterfaceHint << std::endl;
+  std::cerr << "[cpp-link-bridge] interfaces physical=[" << physicalInterfaces << "] virtual=[" << virtualInterfaces << "]" << std::endl;
 
   char buf[4096];
   SyncPayload payload;
@@ -211,43 +251,47 @@ int main() {
   long long firstPeerSeenTs = 0;
   long long lastPeerEventTs = 0;
   long long peerEventCount = 0;
+  long long lastAckEmitTs = 0;
 
   while (gRunning) {
     sockaddr_in srcAddr{};
     socklen_t srcLen = sizeof(srcAddr);
     const ssize_t n = recvfrom(recvSock, buf, sizeof(buf) - 1, 0,
                                reinterpret_cast<sockaddr*>(&srcAddr), &srcLen);
-    if (n <= 0) {
-      if (!gRunning) break;
-      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
-      continue;
-    }
 
-    buf[n] = '\0';
-    std::string msg(buf, static_cast<size_t>(n));
-
-    std::string parseErr;
-    bool ok = parsePayload(msg, payload, parseErr);
     std::string error;
+    bool gotPacket = false;
+    if (n > 0) {
+      gotPacket = true;
+      buf[n] = '\0';
+      std::string msg(buf, static_cast<size_t>(n));
 
-    if (!ok) {
-      error = parseErr;
+      std::string parseErr;
+      bool ok = parsePayload(msg, payload, parseErr);
+      if (!ok) {
+        error = parseErr;
+      } else {
+        const auto micros = std::chrono::microseconds(payload.timestamp * 1000);
+        auto state = link.captureAppSessionState();
+        if (std::isfinite(payload.tempo) && payload.tempo > 0.0) {
+          state.setTempo(payload.tempo, micros);
+        }
+        if (std::isfinite(payload.beatPosition)) {
+          state.requestBeatAtTime(payload.beatPosition, micros, 4.0);
+        }
+        state.setIsPlaying(payload.playing, micros);
+        link.commitAppSessionState(state);
+
+        std::cerr << "[cpp-link-bridge] rx tempo=" << payload.tempo
+                  << " beat=" << payload.beatPosition
+                  << " playing=" << (payload.playing ? "true" : "false")
+                  << " ts=" << payload.timestamp << std::endl;
+      }
     } else {
-      const auto micros = std::chrono::microseconds(payload.timestamp * 1000);
-      auto state = link.captureAppSessionState();
-      if (std::isfinite(payload.tempo) && payload.tempo > 0.0) {
-        state.setTempo(payload.tempo, micros);
+      if (!gRunning) break;
+      if (!(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+        error = "recv_error";
       }
-      if (std::isfinite(payload.beatPosition)) {
-        state.requestBeatAtTime(payload.beatPosition, micros, 4.0);
-      }
-      state.setIsPlaying(payload.playing, micros);
-      link.commitAppSessionState(state);
-
-      std::cerr << "[cpp-link-bridge] rx tempo=" << payload.tempo
-                << " beat=" << payload.beatPosition
-                << " playing=" << (payload.playing ? "true" : "false")
-                << " ts=" << payload.timestamp << std::endl;
     }
 
     const std::size_t peers = link.numPeers();
@@ -264,33 +308,47 @@ int main() {
     }
 
     discoveryActive = (peerEventCount > 0 || peerSampleCount > 0) ? "true" : "unknown";
+    if (peerSampleCount % 100 == 0) {
+      std::cerr << "[cpp-link-bridge] discovery-sample peers=" << peers
+                << " maxPeersSeen=" << maxPeersSeen
+                << " peerEventCount=" << peerEventCount
+                << " firstPeerSeenTs=" << firstPeerSeenTs
+                << " lastPeerEventTs=" << lastPeerEventTs
+                << " ifaceHint=" << (ifaceHint.empty() ? "(none)" : ifaceHint)
+                << " primary=" << primaryInterfaceHint
+                << std::endl;
+    }
 
-    std::ostringstream oss;
-    oss << "{"
-        << "\"type\":\"ack\"," 
-        << "\"running\":true,"
-        << "\"numPeers\":" << peers << ","
-        << "\"lastAckTs\":" << ts << ","
-        << "\"error\":\"" << jsonEscape(error) << "\"," 
-        << "\"backendMode\":\"" << backendMode << "\"," 
-        << "\"backendLoaded\":" << (backendLoaded ? "true" : "false") << ","
-        << "\"backendVersion\":\"" << jsonEscape(backendVersion) << "\"," 
-        << "\"peerDetectionWorking\":\"" << peerDetectionWorking << "\"," 
-        << "\"backendInitError\":\"" << jsonEscape(backendInitError) << "\","
-        << "\"maxPeersSeen\":" << maxPeersSeen << ","
-        << "\"lastPeerChangeTs\":" << lastPeerChangeTs << ","
-        << "\"peerSampleCount\":" << peerSampleCount << ","
-        << "\"firstPeerSeenTs\":" << firstPeerSeenTs << ","
-        << "\"lastPeerEventTs\":" << lastPeerEventTs << ","
-        << "\"peerEventCount\":" << peerEventCount << ","
-        << "\"interfacesSummary\":\"" << jsonEscape(interfacesSummary) << "\","
-        << "\"primaryInterfaceHint\":\"" << jsonEscape(primaryInterfaceHint) << "\","
-        << "\"discoveryActive\":\"" << discoveryActive << "\""
-        << "}";
+    const bool shouldAck = gotPacket || (ts - lastAckEmitTs >= 500);
+    if (shouldAck) {
+      std::ostringstream oss;
+      oss << "{"
+          << "\"type\":\"ack\"," 
+          << "\"running\":true,"
+          << "\"numPeers\":" << peers << ","
+          << "\"lastAckTs\":" << ts << ","
+          << "\"error\":\"" << jsonEscape(error) << "\"," 
+          << "\"backendMode\":\"" << backendMode << "\"," 
+          << "\"backendLoaded\":" << (backendLoaded ? "true" : "false") << ","
+          << "\"backendVersion\":\"" << jsonEscape(backendVersion) << "\"," 
+          << "\"peerDetectionWorking\":\"" << peerDetectionWorking << "\"," 
+          << "\"backendInitError\":\"" << jsonEscape(backendInitError) << "\","
+          << "\"maxPeersSeen\":" << maxPeersSeen << ","
+          << "\"lastPeerChangeTs\":" << lastPeerChangeTs << ","
+          << "\"peerSampleCount\":" << peerSampleCount << ","
+          << "\"firstPeerSeenTs\":" << firstPeerSeenTs << ","
+          << "\"lastPeerEventTs\":" << lastPeerEventTs << ","
+          << "\"peerEventCount\":" << peerEventCount << ","
+          << "\"interfacesSummary\":\"" << jsonEscape("physical=[" + physicalInterfaces + "]; virtual=[" + virtualInterfaces + "]") << "\","
+          << "\"primaryInterfaceHint\":\"" << jsonEscape(primaryInterfaceHint + (ifaceHint.empty() ? "" : ("; hint=" + ifaceHint))) << "\","
+          << "\"discoveryActive\":\"" << discoveryActive << "\""
+          << "}";
 
-    const auto ack = oss.str();
-    sendto(sendSock, ack.c_str(), ack.size(), 0,
-           reinterpret_cast<sockaddr*>(&ackAddr), sizeof(ackAddr));
+      const auto ack = oss.str();
+      sendto(sendSock, ack.c_str(), ack.size(), 0,
+             reinterpret_cast<sockaddr*>(&ackAddr), sizeof(ackAddr));
+      lastAckEmitTs = ts;
+    }
   }
 
   ::close(recvSock);
