@@ -29,17 +29,29 @@ public class SyncOutputManager {
 
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
 
+    private volatile boolean applying = false;
+
     @SuppressWarnings("unchecked")
     public synchronized void applySettings() {
-        Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
-        Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());
-        for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
-            Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
-            boolean enabled = Boolean.TRUE.equals(cfg.get("enabled"));
-            // 配置保存后强制重启驱动，确保 deviceName/fps/gain 等修改立即生效。
-            e.getValue().stop();
-            if (enabled) e.getValue().start(cfg);
-        }
+        if (applying) return;
+        applying = true;
+        new Thread(() -> {
+            try {
+                Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
+                Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());
+                for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
+                    Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
+                    boolean enabled = Boolean.TRUE.equals(cfg.get("enabled"));
+                    // 配置保存后重启驱动，确保修改立即生效。
+                    try { e.getValue().stop(); } catch (Exception ignored) {}
+                    if (enabled) {
+                        try { e.getValue().start(cfg); } catch (Exception ignored) {}
+                    }
+                }
+            } finally {
+                applying = false;
+            }
+        }, "sync-apply-settings").start();
     }
 
     public synchronized void onSemanticEvent(String event, Integer player, Map<String, Object> data) {

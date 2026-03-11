@@ -60,8 +60,15 @@ public class CarabinerLinkEngine {
             }
             runner.start();
             running = true; // 必须先置 true，读写线程的 while 才会进入
-            connectAndListen();
-            error = "";
+            error = "starting carabiner connection...";
+            new Thread(() -> {
+                try {
+                    connectAndListen();
+                    error = "";
+                } catch (Exception e) {
+                    if (running) error = "carabiner start failed: " + e.getMessage();
+                }
+            }, "carabiner-connect").start();
         } catch (Exception e) {
             running = false;
             error = "carabiner start failed: " + e.getMessage();
