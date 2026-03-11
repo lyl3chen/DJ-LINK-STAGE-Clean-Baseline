@@ -29,6 +29,7 @@ public class CarabinerLinkEngine {
     private volatile double desiredTempo = 120.0;
     private volatile boolean desiredPlaying = false;
     private volatile long carabinerStartRaw = 0L;
+    private volatile double lastSentTempo = -1.0;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -186,7 +187,11 @@ public class CarabinerLinkEngine {
                 try {
                     writer.write("status\n");
                     writer.write("version\n");
-                    writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
+                    // 提高 BPM 推送频率并仅在变化时发送，减少推子时的台阶跳变。
+                    if (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.01) {
+                        writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
+                        lastSentTempo = desiredTempo;
+                    }
                     writer.flush();
                 } catch (Exception e) {
                     if (running) {
@@ -194,7 +199,7 @@ public class CarabinerLinkEngine {
                         tryReconnect();
                     }
                 }
-                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                try { Thread.sleep(100); } catch (InterruptedException ignored) {}
             }
         }, "carabiner-ping");
         pingThread.setDaemon(true);
