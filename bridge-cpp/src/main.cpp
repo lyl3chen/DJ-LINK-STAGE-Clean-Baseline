@@ -155,7 +155,8 @@ std::string collectInterfacesSummary(std::string& primaryHint, std::string& phys
         primaryHint = ifname + "(" + ipStr + ") [hint-match]";
       }
       if (primaryHint.empty()) {
-        primaryHint = ifname + "(" + ipStr + ")";
+        if (hint.empty()) primaryHint = ifname + "(" + ipStr + ") [auto-physical]";
+        else primaryHint = ifname + "(" + ipStr + ")";
       }
     }
   }
