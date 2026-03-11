@@ -622,6 +622,10 @@
         <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
         <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>Bridge Host</label><input id="cfgLinkHost" type="text" value="127.0.0.1" /></div>
+        <div class="cfg-row"><label>Bridge Send Port</label><input id="cfgLinkSendPort" type="number" value="19110" step="1" /></div>
+        <div class="cfg-row"><label>Bridge Listen Port</label><input id="cfgLinkListenPort" type="number" value="19111" step="1" /></div>
+        <div class="diag-card" id="linkDiag">Link: Idle | peers: 0 | ack: -</div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
         <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
@@ -1000,6 +1004,9 @@
         document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
+        document.getElementById('cfgLinkHost').value = String(link.bridgeHost || '127.0.0.1');
+        document.getElementById('cfgLinkSendPort').value = String(link.bridgeSendPort || 19110);
+        document.getElementById('cfgLinkListenPort').value = String(link.bridgeListenPort || 19111);
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
       } catch (_) {}
@@ -1021,13 +1028,18 @@
             enabled: document.getElementById('cfgMtcEnabled').checked,
             midiPort: document.getElementById('cfgMtcPort').value || 'default'
           },
-          abletonLink: { enabled: document.getElementById('cfgLinkEnabled').checked }
+          abletonLink: {
+            enabled: document.getElementById('cfgLinkEnabled').checked,
+            bridgeHost: (document.getElementById('cfgLinkHost').value || '127.0.0.1').trim(),
+            bridgeSendPort: Number(document.getElementById('cfgLinkSendPort').value || 19110),
+            bridgeListenPort: Number(document.getElementById('cfgLinkListenPort').value || 19111)
+          }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
       };
       const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
       const j = await r.json();
-      document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（LTC已热重载）' : '保存失败';
+      document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（Sync 输出已热重载）' : '保存失败';
       loadSettings();
     }
 
@@ -1102,6 +1114,27 @@
             else if (os.startsWith('SILENT_')) st = '已断流（源未播放/离线）';
             const target = mtc.activePort || mtc.midiPort || '-';
             mtcDiag.textContent = `状态：${st} ｜ 目标端口：${target}`;
+          }
+        }
+
+        const link = (((j || {}).drivers || {}).abletonLink) || {};
+        const linkDiag = document.getElementById('linkDiag');
+        if (linkDiag) {
+          const ackTs = Number(link.lastAckTs || 0);
+          const ackText = ackTs > 0 ? new Date(ackTs).toLocaleTimeString() : '-';
+          const running = !!link.running;
+          const enabled = !!link.enabled;
+          const peers = Number(link.numPeers || 0);
+          const tempo = Number(link.tempo || 0).toFixed(2);
+          const beat = Number(link.beatPosition || 0).toFixed(3);
+          const playing = !!link.playing;
+          const err = String(link.error || '');
+          if (err) {
+            linkDiag.classList.add('error');
+            linkDiag.textContent = `Link 错误：${err}`;
+          } else {
+            linkDiag.classList.remove('error');
+            linkDiag.textContent = `Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | tempo=${tempo} beat=${beat} playing=${playing ? 'Y' : 'N'} | peers=${peers} | ack=${ackText}`;
           }
         }
       } catch (_) {}
