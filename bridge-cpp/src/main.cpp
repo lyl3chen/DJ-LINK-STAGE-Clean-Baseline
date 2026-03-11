@@ -160,6 +160,11 @@ int main() {
   char buf[4096];
   SyncPayload payload;
 
+  std::size_t maxPeersSeen = 0;
+  long long lastPeerChangeTs = 0;
+  long long peerSampleCount = 0;
+  std::size_t lastPeers = 0;
+
   while (gRunning) {
     sockaddr_in srcAddr{};
     socklen_t srcLen = sizeof(srcAddr);
@@ -200,6 +205,12 @@ int main() {
 
     const std::size_t peers = link.numPeers();
     const long long ts = nowMs();
+    peerSampleCount++;
+    if (peers > maxPeersSeen) maxPeersSeen = peers;
+    if (peers != lastPeers) {
+      lastPeers = peers;
+      lastPeerChangeTs = ts;
+    }
 
     std::ostringstream oss;
     oss << "{"
@@ -212,7 +223,10 @@ int main() {
         << "\"backendLoaded\":" << (backendLoaded ? "true" : "false") << ","
         << "\"backendVersion\":\"" << jsonEscape(backendVersion) << "\"," 
         << "\"peerDetectionWorking\":\"" << peerDetectionWorking << "\"," 
-        << "\"backendInitError\":\"" << jsonEscape(backendInitError) << "\""
+        << "\"backendInitError\":\"" << jsonEscape(backendInitError) << "\","
+        << "\"maxPeersSeen\":" << maxPeersSeen << ","
+        << "\"lastPeerChangeTs\":" << lastPeerChangeTs << ","
+        << "\"peerSampleCount\":" << peerSampleCount
         << "}";
 
     const auto ack = oss.str();

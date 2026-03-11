@@ -32,6 +32,9 @@ public class AbletonLinkBridgeClient {
     private volatile String backendVersion = "";
     private volatile String peerDetectionWorking = "unknown";
     private volatile String backendInitError = "";
+    private volatile int maxPeersSeen = 0;
+    private volatile long lastPeerChangeTs = 0L;
+    private volatile long peerSampleCount = 0L;
 
     public AbletonLinkBridgeClient(String host, int sendPort, int listenPort) {
         this.host = host;
@@ -104,6 +107,9 @@ public class AbletonLinkBridgeClient {
         m.put("backendVersion", backendVersion);
         m.put("peerDetectionWorking", peerDetectionWorking);
         m.put("backendInitError", backendInitError);
+        m.put("maxPeersSeen", maxPeersSeen);
+        m.put("lastPeerChangeTs", lastPeerChangeTs);
+        m.put("peerSampleCount", peerSampleCount);
         return m;
     }
 
@@ -126,6 +132,9 @@ public class AbletonLinkBridgeClient {
                 Object bv = m.get("backendVersion");
                 Object pd = m.get("peerDetectionWorking");
                 Object bie = m.get("backendInitError");
+                Object mps = m.get("maxPeersSeen");
+                Object lpct = m.get("lastPeerChangeTs");
+                Object psc = m.get("peerSampleCount");
                 bridgeRunning = Boolean.TRUE.equals(r);
                 if (p instanceof Number) numPeers = ((Number) p).intValue();
                 if (t instanceof Number) lastAckTs = ((Number) t).longValue();
@@ -135,6 +144,9 @@ public class AbletonLinkBridgeClient {
                 backendVersion = bv == null ? "" : String.valueOf(bv);
                 peerDetectionWorking = pd == null ? "unknown" : String.valueOf(pd);
                 backendInitError = bie == null ? "" : String.valueOf(bie);
+                if (mps instanceof Number) maxPeersSeen = ((Number) mps).intValue();
+                if (lpct instanceof Number) lastPeerChangeTs = ((Number) lpct).longValue();
+                if (psc instanceof Number) peerSampleCount = ((Number) psc).longValue();
             } catch (Exception ex) {
                 if (running) error = "bridge recv failed: " + ex.getMessage();
             }

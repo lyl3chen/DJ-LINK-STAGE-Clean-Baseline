@@ -131,12 +131,18 @@ public class AbletonLinkDriver implements OutputDriver {
         m.put("backendVersion", "");
         m.put("peerDetectionWorking", "unknown");
         m.put("numPeers", 0);
+        m.put("maxPeersSeen", 0);
+        m.put("lastPeerChangeTs", 0L);
+        m.put("peerSampleCount", 0L);
         m.put("lastAckTs", 0);
 
         if (bridge != null) {
             Map<String, Object> bs = bridge.status();
             long ackTs = bs.get("lastAckTs") instanceof Number ? ((Number) bs.get("lastAckTs")).longValue() : 0L;
             m.put("numPeers", bs.getOrDefault("numPeers", 0));
+            m.put("maxPeersSeen", bs.getOrDefault("maxPeersSeen", 0));
+            m.put("lastPeerChangeTs", bs.getOrDefault("lastPeerChangeTs", 0L));
+            m.put("peerSampleCount", bs.getOrDefault("peerSampleCount", 0L));
             m.put("lastAckTs", ackTs);
             // 仅当收到过 ACK 时，才用 bridge client 的后端字段覆盖进程字段。
             if (ackTs > 0) {
