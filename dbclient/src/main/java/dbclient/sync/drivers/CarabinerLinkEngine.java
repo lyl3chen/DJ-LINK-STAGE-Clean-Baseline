@@ -48,8 +48,12 @@ public class CarabinerLinkEngine {
         updateIntervalMs = intCfg(cfg, "updateIntervalMs", 20);
 
         try {
-            runner.setPort(port);
-            runner.setUpdateInterval(updateIntervalMs);
+            try {
+                runner.setPort(port);
+                runner.setUpdateInterval(updateIntervalMs);
+            } catch (IllegalStateException ignored) {
+                // Carabiner 可能尚在运行（或刚被停止尚未完全退出），沿用当前配置继续连接。
+            }
             runner.start();
             running = true; // 必须先置 true，读写线程的 while 才会进入
             connectAndListen();

@@ -598,7 +598,6 @@
   </div>
 
   <section class="tab-panel active" id="panel-dashboard">
-    <div class="diag-card" id="dashboardLinkStatus">Ableton Link: loading...</div>
     <div id="mixerRow" class="mixer-row"></div>
     <div class="main" id="deckList"></div>
     <div class="mini-wrap">
@@ -1141,16 +1140,7 @@
           }
         }
 
-        const dashboardLink = document.getElementById('dashboardLinkStatus');
-        if (dashboardLink) {
-          if (err) {
-            dashboardLink.classList.add('error');
-            dashboardLink.textContent = `Ableton Link ERROR: ${err}`;
-          } else {
-            dashboardLink.classList.remove('error');
-            dashboardLink.textContent = `Ableton Link: ${enabled ? (running ? 'Running' : 'Starting') : 'Disabled'} | carabiner=${supported ? (cm ? 'Running' : 'Stopped') : 'Unsupported'} | peers=${peers} | version=${version || '-'} | last=${lastText}`;
-          }
-        }
+
       } catch (_) {}
     }
 
