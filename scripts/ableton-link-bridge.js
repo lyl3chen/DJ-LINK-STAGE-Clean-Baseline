@@ -16,21 +16,56 @@ const ACK_PORT = Number(process.env.LINK_BRIDGE_ACK_PORT || 19111);
 let link = null;
 let linkEnabled = false;
 let linkError = '';
+let backendMode = 'ack-only'; // ack-only | abletonlink-active | abletonlink-failed
+let backendLoaded = false;
+let backendVersion = '';
+let backendInitError = '';
+let peerDetectionWorking = 'unknown'; // true | false | unknown
 
 try {
   // Optional dependency. If unavailable, bridge still works in ACK mode.
   // eslint-disable-next-line import/no-extraneous-dependencies
   const AbletonLink = require('abletonlink');
+  backendLoaded = true;
+  try {
+    // 尝试读取版本号（可选）
+    // eslint-disable-next-line import/no-extraneous-dependencies
+    backendVersion = require('abletonlink/package.json').version || '';
+  } catch (_) {}
+
   try {
     link = new AbletonLink(120);
     linkEnabled = true;
-    console.log('[link-bridge] Ableton Link backend enabled');
+    backendMode = 'abletonlink-active';
+    const canReadPeers = (
+      typeof link.numPeers === 'function' ||
+      typeof link.getNumPeers === 'function' ||
+      typeof link.peers === 'number'
+    );
+    peerDetectionWorking = canReadPeers ? 'true' : 'false';
+    console.log(`[link-bridge] Ableton Link backend enabled version=${backendVersion || 'unknown'} peerDetectionWorking=${peerDetectionWorking}`);
   } catch (e) {
-    linkError = `abletonlink init failed: ${e.message || e}`;
-    console.warn(`[link-bridge] ${linkError}`);
+    backendMode = 'abletonlink-failed';
+    backendInitError = `abletonlink init failed: ${e.message || e}`;
+    linkError = backendInitError;
+    peerDetectionWorking = 'unknown';
+    console.warn(`[link-bridge] ${backendInitError}`);
   }
-} catch {
-  console.log('[link-bridge] abletonlink package not installed; running ACK-only mode');
+} catch (e) {
+  const em = String((e && e.message) || e || '');
+  if (em.includes('Cannot find module')) {
+    backendMode = 'ack-only';
+    backendLoaded = false;
+    backendInitError = 'abletonlink package not installed';
+    linkError = '';
+    console.log('[link-bridge] abletonlink package not installed; running ACK-only mode');
+  } else {
+    backendMode = 'abletonlink-failed';
+    backendLoaded = false;
+    backendInitError = `abletonlink require failed: ${em}`;
+    linkError = backendInitError;
+    console.warn(`[link-bridge] ${backendInitError}`);
+  }
 }
 
 const server = dgram.createSocket('udp4');
@@ -47,10 +82,12 @@ let error = '';
 function readNumPeers() {
   if (!linkEnabled || !link) return 0;
   try {
-    if (typeof link.numPeers === 'function') return Number(link.numPeers()) || 0;
-    if (typeof link.getNumPeers === 'function') return Number(link.getNumPeers()) || 0;
-    if (typeof link.peers === 'number') return Number(link.peers) || 0;
+    if (typeof link.numPeers === 'function') { peerDetectionWorking = 'true'; return Number(link.numPeers()) || 0; }
+    if (typeof link.getNumPeers === 'function') { peerDetectionWorking = 'true'; return Number(link.getNumPeers()) || 0; }
+    if (typeof link.peers === 'number') { peerDetectionWorking = 'true'; return Number(link.peers) || 0; }
+    peerDetectionWorking = 'false';
   } catch (e) {
+    peerDetectionWorking = 'false';
     error = `read peers failed: ${e.message || e}`;
   }
   return 0;
@@ -91,7 +128,12 @@ function sendAck() {
     running: true,
     numPeers,
     lastAckTs,
-    error: error || linkError || ''
+    error: error || linkError || '',
+    backendMode,
+    backendLoaded,
+    backendVersion,
+    peerDetectionWorking,
+    backendInitError
   };
 
   const buf = Buffer.from(JSON.stringify(ack), 'utf8');
@@ -128,7 +170,7 @@ server.on('message', (msg) => {
 
     console.log(`[link-bridge] rx tempo=${lastTempo.toFixed(3)} beat=${lastBeatPosition.toFixed(3)} playing=${lastPlaying} rxTs=${lastRxTs}`);
     sendAck();
-    console.log(`[link-bridge] ack lastAckTs=${lastAckTs} numPeers=${numPeers} error=${error || linkError || ''}`);
+    console.log(`[link-bridge] ack lastAckTs=${lastAckTs} numPeers=${numPeers} backendMode=${backendMode} backendLoaded=${backendLoaded} peerDetectionWorking=${peerDetectionWorking} error=${error || linkError || ''}`);
   } catch (e) {
     error = `json parse failed: ${e.message || e}`;
     console.error(`[link-bridge] ${error}`);

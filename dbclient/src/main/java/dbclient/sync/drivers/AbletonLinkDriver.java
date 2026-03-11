@@ -123,6 +123,11 @@ public class AbletonLinkDriver implements OutputDriver {
             Map<String, Object> bs = bridge.status();
             m.put("numPeers", bs.getOrDefault("numPeers", 0));
             m.put("lastAckTs", bs.getOrDefault("lastAckTs", 0));
+            m.put("backendMode", bs.getOrDefault("backendMode", "ack-only"));
+            m.put("backendLoaded", bs.getOrDefault("backendLoaded", false));
+            m.put("backendVersion", bs.getOrDefault("backendVersion", ""));
+            m.put("peerDetectionWorking", bs.getOrDefault("peerDetectionWorking", "unknown"));
+            m.put("backendInitError", bs.getOrDefault("backendInitError", ""));
             if (error == null || error.isEmpty()) {
                 Object be = bs.get("error");
                 String ee = be == null ? "" : String.valueOf(be);
@@ -134,6 +139,11 @@ public class AbletonLinkDriver implements OutputDriver {
         } else {
             m.put("numPeers", 0);
             m.put("lastAckTs", 0);
+            m.put("backendMode", "ack-only");
+            m.put("backendLoaded", false);
+            m.put("backendVersion", "");
+            m.put("peerDetectionWorking", "unknown");
+            m.put("backendInitError", "");
             String ee = error == null ? "" : error;
             if (ee.isEmpty()) ee = String.valueOf(ps.getOrDefault("bridgeError", ""));
             m.put("error", ee);
