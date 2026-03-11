@@ -121,7 +121,13 @@ public class UserSettingsStore {
                         "deviceName", "default"
                 )),
                 "mtc", new LinkedHashMap<>(Map.of("enabled", false, "midiPort", "")),
-                "abletonLink", new LinkedHashMap<>(Map.of("enabled", false, "quantum", 4))
+                "abletonLink", new LinkedHashMap<>(Map.of(
+                        "enabled", false,
+                        "quantum", 4,
+                        "bridgeHost", "127.0.0.1",
+                        "bridgeSendPort", 19110,
+                        "bridgeListenPort", 19111
+                ))
         )));
         m.put("ai", new LinkedHashMap<>(Map.of(
                 "api_key", "",
