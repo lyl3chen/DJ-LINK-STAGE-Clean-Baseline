@@ -12,7 +12,17 @@ public class MtcDriver implements OutputDriver {
     private volatile boolean running;
     private volatile int qfCounter;
     private volatile String outputState = "IDLE";
+    private volatile boolean debugLog = false;
     private volatile String lastError = "";
+    private volatile int lastDataByte = -1;
+    private volatile long lastSendTsMs = 0L;
+    private volatile double lastJitterMs = 0.0;
+    private volatile long lateCycles = 0L;
+    private volatile long roundId = 0L;
+    private volatile double recentMaxJitterMs = 0.0;
+    private volatile double recentAvgJitterMs = 0.0;
+    private long jitterSamples = 0L;
+    private double jitterSumMs = 0.0;
     private volatile String activePort = "-";
     private volatile long pulseAtMs = 0L;
     private volatile boolean sourcePlaying = false;
@@ -38,6 +48,7 @@ public class MtcDriver implements OutputDriver {
     public synchronized void start(Map<String, Object> config) {
         cfg = config != null ? new LinkedHashMap<>(config) : new LinkedHashMap<>();
         String wanted = String.valueOf(cfg.getOrDefault("midiPort", ""));
+        debugLog = Boolean.TRUE.equals(cfg.get("debug"));
         try {
             device = openMidiOut(wanted);
             receiver = device.getReceiver();
@@ -90,6 +101,18 @@ public class MtcDriver implements OutputDriver {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
         m.put("quarterFrame", qfCounter);
+        m.put("qfCounter", qfCounter);
+        m.put("lockedHh", lockedHh);
+        m.put("lockedMm", lockedMm);
+        m.put("lockedSs", lockedSs);
+        m.put("lockedFf", lockedFf);
+        m.put("lastDataByte", lastDataByte);
+        m.put("lastSendTsMs", lastSendTsMs);
+        m.put("lastJitterMs", lastJitterMs);
+        m.put("lateCycles", lateCycles);
+        m.put("roundId", roundId);
+        m.put("recentMaxJitterMs", recentMaxJitterMs);
+        m.put("recentAvgJitterMs", recentAvgJitterMs);
         m.put("midiPort", cfg.getOrDefault("midiPort", ""));
         m.put("activePort", activePort);
         m.put("outputState", outputState);
@@ -98,6 +121,7 @@ public class MtcDriver implements OutputDriver {
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
         m.put("sourceState", sourceState);
+        m.put("debug", debugLog);
         return m;
     }
 
@@ -117,10 +141,21 @@ public class MtcDriver implements OutputDriver {
             }
 
             long jitterNs = nowNs - next;
-            if (Math.abs(jitterNs) > 2_000_000L) {
-                System.out.println("[MTC] jitter(ms)=" + (jitterNs / 1_000_000.0));
-            }
+            long late = intervalNs > 0 ? Math.max(0, jitterNs / intervalNs) : 0;
             next += intervalNs;
+            if (late > 0) next += late * intervalNs; // 避免追赶时拥挤发送
+
+            lastJitterMs = jitterNs / 1_000_000.0;
+            lateCycles = late;
+            double absJ = Math.abs(lastJitterMs);
+            recentMaxJitterMs = Math.max(recentMaxJitterMs * 0.98, absJ);
+            jitterSamples++;
+            jitterSumMs += absJ;
+            recentAvgJitterMs = jitterSumMs / Math.max(1L, jitterSamples);
+
+            if (Math.abs(jitterNs) > 2_000_000L) {
+                System.out.println("[MTC] jitter(ms)=" + lastJitterMs + ", lateCycles=" + late);
+            }
 
             boolean sourceFresh = (System.currentTimeMillis() - lastSourceUpdateMs) <= 500;
             if (!sourceFresh || !sourceActive || !sourcePlaying) {
@@ -130,10 +165,22 @@ public class MtcDriver implements OutputDriver {
 
             double sec = clock != null ? clock.nowSeconds() : seconds;
             try {
-                if (qfCounter == 0) lockCurrentFrame(sec);
-                sendQuarterFrameLocked();
+                if (qfCounter == 0) {
+                    lockCurrentFrame(sec);
+                    roundId++;
+                }
+                int qfBefore = qfCounter;
+                int data = sendQuarterFrameLocked();
                 pulseAtMs = System.currentTimeMillis();
+                lastSendTsMs = pulseAtMs;
+                lastDataByte = data & 0xFF;
                 outputState = "OUTPUTTING";
+                if (debugLog) {
+                    System.out.println(String.format(
+                            "[MTC][QF] t=%d qf=%d tc=%02d:%02d:%02d:%02d data=0x%02X jitterMs=%.3f lateCycles=%d",
+                            System.currentTimeMillis(), qfBefore, lockedHh, lockedMm, lockedSs, lockedFf,
+                            data & 0xFF, lastJitterMs, lateCycles));
+                }
             } catch (Exception e) {
                 outputState = "ERROR";
                 lastError = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -151,7 +198,7 @@ public class MtcDriver implements OutputDriver {
         lockedFf = (int) Math.floor((sec - Math.floor(sec)) * fps);
     }
 
-    private void sendQuarterFrameLocked() throws InvalidMidiDataException {
+    private int sendQuarterFrameLocked() throws InvalidMidiDataException {
         int nibble;
         switch (qfCounter) {
             case 0: nibble = lockedFf & 0x0F; break;
@@ -172,6 +219,7 @@ public class MtcDriver implements OutputDriver {
         sm.setMessage(0xF1, data, 0);
         receiver.send(sm, -1);
         qfCounter = (qfCounter + 1) % 8;
+        return data;
     }
 
     private MidiDevice openMidiOut(String wanted) throws MidiUnavailableException {
