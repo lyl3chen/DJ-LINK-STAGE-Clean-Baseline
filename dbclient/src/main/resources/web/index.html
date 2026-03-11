@@ -625,6 +625,8 @@
         <div class="cfg-row"><label>Bridge Host</label><input id="cfgLinkHost" type="text" value="127.0.0.1" /></div>
         <div class="cfg-row"><label>Bridge Send Port</label><input id="cfgLinkSendPort" type="number" value="19110" step="1" /></div>
         <div class="cfg-row"><label>Bridge Listen Port</label><input id="cfgLinkListenPort" type="number" value="19111" step="1" /></div>
+        <div class="cfg-row"><button id="linkBridgeStartBtn" class="scan-btn">Start Bridge</button><button id="linkBridgeStopBtn" class="scan-btn" style="margin-left:8px">Stop Bridge</button></div>
+        <div class="diag-card" id="linkBridgeDiag">Bridge: stopped | pid: - | started: -</div>
         <div class="diag-card" id="linkDiag">Link: Idle | peers: 0 | ack: -</div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
@@ -1043,6 +1045,28 @@
       loadSettings();
     }
 
+    async function startLinkBridge() {
+      try {
+        const r = await fetch('/api/sync/ableton-link/bridge/start', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: '{}' });
+        const j = await r.json();
+        document.getElementById('ioSaveMsg').textContent = j.ok ? 'Bridge 已启动' : `Bridge 启动失败: ${j.error || 'unknown'}`;
+        refreshSyncState();
+      } catch (e) {
+        document.getElementById('ioSaveMsg').textContent = `Bridge 启动失败: ${e && e.message ? e.message : e}`;
+      }
+    }
+
+    async function stopLinkBridge() {
+      try {
+        const r = await fetch('/api/sync/ableton-link/bridge/stop', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: '{}' });
+        const j = await r.json();
+        document.getElementById('ioSaveMsg').textContent = j.ok ? 'Bridge 已停止' : `Bridge 停止失败: ${j.error || 'unknown'}`;
+        refreshSyncState();
+      } catch (e) {
+        document.getElementById('ioSaveMsg').textContent = `Bridge 停止失败: ${e && e.message ? e.message : e}`;
+      }
+    }
+
     async function generateAiRule() {
       const prompt = document.getElementById('aiPrompt').value || '';
       if (!prompt.trim()) return;
@@ -1118,6 +1142,22 @@
         }
 
         const link = (((j || {}).drivers || {}).abletonLink) || {};
+        const bridgeDiag = document.getElementById('linkBridgeDiag');
+        if (bridgeDiag) {
+          const br = !!link.bridgeRunning;
+          const pid = Number(link.bridgePid || 0);
+          const st = Number(link.bridgeStartedAt || 0);
+          const stText = st > 0 ? new Date(st).toLocaleTimeString() : '-';
+          const berr = String(link.bridgeError || '');
+          if (berr) {
+            bridgeDiag.classList.add('error');
+            bridgeDiag.textContent = `Bridge: ${br ? 'running' : 'stopped'} | pid: ${pid || '-'} | started: ${stText} | error: ${berr}`;
+          } else {
+            bridgeDiag.classList.remove('error');
+            bridgeDiag.textContent = `Bridge: ${br ? 'running' : 'stopped'} | pid: ${pid || '-'} | started: ${stText}`;
+          }
+        }
+
         const linkDiag = document.getElementById('linkDiag');
         if (linkDiag) {
           const ackTs = Number(link.lastAckTs || 0);
@@ -1466,6 +1506,8 @@
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
+    document.getElementById('linkBridgeStartBtn')?.addEventListener('click', startLinkBridge);
+    document.getElementById('linkBridgeStopBtn')?.addEventListener('click', stopLinkBridge);
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
     document.getElementById('deckList')?.addEventListener('wheel', (e) => {

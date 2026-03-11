@@ -24,6 +24,7 @@ public class AbletonLinkDriver implements OutputDriver {
     private long lastReconnectTryMs = 0L;
 
     private AbletonLinkBridgeClient bridge;
+    private final AbletonLinkBridgeProcess bridgeProcess = new AbletonLinkBridgeProcess();
 
     public String name() { return "abletonLink"; }
 
@@ -47,6 +48,7 @@ public class AbletonLinkDriver implements OutputDriver {
             bridge.stop();
             bridge = null;
         }
+        bridgeProcess.stop();
     }
 
     public void update(Map<String, Object> state) {
@@ -88,6 +90,18 @@ public class AbletonLinkDriver implements OutputDriver {
         }
     }
 
+    public synchronized Map<String, Object> startBridgeProcess() {
+        return bridgeProcess.start();
+    }
+
+    public synchronized Map<String, Object> stopBridgeProcess() {
+        return bridgeProcess.stop();
+    }
+
+    public synchronized Map<String, Object> bridgeProcessStatus() {
+        return bridgeProcess.status();
+    }
+
     public Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
@@ -99,21 +113,30 @@ public class AbletonLinkDriver implements OutputDriver {
         m.put("sourceState", sourceState);
         m.put("lastUpdateTs", lastUpdateTs);
 
+        Map<String, Object> ps = bridgeProcess.status();
+        m.put("bridgeRunning", ps.getOrDefault("bridgeRunning", false));
+        m.put("bridgePid", ps.getOrDefault("bridgePid", 0L));
+        m.put("bridgeStartedAt", ps.getOrDefault("bridgeStartedAt", 0L));
+        m.put("bridgeError", ps.getOrDefault("bridgeError", ""));
+
         if (bridge != null) {
             Map<String, Object> bs = bridge.status();
             m.put("numPeers", bs.getOrDefault("numPeers", 0));
             m.put("lastAckTs", bs.getOrDefault("lastAckTs", 0));
             if (error == null || error.isEmpty()) {
                 Object be = bs.get("error");
-                if (be != null) m.put("error", String.valueOf(be));
-                else m.put("error", "");
+                String ee = be == null ? "" : String.valueOf(be);
+                if (ee.isEmpty()) ee = String.valueOf(ps.getOrDefault("bridgeError", ""));
+                m.put("error", ee);
             } else {
                 m.put("error", error);
             }
         } else {
             m.put("numPeers", 0);
             m.put("lastAckTs", 0);
-            m.put("error", error == null ? "bridge not started" : error);
+            String ee = error == null ? "" : error;
+            if (ee.isEmpty()) ee = String.valueOf(ps.getOrDefault("bridgeError", ""));
+            m.put("error", ee);
         }
         return m;
     }

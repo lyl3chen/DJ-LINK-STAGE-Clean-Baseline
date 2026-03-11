@@ -29,6 +29,30 @@ public class SyncOutputManager {
 
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
 
+    public synchronized Map<String, Object> startAbletonLinkBridge() {
+        OutputDriver d = drivers.get("abletonLink");
+        if (d instanceof dbclient.sync.drivers.AbletonLinkDriver) {
+            return ((dbclient.sync.drivers.AbletonLinkDriver) d).startBridgeProcess();
+        }
+        return Map.of("ok", false, "error", "abletonLink driver not found");
+    }
+
+    public synchronized Map<String, Object> stopAbletonLinkBridge() {
+        OutputDriver d = drivers.get("abletonLink");
+        if (d instanceof dbclient.sync.drivers.AbletonLinkDriver) {
+            return ((dbclient.sync.drivers.AbletonLinkDriver) d).stopBridgeProcess();
+        }
+        return Map.of("ok", false, "error", "abletonLink driver not found");
+    }
+
+    public synchronized Map<String, Object> abletonLinkBridgeStatus() {
+        OutputDriver d = drivers.get("abletonLink");
+        if (d instanceof dbclient.sync.drivers.AbletonLinkDriver) {
+            return ((dbclient.sync.drivers.AbletonLinkDriver) d).bridgeProcessStatus();
+        }
+        return Map.of("bridgeRunning", false, "bridgePid", 0L, "bridgeStartedAt", 0L, "bridgeError", "abletonLink driver not found");
+    }
+
     @SuppressWarnings("unchecked")
     public synchronized void applySettings() {
         Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
