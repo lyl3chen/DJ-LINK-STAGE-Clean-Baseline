@@ -37,6 +37,8 @@ public class CarabinerLinkEngine {
     private volatile boolean statusSeen = false;
     private volatile boolean versionSeen = false;
     private volatile boolean startStopSyncEnabled = false;
+    private volatile int lastPeersSeen = -1;
+    private volatile boolean forceTempoPush = true;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -166,7 +168,15 @@ public class CarabinerLinkEngine {
                 Object start = details.get("start");
                 if (bpm instanceof Number) tempo = ((Number) bpm).doubleValue();
                 if (beat instanceof Number) beatPosition = ((Number) beat).doubleValue();
-                if (peers instanceof Number) numPeers = ((Number) peers).intValue();
+                if (peers instanceof Number) {
+                    int p = ((Number) peers).intValue();
+                    numPeers = p;
+                    if (p != lastPeersSeen) {
+                        lastPeersSeen = p;
+                        // peer 拓扑变化后强制下一轮推一次 tempo，避免对端重入会话后卡在旧值（如120）。
+                        forceTempoPush = true;
+                    }
+                }
                 if (start instanceof Number) carabinerStartRaw = ((Number) start).longValue();
                 // 统一跟随系统播放源语义，避免与 sourcePlaying 产生误导性分叉。
                 playing = desiredPlaying;
@@ -225,20 +235,29 @@ public class CarabinerLinkEngine {
 
         pingThread = new Thread(() -> {
             boolean initSent = false;
+            long lastSyncEnableAt = 0L;
+            long lastForcedTempoAt = 0L;
             while (running && writer != null) {
                 try {
-                    if (!initSent) {
-                        // Carabiner 无通用 enable 命令，这里开启 start/stop sync 能力并作为“初始化完成”标记。
+                    long now = System.currentTimeMillis();
+                    if (!initSent || (now - lastSyncEnableAt) > 3000) {
+                        // 周期重发，避免对端后加入时会话能力状态不一致。
                         writer.write("enable-start-stop-sync\n");
                         initSent = true;
                         startStopSyncEnabled = true;
+                        lastSyncEnableAt = now;
                     }
                     writer.write("status\n");
                     writer.write("version\n");
-                    // 提高 BPM 推送频率并仅在变化时发送，减少推子时的台阶跳变。
-                    if (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.01) {
+                    // 提高 BPM 推送频率并仅在变化时发送；在 peer 变化后强制推送一次。
+                    boolean tempoChanged = (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.01);
+                    boolean forceByPeerChange = forceTempoPush;
+                    boolean forceByPeriodic = (now - lastForcedTempoAt) > 2000;
+                    if (tempoChanged || forceByPeerChange || forceByPeriodic) {
                         writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
                         lastSentTempo = desiredTempo;
+                        forceTempoPush = false;
+                        lastForcedTempoAt = now;
                     }
                     writer.flush();
                 } catch (Exception e) {
