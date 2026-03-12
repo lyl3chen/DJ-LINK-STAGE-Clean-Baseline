@@ -57,7 +57,9 @@
     .tab-panel { display:none; }
     .tab-panel.active { display:block; }
     .io-setup, .commander { padding:12px; display:grid; gap:10px; }
+    .io-setup { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items:start; }
     .cfg-card { border:1px solid #2f425e; background:#0f1624; border-radius:6px; padding:10px; }
+    .cfg-card.full { grid-column: 1 / -1; }
     .cfg-card h3 { margin:0 0 8px; font-size:13px; color:#a9cfff; }
     .cfg-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
     .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
@@ -610,35 +612,51 @@
   <section class="tab-panel" id="panel-io">
     <div class="io-setup">
       <div class="cfg-card">
-        <h3>Sync Output Manager</h3>
+        <h3>播放源</h3>
         <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
+        <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
+      </div>
+
+      <div class="cfg-card">
+        <h3>LTC</h3>
         <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
         <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
         <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
         <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
+        <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
+        <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
+        <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
+      </div>
+
+      <div class="cfg-card">
+        <h3>MTC</h3>
         <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>MTC 端口</label><select id="cfgMtcPort"></select></div>
         <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
         <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
+      </div>
+
+      <div class="cfg-card">
+        <h3>Ableton Link</h3>
         <div class="cfg-row"><label>Ableton Link Enabled</label><input id="cfgLinkEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>Carabiner Port</label><input id="cfgLinkPort" type="number" value="17000" step="1" /></div>
         <div class="cfg-row"><label>Update Interval (ms)</label><input id="cfgLinkUpdateMs" type="number" value="20" step="1" /></div>
         <div class="diag-card" id="linkDiag">Link: Idle</div>
-        <hr style="border-color:#2f425e;opacity:.4;width:100%" />
+      </div>
+
+      <div class="cfg-card">
+        <h3>Titan API</h3>
         <div class="cfg-row"><label>Titan API Enabled</label><input id="cfgTitanEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>Titan Base URL</label><input id="cfgTitanBaseUrl" type="text" value="http://127.0.0.1:4430" style="min-width:260px" /></div>
         <div class="cfg-row"><label>Titan Version</label><select id="cfgTitanVersion"><option value="auto">auto</option><option value="v10">v10</option><option value="v11">v11+</option></select></div>
         <div class="cfg-row"><label>BPM Master</label><select id="cfgTitanMaster"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div>
         <div class="cfg-row"><label>Rate Limit (ms)</label><input id="cfgTitanRateMs" type="number" value="500" step="100" /></div>
         <div class="diag-card" id="titanDiag">Titan: Idle</div>
-        <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
-        <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
-        <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
-        <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
       </div>
-      <div class="cfg-card"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
+
+      <div class="cfg-card full"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
     </div>
   </section>
 
