@@ -84,7 +84,12 @@ public class TitanApiDriver implements OutputDriver {
             lastSendTs = now;
             error = "";
         } catch (Exception e) {
-            error = "titan send failed: " + e.getMessage();
+            String msg = String.valueOf(e.getMessage());
+            if (msg != null && msg.toLowerCase().contains("connection refused")) {
+                error = "titan send failed: 连接被拒绝（请检查 Titan IP 与控台 WebAPI 是否开启）";
+            } else {
+                error = "titan send failed: " + msg;
+            }
             // v11 可能 show 切换后 titanId 失效；下次 update 再自动恢复。
             try {
                 adapter.connectAndScan();
