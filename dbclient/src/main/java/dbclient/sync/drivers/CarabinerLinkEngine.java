@@ -82,7 +82,7 @@ public class CarabinerLinkEngine {
             }
             runner.start();
             running = true; // 必须先置 true，读写线程的 while 才会进入
-            error = "starting carabiner connection...";
+            error = "";
             new Thread(() -> {
                 try {
                     connectAndListen();
