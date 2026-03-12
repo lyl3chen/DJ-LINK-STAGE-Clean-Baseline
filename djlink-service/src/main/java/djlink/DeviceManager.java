@@ -37,6 +37,9 @@ public class DeviceManager {
 
     // 轻量预热缓存层：用于提前拉取并缓存当前曲目 metadata，降低播放瞬间 miss。
     private final MetadataWarmupService metadataWarmup = new MetadataWarmupService();
+    // 最近一次曲目元数据查询结果（用于前端显示实时 HIT/MISS）
+    private volatile String metadataLastLookup = "UNKNOWN";
+    private volatile long metadataLastLookupTs = 0L;
     
     private DeviceManager() {}
     
@@ -215,14 +218,23 @@ public class DeviceManager {
         // Try to get track metadata for this player
         try {
             TrackMetadata meta = metadataFinder.getLatestMetadataFor(deviceNumber);
-            if (meta == null) {
+            if (meta != null) {
+                metadataLastLookup = "HIT(latest-cache)";
+                metadataLastLookupTs = System.currentTimeMillis();
+            } else {
                 // 兜底：从预热缓存查同一 DataReference。
                 meta = metadataWarmup.getFromStatus(status);
+                if (meta != null) {
+                    metadataLastLookup = "HIT(warmup-cache)";
+                    metadataLastLookupTs = System.currentTimeMillis();
+                }
             }
             if (meta != null) {
                 state.trackMeta = meta;
                 System.out.println("✅ Got metadata for player " + deviceNumber + ": " + meta.getTitle());
             } else {
+                metadataLastLookup = "MISS";
+                metadataLastLookupTs = System.currentTimeMillis();
                 // Try getting metadata using different approach - from CdjStatus
                 System.out.println("⚠️ metadata miss for player " + deviceNumber + ", warmupCacheSize=" + metadataWarmup.size());
 
@@ -1021,6 +1033,8 @@ public class DeviceManager {
 
         // 页面可视化：预热缓存当前大小（用于判断预热是否在工作）
         result.put("metadataWarmupCacheSize", metadataWarmup.size());
+        result.put("metadataLastLookup", metadataLastLookup);
+        result.put("metadataLastLookupTs", metadataLastLookupTs);
         
         return result;
     }
