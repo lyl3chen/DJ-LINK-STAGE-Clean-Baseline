@@ -212,16 +212,26 @@ public class DeviceManager {
         System.out.println("🔍 Player " + deviceNumber + " status: playing=" + status.isPlaying() + 
             " trackType=" + status.getTrackType() + " sourceSlot=" + status.getTrackSourceSlot());
         
-        // 预热：状态一到就异步拉一次当前曲目 metadata，提升后续命中率。
-        metadataWarmup.prefetchFromStatus(status, metadataFinder);
+        boolean validTrackRef = status.getTrackType() != null
+                && status.getTrackSourceSlot() != null
+                && status.getTrackType() != CdjStatus.TrackType.NO_TRACK
+                && status.getTrackSourceSlot() != CdjStatus.TrackSourceSlot.NO_TRACK
+                && status.getRekordboxId() > 0;
+
+        // 预热：仅在有效曲目引用时异步拉取，减少 NO_TRACK 噪声。
+        if (validTrackRef) {
+            metadataWarmup.prefetchFromStatus(status, metadataFinder);
+        }
 
         // Try to get track metadata for this player
         try {
             TrackMetadata meta = metadataFinder.getLatestMetadataFor(deviceNumber);
             if (meta != null) {
-                metadataLastLookup = "HIT(latest-cache)";
-                metadataLastLookupTs = System.currentTimeMillis();
-            } else {
+                if (validTrackRef) {
+                    metadataLastLookup = "HIT(latest-cache)";
+                    metadataLastLookupTs = System.currentTimeMillis();
+                }
+            } else if (validTrackRef) {
                 // 兜底：从预热缓存查同一 DataReference。
                 meta = metadataWarmup.getFromStatus(status);
                 if (meta != null) {
@@ -233,8 +243,10 @@ public class DeviceManager {
                 state.trackMeta = meta;
                 System.out.println("✅ Got metadata for player " + deviceNumber + ": " + meta.getTitle());
             } else {
-                metadataLastLookup = "MISS";
-                metadataLastLookupTs = System.currentTimeMillis();
+                if (validTrackRef) {
+                    metadataLastLookup = "MISS";
+                    metadataLastLookupTs = System.currentTimeMillis();
+                }
                 // Try getting metadata using different approach - from CdjStatus
                 System.out.println("⚠️ metadata miss for player " + deviceNumber + ", warmupCacheSize=" + metadataWarmup.size());
 
