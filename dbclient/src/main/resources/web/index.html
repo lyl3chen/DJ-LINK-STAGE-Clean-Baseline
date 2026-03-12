@@ -1276,6 +1276,11 @@
         const j = await r.json();
         metadataWarmupCacheSize = Number(j.metadataWarmupCacheSize || 0);
         metadataLastLookup = String(j.metadataLastLookup || 'UNKNOWN');
+        // WS 异常时兜底：直接用 HTTP 状态刷新 Dashboard，避免界面空白。
+        if (Array.isArray(j.players)) {
+          players = j.players;
+          scheduleRender();
+        }
       } catch (_) {}
     }
 
