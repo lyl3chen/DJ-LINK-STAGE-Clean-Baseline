@@ -125,6 +125,13 @@ public class UserSettingsStore {
                         "enabled", false,
                         "port", 17000,
                         "updateIntervalMs", 20
+                )),
+                "titanApi", new LinkedHashMap<>(Map.of(
+                        "enabled", false,
+                        "baseUrl", "http://127.0.0.1:4430",
+                        "versionMode", "auto",
+                        "masterIndex", 0,
+                        "rateLimitMs", 500
                 ))
         )));
         m.put("ai", new LinkedHashMap<>(Map.of(

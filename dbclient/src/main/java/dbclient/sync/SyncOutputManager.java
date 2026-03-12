@@ -24,6 +24,7 @@ public class SyncOutputManager {
         register(new LtcDriver());
         register(new MtcDriver());
         register(new AbletonLinkDriver());
+        register(new TitanApiDriver());
         register(new ConsoleApiDriver());
     }
 

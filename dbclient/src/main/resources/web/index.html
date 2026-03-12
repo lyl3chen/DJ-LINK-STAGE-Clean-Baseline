@@ -626,6 +626,13 @@
         <div class="cfg-row"><label>Carabiner Port</label><input id="cfgLinkPort" type="number" value="17000" step="1" /></div>
         <div class="cfg-row"><label>Update Interval (ms)</label><input id="cfgLinkUpdateMs" type="number" value="20" step="1" /></div>
         <div class="diag-card" id="linkDiag">Link: Idle</div>
+        <hr style="border-color:#2f425e;opacity:.4;width:100%" />
+        <div class="cfg-row"><label>Titan API Enabled</label><input id="cfgTitanEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>Titan Base URL</label><input id="cfgTitanBaseUrl" type="text" value="http://127.0.0.1:4430" style="min-width:260px" /></div>
+        <div class="cfg-row"><label>Titan Version</label><select id="cfgTitanVersion"><option value="auto">auto</option><option value="v10">v10</option><option value="v11">v11+</option></select></div>
+        <div class="cfg-row"><label>BPM Master</label><select id="cfgTitanMaster"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div>
+        <div class="cfg-row"><label>Rate Limit (ms)</label><input id="cfgTitanRateMs" type="number" value="500" step="100" /></div>
+        <div class="diag-card" id="titanDiag">Titan: Idle</div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
         <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
         <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
@@ -995,6 +1002,7 @@
         const ltc = sync.ltc || {};
         const mtc = sync.mtc || {};
         const link = sync.abletonLink || {};
+        const titan = sync.titanApi || {};
         const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
@@ -1008,6 +1016,11 @@
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
         document.getElementById('cfgLinkPort').value = String(link.port || 17000);
         document.getElementById('cfgLinkUpdateMs').value = String(link.updateIntervalMs || 20);
+        document.getElementById('cfgTitanEnabled').checked = !!titan.enabled;
+        document.getElementById('cfgTitanBaseUrl').value = String(titan.baseUrl || 'http://127.0.0.1:4430');
+        document.getElementById('cfgTitanVersion').value = String(titan.versionMode || 'auto');
+        document.getElementById('cfgTitanMaster').value = String(Number(titan.masterIndex || 0));
+        document.getElementById('cfgTitanRateMs').value = String(Number(titan.rateLimitMs || 500));
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
       } catch (_) {}
@@ -1033,6 +1046,13 @@
             enabled: document.getElementById('cfgLinkEnabled').checked,
             port: Number(document.getElementById('cfgLinkPort').value || 17000),
             updateIntervalMs: Number(document.getElementById('cfgLinkUpdateMs').value || 20)
+          },
+          titanApi: {
+            enabled: document.getElementById('cfgTitanEnabled').checked,
+            baseUrl: String(document.getElementById('cfgTitanBaseUrl').value || '').trim(),
+            versionMode: String(document.getElementById('cfgTitanVersion').value || 'auto'),
+            masterIndex: Number(document.getElementById('cfgTitanMaster').value || 0),
+            rateLimitMs: Number(document.getElementById('cfgTitanRateMs').value || 500)
           }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
@@ -1150,6 +1170,23 @@
           }
         }
 
+        const titan = (((j || {}).drivers || {}).titanApi) || {};
+        const titanDiag = document.getElementById('titanDiag');
+        if (titanDiag) {
+          const te = String(titan.error || '');
+          if (te) {
+            titanDiag.classList.add('error');
+            titanDiag.textContent = `Titan 错误：${te}`;
+          } else {
+            titanDiag.classList.remove('error');
+            const tr = !!titan.running;
+            const tv = titan.versionDetected || '-';
+            const tm = Number(titan.masterIndex || 0) + 1;
+            const tb = titan.lastSentBpm || '-';
+            const th = titan.lastHttpCode || '-';
+            titanDiag.textContent = `Titan: ${tr ? 'Running' : 'Idle'} | v=${tv} | Master=${tm} | BPM=${tb} | HTTP=${th}`;
+          }
+        }
 
       } catch (_) {}
     }
