@@ -34,6 +34,9 @@ public class CarabinerLinkEngine {
     private volatile boolean desiredPlaying = false;
     private volatile long carabinerStartRaw = 0L;
     private volatile double lastSentTempo = -1.0;
+    private volatile boolean statusSeen = false;
+    private volatile boolean versionSeen = false;
+    private volatile boolean startStopSyncEnabled = false;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -92,6 +95,9 @@ public class CarabinerLinkEngine {
         socket = null;
         reader = null;
         writer = null;
+        statusSeen = false;
+        versionSeen = false;
+        startStopSyncEnabled = false;
         try { runner.stop(); } catch (Exception ignored) {}
         if (readThread != null) readThread.interrupt();
         if (pingThread != null) pingThread.interrupt();
@@ -112,6 +118,10 @@ public class CarabinerLinkEngine {
         m.put("running", running);
         m.put("carabinerSupported", supported);
         m.put("carabinerRunning", running);
+        m.put("carabinerEnabled", running && statusSeen);
+        m.put("carabinerStatusSeen", statusSeen);
+        m.put("carabinerVersionSeen", versionSeen);
+        m.put("carabinerStartStopSyncEnabled", startStopSyncEnabled);
         m.put("tempo", tempo);
         m.put("beatPosition", beatPosition);
         m.put("playing", playing);
@@ -138,10 +148,17 @@ public class CarabinerLinkEngine {
 
             if ("version".equals(m.messageType) && m.details instanceof String) {
                 version = (String) m.details;
+                versionSeen = true;
+            }
+
+            if ("unsupported".equals(m.messageType)) {
+                // 仅记录，不中断主链路。
+                lastMessageType = "unsupported";
             }
 
             if (("status".equals(m.messageType) || "beat-at-time".equals(m.messageType) || "phase-at-time".equals(m.messageType))
                     && m.details instanceof Map) {
+                if ("status".equals(m.messageType)) statusSeen = true;
                 Map<String, Object> details = (Map<String, Object>) m.details;
                 Object bpm = details.get("bpm");
                 Object beat = details.get("beat");
@@ -207,8 +224,15 @@ public class CarabinerLinkEngine {
         readThread.start();
 
         pingThread = new Thread(() -> {
+            boolean initSent = false;
             while (running && writer != null) {
                 try {
+                    if (!initSent) {
+                        // Carabiner 无通用 enable 命令，这里开启 start/stop sync 能力并作为“初始化完成”标记。
+                        writer.write("enable-start-stop-sync\n");
+                        initSent = true;
+                        startStopSyncEnabled = true;
+                    }
                     writer.write("status\n");
                     writer.write("version\n");
                     // 提高 BPM 推送频率并仅在变化时发送，减少推子时的台阶跳变。
