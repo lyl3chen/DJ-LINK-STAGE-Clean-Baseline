@@ -41,6 +41,7 @@ public class CarabinerLinkEngine {
     private volatile boolean startStopSyncEnabled = false;
     private volatile int lastPeersSeen = -1;
     private volatile boolean forceTempoPush = true;
+    private volatile boolean strictTempoMaster = true;
     private volatile boolean hadPeersBefore = false;
     private volatile long peersZeroSince = 0L;
     private volatile long lastRunnerRestartAt = 0L;
@@ -182,7 +183,13 @@ public class CarabinerLinkEngine {
                 Object beat = details.get("beat");
                 Object peers = details.get("peers");
                 Object start = details.get("start");
-                if (bpm instanceof Number) tempo = ((Number) bpm).doubleValue();
+                if (bpm instanceof Number) {
+                    tempo = ((Number) bpm).doubleValue();
+                    // 严格主导：若会话 tempo 偏离 CDJ 目标值，触发下一轮强制回推。
+                    if (strictTempoMaster && Math.abs(tempo - desiredTempo) >= 0.05) {
+                        forceTempoPush = true;
+                    }
+                }
                 if (beat instanceof Number) beatPosition = ((Number) beat).doubleValue();
                 if (peers instanceof Number) {
                     int p = ((Number) peers).intValue();
@@ -276,7 +283,7 @@ public class CarabinerLinkEngine {
                     // 提高 BPM 推送频率并仅在变化时发送；在 peer 变化后强制推送一次。
                     boolean tempoChanged = (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.01);
                     boolean forceByPeerChange = forceTempoPush;
-                    boolean forceByPeriodic = (now - lastForcedTempoAt) > 2000;
+                    boolean forceByPeriodic = (now - lastForcedTempoAt) > 500;
                     if (tempoChanged || forceByPeerChange || forceByPeriodic) {
                         writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
                         lastSentTempo = desiredTempo;
