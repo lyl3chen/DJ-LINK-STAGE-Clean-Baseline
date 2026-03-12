@@ -2,8 +2,7 @@ package dbclient.sync.drivers;
 
 import dbclient.sync.OutputDriver;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Titan BPM Master HTTP 输出驱动。
@@ -19,7 +18,7 @@ public class TitanApiDriver implements OutputDriver {
     private volatile String baseUrl = "http://127.0.0.1:4430";
     private volatile String versionMode = "auto";
     private volatile int versionDetected = 0;
-    private volatile int masterIndex = 0;
+    private volatile List<Integer> masterIndices = new ArrayList<>(List.of(0));
     private volatile int rateLimitMs = 500;
 
     private volatile int lastSentBpmInt = -1;
@@ -73,7 +72,12 @@ public class TitanApiDriver implements OutputDriver {
         if ((now - lastSendTs) < rateLimitMs) return;
 
         try {
-            int code = adapter.setBpm(masterIndex, bpmInt);
+            int code = 0;
+            List<Integer> targets = masterIndices == null || masterIndices.isEmpty() ? List.of(0) : new ArrayList<>(masterIndices);
+            for (Integer idx : targets) {
+                if (idx == null) continue;
+                code = adapter.setBpm(Math.max(0, Math.min(3, idx)), bpmInt);
+            }
             versionDetected = adapter.getDetectedVersion();
             lastHttpCode = code;
             lastSentBpmInt = bpmInt;
@@ -98,7 +102,7 @@ public class TitanApiDriver implements OutputDriver {
         m.put("baseUrl", baseUrl);
         m.put("versionMode", versionMode);
         m.put("versionDetected", versionDetected);
-        m.put("masterIndex", masterIndex);
+        m.put("masterIndices", new ArrayList<>(masterIndices));
         m.put("rateLimitMs", rateLimitMs);
         m.put("lastSentBpm", lastSentBpmInt);
         m.put("lastSendTs", lastSendTs);
@@ -128,8 +132,26 @@ public class TitanApiDriver implements OutputDriver {
 
         Object vm = config.get("versionMode");
         if (vm != null) versionMode = String.valueOf(vm).trim().toLowerCase();
-        Object mi = config.get("masterIndex");
-        if (mi instanceof Number) masterIndex = Math.max(0, Math.min(3, ((Number) mi).intValue()));
+
+        List<Integer> parsed = new ArrayList<>();
+        Object mis = config.get("masterIndices");
+        if (mis instanceof List) {
+            for (Object o : (List<?>) mis) {
+                if (o instanceof Number) parsed.add(Math.max(0, Math.min(3, ((Number) o).intValue())));
+                else {
+                    try { parsed.add(Math.max(0, Math.min(3, Integer.parseInt(String.valueOf(o))))); } catch (Exception ignored) {}
+                }
+            }
+        }
+        if (parsed.isEmpty()) {
+            Object mi = config.get("masterIndex"); // 兼容旧单选
+            if (mi instanceof Number) parsed.add(Math.max(0, Math.min(3, ((Number) mi).intValue())));
+            else parsed.add(0);
+        }
+        // 去重并稳定顺序
+        LinkedHashSet<Integer> uniq = new LinkedHashSet<>(parsed);
+        masterIndices = new ArrayList<>(uniq);
+
         Object rl = config.get("rateLimitMs");
         if (rl instanceof Number) rateLimitMs = Math.max(200, Math.min(5000, ((Number) rl).intValue()));
     }

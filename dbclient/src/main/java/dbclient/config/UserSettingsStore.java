@@ -130,7 +130,7 @@ public class UserSettingsStore {
                         "enabled", false,
                         "ip", "127.0.0.1",
                         "versionMode", "auto",
-                        "masterIndex", 0,
+                        "masterIndices", java.util.List.of(0),
                         "rateLimitMs", 500
                 ))
         )));
@@ -175,6 +175,11 @@ public class UserSettingsStore {
                     } catch (Exception ignored) {}
                 }
                 titan.remove("baseUrl");
+                if (!titan.containsKey("masterIndices") && titan.get("masterIndex") instanceof Number) {
+                    int mi = ((Number) titan.get("masterIndex")).intValue();
+                    titan.put("masterIndices", java.util.List.of(Math.max(0, Math.min(3, mi))));
+                }
+                titan.remove("masterIndex");
             }
         }
     }

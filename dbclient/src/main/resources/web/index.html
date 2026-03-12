@@ -651,7 +651,7 @@
         <div class="cfg-row"><label>Titan API Enabled</label><input id="cfgTitanEnabled" type="checkbox" /></div>
         <div class="cfg-row"><label>Titan IP</label><input id="cfgTitanIp" type="text" value="127.0.0.1" style="min-width:260px" /></div>
         <div class="cfg-row"><label>Titan Version</label><select id="cfgTitanVersion"><option value="auto">auto</option><option value="v10">v10</option><option value="v11">v11+</option></select></div>
-        <div class="cfg-row"><label>BPM Master</label><select id="cfgTitanMaster"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div>
+        <div class="cfg-row"><label>BPM Master(可多选)</label><select id="cfgTitanMaster" multiple size="4"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option></select></div>
         <div class="cfg-row"><label>Rate Limit (ms)</label><input id="cfgTitanRateMs" type="number" value="500" step="100" /></div>
         <div class="diag-card" id="titanDiag">Titan: Idle</div>
       </div>
@@ -1037,7 +1037,11 @@
         document.getElementById('cfgTitanEnabled').checked = !!titan.enabled;
         document.getElementById('cfgTitanIp').value = String(titan.ip || '127.0.0.1');
         document.getElementById('cfgTitanVersion').value = String(titan.versionMode || 'auto');
-        document.getElementById('cfgTitanMaster').value = String(Number(titan.masterIndex || 0));
+        const titanMasterSel = document.getElementById('cfgTitanMaster');
+        const masters = Array.isArray(titan.masterIndices)
+          ? titan.masterIndices.map(v => String(Number(v)))
+          : [String(Number(titan.masterIndex || 0))];
+        Array.from(titanMasterSel.options).forEach(o => { o.selected = masters.includes(o.value); });
         document.getElementById('cfgTitanRateMs').value = String(Number(titan.rateLimitMs || 500));
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
@@ -1069,7 +1073,7 @@
             enabled: document.getElementById('cfgTitanEnabled').checked,
             ip: String(document.getElementById('cfgTitanIp').value || '').trim(),
             versionMode: String(document.getElementById('cfgTitanVersion').value || 'auto'),
-            masterIndex: Number(document.getElementById('cfgTitanMaster').value || 0),
+            masterIndices: Array.from(document.getElementById('cfgTitanMaster').selectedOptions || []).map(o => Number(o.value)),
             rateLimitMs: Number(document.getElementById('cfgTitanRateMs').value || 500)
           }
         },
@@ -1199,10 +1203,11 @@
             titanDiag.classList.remove('error');
             const tr = !!titan.running;
             const tv = titan.versionDetected || '-';
-            const tm = Number(titan.masterIndex || 0) + 1;
+            const masters = Array.isArray(titan.masterIndices) ? titan.masterIndices.map(v => Number(v) + 1) : [Number(titan.masterIndex || 0) + 1];
+            const tm = masters.join(',');
             const tb = titan.lastSentBpm || '-';
             const th = titan.lastHttpCode || '-';
-            titanDiag.textContent = `Titan: ${tr ? 'Running' : 'Idle'} | v=${tv} | Master=${tm} | BPM=${tb} | HTTP=${th}`;
+            titanDiag.textContent = `Titan: ${tr ? 'Running' : 'Idle'} | v=${tv} | Masters=${tm} | BPM=${tb} | HTTP=${th}`;
           }
         }
 
