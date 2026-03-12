@@ -299,7 +299,7 @@ public class CarabinerLinkEngine {
                     if (beatChanged || beatPeriodic) {
                         long whenUs = now * 1000L;
                         // quantum 用浮点格式，避免 Carabiner 返回 bad-quantum。
-                        writer.write(String.format(java.util.Locale.US, "beat-at-time %.6f %d 4.0\n", desiredBeatPosition, whenUs));
+                        writer.write(String.format(java.util.Locale.US, "force-beat-at-time %.6f %d 4\n", desiredBeatPosition, whenUs));
                         lastSentBeatPosition = desiredBeatPosition;
                         lastForcedBeatAt = now;
                     }
