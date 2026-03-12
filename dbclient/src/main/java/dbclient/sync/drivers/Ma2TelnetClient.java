@@ -70,8 +70,11 @@ public class Ma2TelnetClient {
         }
         writer.write(cmd + "\n");
         writer.flush();
-        String ack = tryReadLine();
-        if (ack == null) ack = "sent";
+
+        // 读取一个短窗口内返回，只保留“最新一条”可读内容。
+        String ack = readLatestAckWithin(180);
+        if (ack == null || ack.isBlank()) ack = "sent";
+        ack = sanitizeAck(ack);
         lastAck = ack;
         return ack;
     }
@@ -89,6 +92,36 @@ public class Ma2TelnetClient {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String readLatestAckWithin(long windowMs) {
+        long end = System.currentTimeMillis() + Math.max(40, windowMs);
+        String latest = null;
+        while (System.currentTimeMillis() < end) {
+            try {
+                if (reader == null || !reader.ready()) {
+                    sleep(15);
+                    continue;
+                }
+                String line = reader.readLine();
+                if (line != null && !line.isBlank()) latest = line;
+            } catch (Exception ignored) {
+                break;
+            }
+        }
+        return latest;
+    }
+
+    private static String sanitizeAck(String raw) {
+        if (raw == null) return "";
+        StringBuilder sb = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (!Character.isISOControl(c) || c == '\n' || c == '\r' || c == '\t') sb.append(c);
+        }
+        String s = sb.toString().replaceAll("\\s+", " ").trim();
+        if (s.length() > 96) s = s.substring(s.length() - 96).trim();
+        return s;
     }
 
     private static void sleep(long ms) {
