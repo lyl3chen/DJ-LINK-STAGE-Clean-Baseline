@@ -132,6 +132,20 @@ public class UserSettingsStore {
                         "versionMode", "auto",
                         "masterIndices", java.util.List.of(0),
                         "rateLimitMs", 500
+                )),
+                "ma2Telnet", new LinkedHashMap<>(Map.ofEntries(
+                        Map.entry("enabled", false),
+                        Map.entry("host", "127.0.0.1"),
+                        Map.entry("port", 30000),
+                        Map.entry("user", "remote"),
+                        Map.entry("pass", "1234"),
+                        Map.entry("rateLimitMs", 500),
+                        Map.entry("minBpm", 40),
+                        Map.entry("maxBpm", 240),
+                        Map.entry("integerOnly", true),
+                        Map.entry("onlyWhenPlaying", true),
+                        Map.entry("speedMasterIndex", 1),
+                        Map.entry("commandTemplate", "SpecialMaster 3.{index} At {bpm}")
                 ))
         )));
         m.put("ai", new LinkedHashMap<>(Map.of(

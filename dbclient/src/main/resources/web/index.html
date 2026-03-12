@@ -672,6 +672,21 @@
         <div class="diag-card" id="titanDiag">Titan: Idle</div>
       </div>
 
+      <div class="cfg-card">
+        <h3>MA2 BPM (Telnet)</h3>
+        <div class="cfg-row"><label>Enabled</label><input id="cfgMa2Enabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>Host</label><input id="cfgMa2Host" type="text" value="127.0.0.1" /></div>
+        <div class="cfg-row"><label>Port</label><input id="cfgMa2Port" type="number" value="30000" step="1" /></div>
+        <div class="cfg-row"><label>User</label><input id="cfgMa2User" type="text" value="remote" /></div>
+        <div class="cfg-row"><label>Pass</label><input id="cfgMa2Pass" type="password" value="1234" /></div>
+        <div class="cfg-row"><label>SpeedMaster X</label><input id="cfgMa2SpeedIndex" type="number" value="1" min="1" step="1" /></div>
+        <div class="cfg-row"><label>Rate Limit(ms)</label><input id="cfgMa2RateMs" type="number" value="500" step="100" /></div>
+        <div class="cfg-row"><label>Only When Playing</label><input id="cfgMa2OnlyPlaying" type="checkbox" checked /></div>
+        <div class="cfg-row"><label>Command Template</label><input id="cfgMa2CmdTpl" type="text" value="SpecialMaster 3.{index} At {bpm}" style="min-width:280px" /></div>
+        <div class="cfg-row"><label>Manual BPM</label><input id="cfgMa2ManualBpm" type="number" value="128" step="1" /><button id="ma2SendTestBtn" class="scan-btn">Send Test</button></div>
+        <div class="diag-card" id="ma2Diag">MA2: Idle</div>
+      </div>
+
       <div class="cfg-card full"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
     </div>
   </section>
@@ -1037,6 +1052,7 @@
         const mtc = sync.mtc || {};
         const link = sync.abletonLink || {};
         const titan = sync.titanApi || {};
+        const ma2 = sync.ma2Telnet || {};
         const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
@@ -1060,6 +1076,17 @@
           el.checked = masters.includes(String(el.value));
         });
         document.getElementById('cfgTitanRateMs').value = String(Number(titan.rateLimitMs || 500));
+
+        document.getElementById('cfgMa2Enabled').checked = !!ma2.enabled;
+        document.getElementById('cfgMa2Host').value = String(ma2.host || '127.0.0.1');
+        document.getElementById('cfgMa2Port').value = String(Number(ma2.port || 30000));
+        document.getElementById('cfgMa2User').value = String(ma2.user || 'remote');
+        document.getElementById('cfgMa2Pass').value = String(ma2.pass || '1234');
+        document.getElementById('cfgMa2SpeedIndex').value = String(Number(ma2.speedMasterIndex || 1));
+        document.getElementById('cfgMa2RateMs').value = String(Number(ma2.rateLimitMs || 500));
+        document.getElementById('cfgMa2OnlyPlaying').checked = ma2.onlyWhenPlaying !== false;
+        document.getElementById('cfgMa2CmdTpl').value = String(ma2.commandTemplate || 'SpecialMaster 3.{index} At {bpm}');
+
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
       } catch (_) {}
@@ -1092,6 +1119,20 @@
             versionMode: String(document.getElementById('cfgTitanVersion').value || 'auto'),
             masterIndices: Array.from(document.querySelectorAll('input[name="cfgTitanMaster"]:checked')).map(o => Number(o.value)),
             rateLimitMs: Number(document.getElementById('cfgTitanRateMs').value || 500)
+          },
+          ma2Telnet: {
+            enabled: document.getElementById('cfgMa2Enabled').checked,
+            host: String(document.getElementById('cfgMa2Host').value || '').trim(),
+            port: Number(document.getElementById('cfgMa2Port').value || 30000),
+            user: String(document.getElementById('cfgMa2User').value || ''),
+            pass: String(document.getElementById('cfgMa2Pass').value || ''),
+            rateLimitMs: Number(document.getElementById('cfgMa2RateMs').value || 500),
+            minBpm: 40,
+            maxBpm: 240,
+            integerOnly: true,
+            onlyWhenPlaying: document.getElementById('cfgMa2OnlyPlaying').checked,
+            speedMasterIndex: Number(document.getElementById('cfgMa2SpeedIndex').value || 1),
+            commandTemplate: String(document.getElementById('cfgMa2CmdTpl').value || 'SpecialMaster 3.{index} At {bpm}')
           }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
@@ -1114,6 +1155,24 @@
         userSettings.aiRules = list;
         document.getElementById('aiRules').textContent = JSON.stringify(list, null, 2);
       }
+    }
+
+    async function sendMa2Test() {
+      try {
+        const bpm = Number(document.getElementById('cfgMa2ManualBpm').value || 120);
+        const r = await fetch('/api/ma2/test-bpm', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ bpm }) });
+        const j = await r.json();
+        const ma2Diag = document.getElementById('ma2Diag');
+        if (ma2Diag) {
+          if (j.ok) {
+            ma2Diag.classList.remove('error');
+            ma2Diag.textContent = `MA2 TEST OK | CMD=${j.command || '-'} | ACK=${j.ack || '-'}`;
+          } else {
+            ma2Diag.classList.add('error');
+            ma2Diag.textContent = `MA2 TEST FAIL | ${j.error || 'unknown'}`;
+          }
+        }
+      } catch (e) {}
     }
 
     async function refreshSyncState() {
@@ -1225,6 +1284,19 @@
             const tb = titan.lastSentBpm || '-';
             const th = titan.lastHttpCode || '-';
             titanDiag.textContent = `Titan: ${tr ? 'Running' : 'Idle'} | v=${tv} | Masters=${tm} | BPM=${tb} | HTTP=${th}`;
+          }
+        }
+
+        const ma2 = (((j || {}).drivers || {}).ma2Telnet) || {};
+        const ma2Diag = document.getElementById('ma2Diag');
+        if (ma2Diag) {
+          const me = String(ma2.error || '');
+          if (me) {
+            ma2Diag.classList.add('error');
+            ma2Diag.textContent = `MA2 错误：${me}`;
+          } else {
+            ma2Diag.classList.remove('error');
+            ma2Diag.textContent = `MA2: ${ma2.connected ? 'Connected' : 'Idle'} | BPM=${ma2.lastSentBpm || '-'} | CMD=${ma2.lastCommand || '-'} | ACK=${ma2.lastAck || '-'}`;
           }
         }
 
@@ -1583,6 +1655,7 @@
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
+    document.getElementById('ma2SendTestBtn')?.addEventListener('click', sendMa2Test);
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
     document.getElementById('deckList')?.addEventListener('wheel', (e) => {

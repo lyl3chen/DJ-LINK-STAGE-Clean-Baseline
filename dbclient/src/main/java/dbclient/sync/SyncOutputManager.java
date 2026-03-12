@@ -25,6 +25,7 @@ public class SyncOutputManager {
         register(new MtcDriver());
         register(new AbletonLinkDriver());
         register(new TitanApiDriver());
+        register(new Ma2BpmDriver());
         register(new ConsoleApiDriver());
     }
 
@@ -198,6 +199,14 @@ public class SyncOutputManager {
         out.put("timecode", toTimecode(displaySec, 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
+    }
+
+    public synchronized Map<String, Object> sendMa2TestBpm(double bpm) {
+        OutputDriver d = drivers.get("ma2Telnet");
+        if (d instanceof Ma2BpmDriver) {
+            return ((Ma2BpmDriver) d).sendTestBpm(bpm);
+        }
+        return Map.of("ok", false, "error", "ma2Telnet driver not available");
     }
 
     private String toTimecode(double sec, int fps) {

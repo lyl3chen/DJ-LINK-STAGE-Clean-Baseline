@@ -184,6 +184,13 @@ public class JettyServer {
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
+                    if (path.equals("/api/ma2/test-bpm")) {
+                        Object bpmObj = payload.get("bpm");
+                        double bpm = bpmObj instanceof Number ? ((Number) bpmObj).doubleValue() : 120.0;
+                        Map<String, Object> out = syncOutputManager.sendMa2TestBpm(bpm);
+                        response.getWriter().print(gson.toJson(out));
+                        return;
+                    }
                     response.setStatus(404);
                     response.getWriter().print(gson.toJson(Map.of("error", "unknown endpoint")));
                 } catch (Exception e) {
