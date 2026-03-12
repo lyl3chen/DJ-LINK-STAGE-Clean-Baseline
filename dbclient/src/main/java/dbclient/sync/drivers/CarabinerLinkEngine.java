@@ -39,6 +39,9 @@ public class CarabinerLinkEngine {
     private volatile boolean startStopSyncEnabled = false;
     private volatile int lastPeersSeen = -1;
     private volatile boolean forceTempoPush = true;
+    private volatile boolean hadPeersBefore = false;
+    private volatile long peersZeroSince = 0L;
+    private volatile long lastRunnerRestartAt = 0L;
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -171,6 +174,13 @@ public class CarabinerLinkEngine {
                 if (peers instanceof Number) {
                     int p = ((Number) peers).intValue();
                     numPeers = p;
+                    if (p > 0) {
+                        hadPeersBefore = true;
+                        peersZeroSince = 0L;
+                    } else if (hadPeersBefore && peersZeroSince == 0L) {
+                        // 出现“曾经有peer，后来归零”的场景，记录时间用于后续自动重入。
+                        peersZeroSince = System.currentTimeMillis();
+                    }
                     if (p != lastPeersSeen) {
                         lastPeersSeen = p;
                         // peer 拓扑变化后强制下一轮推一次 tempo，避免对端重入会话后卡在旧值（如120）。
@@ -260,6 +270,15 @@ public class CarabinerLinkEngine {
                         lastForcedTempoAt = now;
                     }
                     writer.flush();
+
+                    // 自动重入：若曾有 peer，随后长期为 0（常见于对端手动关再开 Link），
+                    // 主动重启一次 Runner 会话，避免需要手工重启本项目 AbletonLink。
+                    if (hadPeersBefore && numPeers == 0 && peersZeroSince > 0
+                            && (now - peersZeroSince) > 1500
+                            && (now - lastRunnerRestartAt) > 5000) {
+                        lastRunnerRestartAt = now;
+                        restartRunnerSession();
+                    }
                 } catch (Exception e) {
                     if (running) {
                         error = "carabiner write failed: " + e.getMessage();
@@ -295,6 +314,29 @@ public class CarabinerLinkEngine {
             error = "";
         } catch (Exception e) {
             error = "carabiner reconnect failed: " + e.getMessage();
+        }
+    }
+
+    /**
+     * 对端 Link 反复关开后，主动重启一次 Runner 会话来恢复跨机会话可见性。
+     */
+    private synchronized void restartRunnerSession() {
+        try {
+            if (socket != null) socket.close();
+        } catch (Exception ignored) {}
+        socket = null;
+        reader = null;
+        writer = null;
+        try { runner.stop(); } catch (Exception ignored) {}
+        try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+        try {
+            runner.start();
+            connectAndListen();
+            forceTempoPush = true;
+            peersZeroSince = 0L;
+            error = "";
+        } catch (Exception e) {
+            error = "carabiner session restart failed: " + e.getMessage();
         }
     }
 
