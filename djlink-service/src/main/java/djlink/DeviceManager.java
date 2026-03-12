@@ -293,6 +293,8 @@ public class DeviceManager {
         result.put("bpm", playingCount > 0 ? playingBpm / playingCount : null);
         result.put("master", masterPlayer.get());
         result.put("online", players.size());
+        // 预热缓存可视化：用于前端直接判断 metadata 预热是否在工作。
+        result.put("metadataWarmupCacheSize", metadataWarmup.size());
         
         return result;
     }
@@ -1016,6 +1018,9 @@ public class DeviceManager {
             p.put("canTrigger", decision.get("ready"));
             p.remove("summary");
         }
+
+        // 页面可视化：预热缓存当前大小（用于判断预热是否在工作）
+        result.put("metadataWarmupCacheSize", metadataWarmup.size());
         
         return result;
     }

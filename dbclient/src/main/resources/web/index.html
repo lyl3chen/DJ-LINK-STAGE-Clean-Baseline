@@ -660,6 +660,7 @@
     let rafId = null;
     let userSettings = {};
     let mtcPulseBlink = false;
+    let metadataWarmupCacheSize = 0;
     const RENDER_MIN_INTERVAL_MS = 33;
     const waveZoomByDeck = {1:2,2:2,3:2,4:2};
     const waveCanvasCache = new Map();
@@ -1076,7 +1077,7 @@
         if (dashboardStatus) {
           const srcState = String(j.sourceState || 'OFFLINE');
           const srcPlayer = j.sourcePlayer == null ? '-' : j.sourcePlayer;
-          dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | Live Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'}`;
+          dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | Live Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'} | Metadata Warmup Cache: ${metadataWarmupCacheSize}`;
         }
         const tcEl = document.getElementById('ltcTimecode');
         if (tcEl) {
@@ -1195,6 +1196,14 @@
         const j = await r.json();
         mixerChannels = (j.channels || []).filter(c => c.active);
         scheduleRender();
+      } catch (_) {}
+    }
+
+    async function refreshPlayersStateLite() {
+      try {
+        const r = await fetch('/api/players/state');
+        const j = await r.json();
+        metadataWarmupCacheSize = Number(j.metadataWarmupCacheSize || 0);
       } catch (_) {}
     }
 
@@ -1505,10 +1514,12 @@
     }, { passive: false });
     refreshScanStatus();
     refreshMixerState();
+    refreshPlayersStateLite();
     loadSettings();
     refreshSyncState();
     setInterval(refreshScanStatus, 5000);
     setInterval(refreshMixerState, 5000);
+    setInterval(refreshPlayersStateLite, 5000);
     setInterval(refreshSyncState, 100);
     // python-prodj-link-like continuous playhead progression
     setInterval(() => {

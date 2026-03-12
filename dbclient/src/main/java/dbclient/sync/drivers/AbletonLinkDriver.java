@@ -58,7 +58,9 @@ public class AbletonLinkDriver implements OutputDriver {
         engine.updateFromSource(b, p);
 
         sourcePlaying = Boolean.TRUE.equals(p);
-        sourcePlayer = sp instanceof Number ? ((Number) sp).intValue() : sourcePlayer;
+        if (sp instanceof Number) {
+            sourcePlayer = ((Number) sp).intValue();
+        }
         sourceState = ss == null ? sourceState : String.valueOf(ss);
     }
 
