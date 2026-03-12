@@ -209,6 +209,14 @@ public class SyncOutputManager {
         return Map.of("ok", false, "error", "ma2Telnet driver not available");
     }
 
+    public synchronized Map<String, Object> sendMa2TestCommand(String command) {
+        OutputDriver d = drivers.get("ma2Telnet");
+        if (d instanceof Ma2BpmDriver) {
+            return ((Ma2BpmDriver) d).sendTestCommand(command);
+        }
+        return Map.of("ok", false, "connected", false, "sentCommand", command, "rawResponse", "", "error", "ma2Telnet driver not available");
+    }
+
     private String toTimecode(double sec, int fps) {
         int total = (int) Math.max(0, Math.floor(sec));
         int hh = total / 3600;

@@ -191,6 +191,12 @@ public class JettyServer {
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
+                    if (path.equals("/api/ma2/test-command")) {
+                        String cmd = String.valueOf(payload.getOrDefault("command", "")).trim();
+                        Map<String, Object> out = syncOutputManager.sendMa2TestCommand(cmd);
+                        response.getWriter().print(gson.toJson(out));
+                        return;
+                    }
                     response.setStatus(404);
                     response.getWriter().print(gson.toJson(Map.of("error", "unknown endpoint")));
                 } catch (Exception e) {

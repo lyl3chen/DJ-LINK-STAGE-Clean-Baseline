@@ -31,6 +31,7 @@ public class Ma2BpmDriver implements OutputDriver {
     private volatile long lastSendTs = 0L;
     private volatile String lastCommand = "";
     private volatile String lastAck = "";
+    private volatile String lastRawResponse = "";
     private volatile String error = "";
 
     @Override
@@ -95,10 +96,12 @@ public class Ma2BpmDriver implements OutputDriver {
         try {
             ensureConnected();
             System.out.println("[MA2] send: " + cmd);
-            String ack = client.sendCommand(cmd);
+            Ma2TelnetClient.CommandResult r = client.sendCommandDetailed(cmd);
+            System.out.println("[MA2] raw-response: " + r.rawResponse);
             connected = client.isConnected();
             lastCommand = cmd;
-            lastAck = ack;
+            lastAck = r.ack;
+            lastRawResponse = r.rawResponse;
             lastSentBpm = bpmOut;
             lastSendTs = now;
             error = "";
@@ -117,34 +120,72 @@ public class Ma2BpmDriver implements OutputDriver {
         m.put("lastSendTs", lastSendTs);
         m.put("lastCommand", lastCommand);
         m.put("lastAck", lastAck);
+        m.put("lastRawResponse", lastRawResponse);
         m.put("error", error);
         return m;
     }
 
     public synchronized Map<String, Object> sendTestBpm(double bpm) {
         Map<String, Object> out = new LinkedHashMap<>();
-        int b = (int) Math.round(bpm);
-        b = Math.max(minBpm, Math.min(maxBpm, b));
+        out.put("inputBpm", bpm);
+
+        if (!Double.isFinite(bpm) || bpm <= 0 || bpm == 65535.0 || bpm < minBpm || bpm > maxBpm) {
+            out.put("ok", false);
+            out.put("filtered", true);
+            out.put("reason", "invalid-range");
+            return out;
+        }
+
+        int b = integerOnly ? (int) Math.round(bpm) : (int) Math.round(bpm);
+        out.put("roundedBpm", b);
+
+        long now = System.currentTimeMillis();
+        if (b == lastSentBpm) {
+            out.put("ok", false);
+            out.put("filtered", true);
+            out.put("reason", "duplicate");
+            return out;
+        }
+        if (now - lastSendTs < rateLimitMs) {
+            out.put("ok", false);
+            out.put("filtered", true);
+            out.put("reason", "rate-limit");
+            return out;
+        }
+
         String cmd = commandTemplate.replace("{index}", String.valueOf(speedMasterIndex)).replace("{bpm}", String.valueOf(b));
+        Map<String, Object> sent = sendTestCommand(cmd);
+        sent.put("inputBpm", bpm);
+        sent.put("roundedBpm", b);
+        sent.put("filtered", false);
+        return sent;
+    }
+
+    public synchronized Map<String, Object> sendTestCommand(String cmd) {
+        Map<String, Object> out = new LinkedHashMap<>();
         try {
             ensureConnected();
             System.out.println("[MA2] send: " + cmd);
-            String ack = client.sendCommand(cmd);
+            Ma2TelnetClient.CommandResult r = client.sendCommandDetailed(cmd);
+            System.out.println("[MA2] raw-response: " + r.rawResponse);
             connected = client.isConnected();
-            lastCommand = cmd;
-            lastAck = ack;
-            lastSentBpm = b;
-            lastSendTs = System.currentTimeMillis();
+            lastCommand = r.sentCommand;
+            lastAck = r.ack;
+            lastRawResponse = r.rawResponse;
             error = "";
+            out.put("connected", connected);
+            out.put("sentCommand", r.sentCommand);
+            out.put("rawResponse", r.rawResponse);
+            out.put("error", "");
             out.put("ok", true);
-            out.put("command", cmd);
-            out.put("ack", ack);
         } catch (Exception e) {
             connected = false;
             error = "[MA2] error: " + e.getMessage();
-            out.put("ok", false);
+            out.put("connected", false);
+            out.put("sentCommand", cmd);
+            out.put("rawResponse", "");
             out.put("error", error);
-            out.put("command", cmd);
+            out.put("ok", false);
         }
         return out;
     }
