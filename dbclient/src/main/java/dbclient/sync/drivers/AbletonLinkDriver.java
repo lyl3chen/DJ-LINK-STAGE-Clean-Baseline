@@ -49,13 +49,18 @@ public class AbletonLinkDriver implements OutputDriver {
         Object playing = state.get("sourcePlaying");
         Object sp = state.get("sourcePlayer");
         Object ss = state.get("sourceState");
+        Object sec = state.get("masterTimeSec");
 
         Double b = bpm instanceof Number ? ((Number) bpm).doubleValue() : null;
         if (b != null && pitchPct instanceof Number) {
             b = b * (1.0 + ((Number) pitchPct).doubleValue() / 100.0);
         }
+        Double beatPos = null;
+        if (sec instanceof Number && b != null) {
+            beatPos = ((Number) sec).doubleValue() * b / 60.0;
+        }
         Boolean p = playing instanceof Boolean ? (Boolean) playing : null;
-        engine.updateFromSource(b, p);
+        engine.updateFromSource(b, beatPos, p);
 
         sourcePlaying = Boolean.TRUE.equals(p);
         if (sp instanceof Number) {

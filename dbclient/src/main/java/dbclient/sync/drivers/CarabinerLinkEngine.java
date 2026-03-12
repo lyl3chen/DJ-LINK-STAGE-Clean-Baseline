@@ -31,9 +31,11 @@ public class CarabinerLinkEngine {
     private volatile int numPeers = 0;
     private volatile String version = "";
     private volatile double desiredTempo = 120.0;
+    private volatile double desiredBeatPosition = 0.0;
     private volatile boolean desiredPlaying = false;
     private volatile long carabinerStartRaw = 0L;
     private volatile double lastSentTempo = -1.0;
+    private volatile double lastSentBeatPosition = Double.NaN;
     private volatile boolean statusSeen = false;
     private volatile boolean versionSeen = false;
     private volatile boolean startStopSyncEnabled = false;
@@ -111,10 +113,12 @@ public class CarabinerLinkEngine {
     /**
      * 接收上游（SyncOutputManager）派生出来的播放源状态：
      * - bpm：当前应输出给 Link 的目标 BPM（已按当前业务逻辑计算）
+     * - beatPosition：当前拍点位置（用于 beat/phase 同步）
      * - playing：统一播放态（用于避免 Carabiner 内部 start 字段和界面语义冲突）
      */
-    public synchronized void updateFromSource(Double bpm, Boolean playing) {
+    public synchronized void updateFromSource(Double bpm, Double beatPosition, Boolean playing) {
         if (bpm != null && bpm > 0 && Double.isFinite(bpm)) desiredTempo = bpm;
+        if (beatPosition != null && Double.isFinite(beatPosition) && beatPosition >= 0) desiredBeatPosition = beatPosition;
         if (playing != null) desiredPlaying = playing;
     }
 
@@ -247,6 +251,7 @@ public class CarabinerLinkEngine {
             boolean initSent = false;
             long lastSyncEnableAt = 0L;
             long lastForcedTempoAt = 0L;
+            long lastForcedBeatAt = 0L;
             while (running && writer != null) {
                 try {
                     long now = System.currentTimeMillis();
@@ -269,6 +274,19 @@ public class CarabinerLinkEngine {
                         forceTempoPush = false;
                         lastForcedTempoAt = now;
                     }
+
+                    // Beat/Phase 同步：周期发送 beat-at-time。
+                    // when 使用当前系统时间（微秒），quantum 先固定 4。
+                    boolean beatChanged = Double.isNaN(lastSentBeatPosition)
+                            || Math.abs(desiredBeatPosition - lastSentBeatPosition) >= 0.02;
+                    boolean beatPeriodic = (now - lastForcedBeatAt) > 1000;
+                    if (beatChanged || beatPeriodic) {
+                        long whenUs = now * 1000L;
+                        writer.write(String.format(java.util.Locale.US, "beat-at-time %.6f %d 4\n", desiredBeatPosition, whenUs));
+                        lastSentBeatPosition = desiredBeatPosition;
+                        lastForcedBeatAt = now;
+                    }
+
                     writer.flush();
 
                     // 自动重入：若曾有 peer，随后长期为 0（常见于对端手动关再开 Link），
