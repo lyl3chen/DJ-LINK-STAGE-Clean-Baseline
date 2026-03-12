@@ -34,6 +34,9 @@ public class DeviceManager {
     private WaveformFinder waveformFinder;
     private AnalysisTagFinder analysisTagFinder;
     private ArtFinder artFinder;
+
+    // 轻量预热缓存层：用于提前拉取并缓存当前曲目 metadata，降低播放瞬间 miss。
+    private final MetadataWarmupService metadataWarmup = new MetadataWarmupService();
     
     private DeviceManager() {}
     
@@ -167,6 +170,21 @@ public class DeviceManager {
                     " metadata=" + (update.metadata != null ? update.metadata.getTitle() : "null"));
             }
         });
+
+        // 媒体挂载变化时清理预热缓存，避免跨U盘误命中旧索引。
+        metadataFinder.addMountListener(new MountListener() {
+            @Override
+            public void mediaMounted(SlotReference slotReference) {
+                metadataWarmup.clear();
+                System.out.println("📦 Media mounted on " + slotReference + ", metadata warmup cache cleared.");
+            }
+
+            @Override
+            public void mediaUnmounted(SlotReference slotReference) {
+                metadataWarmup.clear();
+                System.out.println("📦 Media unmounted from " + slotReference + ", metadata warmup cache cleared.");
+            }
+        });
     }
     
     private void updatePlayerState(int deviceNumber, CdjStatus status) {
@@ -191,16 +209,23 @@ public class DeviceManager {
         System.out.println("🔍 Player " + deviceNumber + " status: playing=" + status.isPlaying() + 
             " trackType=" + status.getTrackType() + " sourceSlot=" + status.getTrackSourceSlot());
         
+        // 预热：状态一到就异步拉一次当前曲目 metadata，提升后续命中率。
+        metadataWarmup.prefetchFromStatus(status, metadataFinder);
+
         // Try to get track metadata for this player
         try {
             TrackMetadata meta = metadataFinder.getLatestMetadataFor(deviceNumber);
+            if (meta == null) {
+                // 兜底：从预热缓存查同一 DataReference。
+                meta = metadataWarmup.getFromStatus(status);
+            }
             if (meta != null) {
                 state.trackMeta = meta;
                 System.out.println("✅ Got metadata for player " + deviceNumber + ": " + meta.getTitle());
             } else {
                 // Try getting metadata using different approach - from CdjStatus
-                System.out.println("⚠️ getLatestMetadataFor(" + deviceNumber + ") returned null, trying status.getTrackType()...");
-                
+                System.out.println("⚠️ metadata miss for player " + deviceNumber + ", warmupCacheSize=" + metadataWarmup.size());
+
                 // Check if there's a data reference in the status
                 if (status.getTrackType() != null) {
                     System.out.println("   Track type: " + status.getTrackType());
@@ -1319,6 +1344,8 @@ public class DeviceManager {
         }
 
         players.clear();
+        metadataWarmup.clear();
+        metadataWarmup.shutdown();
         System.out.println("=== DJ Link Service Stopped ===");
     }
     

@@ -41,6 +41,9 @@
   - 你看到的 `/api/config`、`/api/sync/state`、`/ws` 都在这里处理。
 - `djlink-service/src/main/java/djlink/DeviceManager.java`
   - 设备状态聚合中心（播放器、混音器、波形等）。
+  - 新增“metadata 预热缓存层”接入：播放状态更新时先异步预取曲目元数据，减少首次命中延迟。
+- `djlink-service/src/main/java/djlink/MetadataWarmupService.java`
+  - 轻量预热服务：按 DataReference 预拉取并缓存 metadata，供 miss 时兜底。
 
 ### 第二阶段（新模块）
 - `dbclient/src/main/java/dbclient/sync/SyncOutputManager.java`
