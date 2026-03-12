@@ -55,6 +55,7 @@ public class CarabinerLinkEngine {
     private int port = 17000;
     private int updateIntervalMs = 20;
     private volatile long lastReconnectAttempt = 0L;
+    private volatile long connectRefusedSince = 0L;
 
     /**
      * 启动 Carabiner：
@@ -87,8 +88,9 @@ public class CarabinerLinkEngine {
                 try {
                     connectAndListen();
                     error = "";
+                    connectRefusedSince = 0L;
                 } catch (Exception e) {
-                    if (running) error = "carabiner start failed: " + e.getMessage();
+                    if (running) setConnectError("carabiner start failed", e);
                 }
             }, "carabiner-connect").start();
         } catch (Exception e) {
@@ -349,8 +351,9 @@ public class CarabinerLinkEngine {
         try {
             connectAndListen();
             error = "";
+            connectRefusedSince = 0L;
         } catch (Exception e) {
-            error = "carabiner reconnect failed: " + e.getMessage();
+            setConnectError("carabiner reconnect failed", e);
         }
     }
 
@@ -375,6 +378,23 @@ public class CarabinerLinkEngine {
         } catch (Exception e) {
             error = "carabiner session restart failed: " + e.getMessage();
         }
+    }
+
+    private void setConnectError(String prefix, Exception e) {
+        String msg = String.valueOf(e.getMessage());
+        boolean refused = msg != null && msg.toLowerCase().contains("connection refused");
+        long now = System.currentTimeMillis();
+        if (refused) {
+            if (connectRefusedSince == 0L) connectRefusedSince = now;
+            // 连接拒绝短暂抖动期（启动/重启窗口）不立刻标红，避免 UI 闪烁误报。
+            if (now - connectRefusedSince < 4000) {
+                error = "";
+                return;
+            }
+        } else {
+            connectRefusedSince = 0L;
+        }
+        error = prefix + ": " + msg;
     }
 
     private static int intCfg(Map<String, Object> cfg, String key, int def) {
