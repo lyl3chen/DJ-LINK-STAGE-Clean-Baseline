@@ -26,7 +26,7 @@ public class CarabinerLinkEngine {
     private volatile String lastMessageType = "";
     private volatile long lastUpdateTs = 0L;
     private volatile double tempo = 120.0;
-    private volatile double beatPosition = 0.0;
+    private volatile double carabinerBeatPosition = 0.0;
     private volatile boolean playing = false;
     private volatile int numPeers = 0;
     private volatile String version = "";
@@ -133,7 +133,9 @@ public class CarabinerLinkEngine {
         m.put("carabinerVersionSeen", versionSeen);
         m.put("carabinerStartStopSyncEnabled", startStopSyncEnabled);
         m.put("tempo", tempo);
-        m.put("beatPosition", beatPosition);
+        // 对外默认展示跟随源的 beat 位置，避免 Carabiner 内部时间轴（可能为负）造成误解。
+        m.put("beatPosition", desiredBeatPosition);
+        m.put("carabinerBeatPosition", carabinerBeatPosition);
         m.put("playing", playing);
         m.put("numPeers", numPeers);
         m.put("version", version);
@@ -190,7 +192,7 @@ public class CarabinerLinkEngine {
                         forceTempoPush = true;
                     }
                 }
-                if (beat instanceof Number) beatPosition = ((Number) beat).doubleValue();
+                if (beat instanceof Number) carabinerBeatPosition = ((Number) beat).doubleValue();
                 if (peers instanceof Number) {
                     int p = ((Number) peers).intValue();
                     numPeers = p;
