@@ -151,7 +151,16 @@ public class CarabinerLinkEngine {
     @SuppressWarnings("unchecked")
     private void onLine(String line) {
         try {
-            Message m = new Message(line);
+            if (line == null || line.isBlank()) return;
+            String trimmed = line.trim();
+            if (trimmed.startsWith("bad-")) {
+                lastMessageType = trimmed;
+                lastUpdateTs = System.currentTimeMillis();
+                error = "carabiner command rejected: " + trimmed;
+                return;
+            }
+
+            Message m = new Message(trimmed);
             lastMessageType = m.messageType;
             lastUpdateTs = System.currentTimeMillis();
 
@@ -282,7 +291,8 @@ public class CarabinerLinkEngine {
                     boolean beatPeriodic = (now - lastForcedBeatAt) > 1000;
                     if (beatChanged || beatPeriodic) {
                         long whenUs = now * 1000L;
-                        writer.write(String.format(java.util.Locale.US, "beat-at-time %.6f %d 4\n", desiredBeatPosition, whenUs));
+                        // quantum 用浮点格式，避免 Carabiner 返回 bad-quantum。
+                        writer.write(String.format(java.util.Locale.US, "beat-at-time %.6f %d 4.0\n", desiredBeatPosition, whenUs));
                         lastSentBeatPosition = desiredBeatPosition;
                         lastForcedBeatAt = now;
                     }
