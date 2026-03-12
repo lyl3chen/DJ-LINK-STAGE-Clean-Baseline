@@ -128,7 +128,7 @@ public class UserSettingsStore {
                 )),
                 "titanApi", new LinkedHashMap<>(Map.of(
                         "enabled", false,
-                        "baseUrl", "http://127.0.0.1:4430",
+                        "ip", "127.0.0.1",
                         "versionMode", "auto",
                         "masterIndex", 0,
                         "rateLimitMs", 500
@@ -159,6 +159,22 @@ public class UserSettingsStore {
                 link.remove("bridgeSendPort");
                 link.remove("bridgeListenPort");
                 link.remove("quantum");
+            }
+
+            // Titan 配置兼容迁移：旧 baseUrl -> 新 ip（端口固定 4430）。
+            Object titanObj = sync.get("titanApi");
+            if (titanObj instanceof Map) {
+                Map<String, Object> titan = (Map<String, Object>) titanObj;
+                if (!titan.containsKey("ip") && titan.get("baseUrl") != null) {
+                    String raw = String.valueOf(titan.get("baseUrl"));
+                    try {
+                        String s = raw.trim();
+                        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
+                        java.net.URI u = java.net.URI.create(s);
+                        if (u.getHost() != null && !u.getHost().isBlank()) titan.put("ip", u.getHost());
+                    } catch (Exception ignored) {}
+                }
+                titan.remove("baseUrl");
             }
         }
     }

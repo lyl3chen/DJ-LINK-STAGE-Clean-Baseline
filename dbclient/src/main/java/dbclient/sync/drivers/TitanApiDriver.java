@@ -15,7 +15,8 @@ public class TitanApiDriver implements OutputDriver {
     private volatile boolean enabled = false;
     private volatile String error = "";
 
-    private volatile String baseUrl = "";
+    private volatile String titanIp = "127.0.0.1";
+    private volatile String baseUrl = "http://127.0.0.1:4430";
     private volatile String versionMode = "auto";
     private volatile int versionDetected = 0;
     private volatile int masterIndex = 0;
@@ -93,6 +94,7 @@ public class TitanApiDriver implements OutputDriver {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("enabled", enabled);
         m.put("running", running);
+        m.put("ip", titanIp);
         m.put("baseUrl", baseUrl);
         m.put("versionMode", versionMode);
         m.put("versionDetected", versionDetected);
@@ -108,8 +110,22 @@ public class TitanApiDriver implements OutputDriver {
     @SuppressWarnings("unchecked")
     private void applyConfig(Map<String, Object> config) {
         if (config == null) return;
+        Object ip = config.get("ip");
+        if (ip != null) titanIp = String.valueOf(ip).trim();
+
         Object url = config.get("baseUrl");
-        if (url != null) baseUrl = String.valueOf(url).trim();
+        if ((titanIp == null || titanIp.isBlank()) && url != null) {
+            // 兼容旧配置：如果只给了 baseUrl，则提取 host 当 ip。
+            try {
+                String s = String.valueOf(url).trim();
+                if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://" + s;
+                java.net.URI u = java.net.URI.create(s);
+                if (u.getHost() != null) titanIp = u.getHost();
+            } catch (Exception ignored) {}
+        }
+        if (titanIp == null || titanIp.isBlank()) titanIp = "127.0.0.1";
+        baseUrl = "http://" + titanIp + ":4430";
+
         Object vm = config.get("versionMode");
         if (vm != null) versionMode = String.valueOf(vm).trim().toLowerCase();
         Object mi = config.get("masterIndex");
