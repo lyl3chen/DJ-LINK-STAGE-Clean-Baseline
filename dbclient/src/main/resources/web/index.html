@@ -61,6 +61,8 @@
     .cfg-card { border:1px solid #2f425e; background:#0f1624; border-radius:6px; padding:10px; }
     .cfg-card.full { grid-column: 1 / -1; }
     .cfg-card h3 { margin:0 0 8px; font-size:13px; color:#a9cfff; }
+    .cfg-subgrid { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:10px; }
+    .cfg-subcard { border:1px solid #2f425e; background:#0d1422; border-radius:6px; padding:10px; }
     .cfg-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
     .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
     .master-picks { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -620,24 +622,29 @@
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
 
-      <div class="cfg-card">
-        <h3>LTC</h3>
-        <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
-        <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
-        <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
-        <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
-        <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
-        <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
-        <div class="cfg-row"><label>Live Timecode</label><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
-        <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
-      </div>
+      <div class="cfg-card full">
+        <h3>SMPTE Timecode</h3>
+        <div class="cfg-row"><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
+        <div class="cfg-subgrid">
+          <div class="cfg-subcard">
+            <h3>LTC</h3>
+            <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
+            <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
+            <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
+            <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
+            <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
+            <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
+            <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
+          </div>
 
-      <div class="cfg-card">
-        <h3>MTC</h3>
-        <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
-        <div class="cfg-row"><label>MTC 端口</label><select id="cfgMtcPort"></select></div>
-        <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
-        <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
+          <div class="cfg-subcard">
+            <h3>MTC</h3>
+            <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
+            <div class="cfg-row"><label>MTC 端口</label><select id="cfgMtcPort"></select></div>
+            <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
+            <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
+          </div>
+        </div>
       </div>
 
       <div class="cfg-card">
@@ -1130,7 +1137,7 @@
         if (dashboardStatus) {
           const srcState = String(j.sourceState || 'OFFLINE');
           const srcPlayer = j.sourcePlayer == null ? '-' : j.sourcePlayer;
-          dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | Live Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'} | Metadata Warmup Cache: ${metadataWarmupCacheSize} | Last Lookup: ${metadataLastLookup}`;
+          dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | SMPTE Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'} | Metadata Warmup Cache: ${metadataWarmupCacheSize} | Last Lookup: ${metadataLastLookup}`;
         }
         const tcEl = document.getElementById('ltcTimecode');
         if (tcEl) {
