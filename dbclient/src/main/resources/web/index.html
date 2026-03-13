@@ -732,6 +732,15 @@
       return `${m}:${String(sec).padStart(2, '0')}`;
     }
 
+    function fmtMs(ms) {
+      if (ms == null || isNaN(ms)) return '--:--:--';
+      const totalMs = Math.max(0, Math.floor(ms));
+      const m = Math.floor(totalMs / 60000);
+      const sec = Math.floor((totalMs % 60000) / 1000);
+      const milli = totalMs % 1000;
+      return `${m}:${String(sec).padStart(2, '0')}:${String(milli).padStart(3, '0')}`;
+    }
+
     function getAnimatedCurrentMs(p, durationMs, nowMs) {
       const raw = Number(p.currentTimeMs ?? p.beatTimeMs ?? 0);
       const bpm = Number(p.bpm || 0);
@@ -1596,7 +1605,7 @@
           <div class="deck-right">
             <div class="time-col">
               <div class="time-rem">${fmt(remainingMs)}</div>
-              <div class="time-sub">NOW ${fmt(currentMs)} / TOTAL ${fmt(durationMs)}</div>
+              <div class="time-sub">NOW ${fmtMs(currentMs)} / TOTAL ${fmt(durationMs)}</div>
             </div>
             <div class="bpm-col ${p.master?'master':''}">
               <div class="bpm-value">${effectiveBpm!=null?effectiveBpm.toFixed(1):'--'}</div>
