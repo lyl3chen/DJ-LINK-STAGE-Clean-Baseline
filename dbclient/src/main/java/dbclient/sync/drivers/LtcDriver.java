@@ -96,6 +96,45 @@ public class LtcDriver implements OutputDriver {
     private volatile String reanchorTriggerType = "";
     private volatile String reanchorSuppressedReason = "";
 
+    // === 四条路径状态机 ===
+    // 路径A: 正常连续推进 (rate following)
+    // 路径B: 重锚 (media change / big jump)
+    // 路径C: Pause-Hold (停止/暂停)
+    // 路径D: Resume (暂停后恢复)
+
+    // 当前控制模式
+    private volatile String rateControlMode = "IDLE"; // IDLE / NORMAL / REANCHOR / PAUSE / RESUME
+    private volatile String lastAnchorMode = "";
+
+    // Pause/Resume 状态
+    private volatile boolean wasPlaying = false;
+    private volatile boolean pauseTransitionDetected = false;
+    private volatile boolean resumeTransitionDetected = false;
+    private volatile long lastPauseAtMs = 0L;
+    private volatile long lastResumeAtMs = 0L;
+
+    // Loop 状态检测
+    private volatile boolean loopLikeJumpDetected = false;
+    private volatile long lastLoopJumpAtMs = 0L;
+    private volatile long lastLoopJumpFromMs = 0L;
+    private volatile long lastLoopJumpToMs = 0L;
+
+    // 媒体变化时暂停检测
+    private volatile boolean mediaChangedWhilePaused = false;
+
+    // Soft sync / Hard reanchor
+    private volatile long lastSoftSyncAtMs = 0L;
+    private volatile long lastHardReanchorAtMs = 0L;
+    private volatile String lastHoldReason = "";
+    private volatile boolean lastResumeReanchorApplied = false;
+
+    // 位置误差
+    private volatile long positionErrorMs = 0L;
+
+    // 目标速率 vs 实际应用速率
+    private volatile double targetRate = 1.0;
+    private volatile double appliedRate = 1.0;
+
     // === Update() 原始输入观测 ===
     private volatile long updateInvocationCount = 0L;
     private volatile long lastUpdateAtMs = 0L;
@@ -347,6 +386,52 @@ public class LtcDriver implements OutputDriver {
         }
         upstreamPositionMs = newPositionMs;
 
+        // === Pause/Resume 转换检测 ===
+        long now = System.currentTimeMillis();
+        pauseTransitionDetected = false;
+        resumeTransitionDetected = false;
+
+        if (!parsedPlaying && wasPlaying) {
+            // Playing -> Not Playing (Pause)
+            pauseTransitionDetected = true;
+            lastPauseAtMs = now;
+            rateControlMode = "PAUSE";
+            lastHoldReason = "pause";
+            System.out.println("[LTC] PAUSE DETECTED at " + newPositionMs + "ms");
+        } else if (parsedPlaying && !wasPlaying) {
+            // Not Playing -> Playing (Resume)
+            resumeTransitionDetected = true;
+            lastResumeAtMs = now;
+            rateControlMode = "RESUME";
+            System.out.println("[LTC] RESUME DETECTED at " + newPositionMs + "ms");
+        }
+
+        // 检测媒体变化时是否处于暂停状态
+        if (mediaContextChanged && !parsedPlaying) {
+            mediaChangedWhilePaused = true;
+            System.out.println("[LTC] MEDIA CHANGED WHILE PAUSED: trackId=" + newTrackId);
+        }
+
+        // Loop 跳变检测：位置回到之前的位置（loop repeat）
+        if (upstreamPositionValid && parsedPlaying) {
+            // 检测是否在 loop 区间内反复跳回
+            if (lastLoopJumpToMs > 0 && newPositionMs == lastLoopJumpToMs && prevUpstreamPositionMs > newPositionMs) {
+                // 位置又跳回之前的 loop 点
+                loopLikeJumpDetected = true;
+                lastLoopJumpAtMs = now;
+                lastLoopJumpFromMs = prevUpstreamPositionMs;
+                lastLoopJumpToMs = newPositionMs;
+                System.out.println("[LTC] LOOP-LIKE JUMP DETECTED: from=" + prevUpstreamPositionMs + " to=" + newPositionMs);
+            } else if (Math.abs(newPositionMs - prevUpstreamPositionMs) > 2000 && newPositionMs < prevUpstreamPositionMs) {
+                // 大幅回跳，可能是 loop 开始
+                lastLoopJumpFromMs = prevUpstreamPositionMs;
+                lastLoopJumpToMs = newPositionMs;
+            }
+        }
+
+        // 更新播放状态
+        wasPlaying = parsedPlaying;
+
         // === 2) 捕获上游 playback rate reference ===
         // 优先用 effectiveBpm / baseBpm 计算，其次用 pitch
         Double effectiveBpm = null;
@@ -494,6 +579,25 @@ public class LtcDriver implements OutputDriver {
         m.put("parsedBpm", parsedBpm);
         m.put("parsedPitch", parsedPitch);
 
+        // 四条路径状态机
+        m.put("rateControlMode", rateControlMode);
+        m.put("lastAnchorMode", lastAnchorMode);
+        m.put("wasPlaying", wasPlaying);
+        m.put("pauseTransitionDetected", pauseTransitionDetected);
+        m.put("resumeTransitionDetected", resumeTransitionDetected);
+        m.put("lastPauseAtMs", lastPauseAtMs);
+        m.put("lastResumeAtMs", lastResumeAtMs);
+        m.put("loopLikeJumpDetected", loopLikeJumpDetected);
+        m.put("lastLoopJumpAtMs", lastLoopJumpAtMs);
+        m.put("mediaChangedWhilePaused", mediaChangedWhilePaused);
+        m.put("lastSoftSyncAtMs", lastSoftSyncAtMs);
+        m.put("lastHardReanchorAtMs", lastHardReanchorAtMs);
+        m.put("lastHoldReason", lastHoldReason);
+        m.put("lastResumeReanchorApplied", lastResumeReanchorApplied);
+        m.put("positionErrorMs", positionErrorMs);
+        m.put("targetRate", targetRate);
+        m.put("appliedRate", appliedRate);
+
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
         m.put("smallErrorThresholdSec", SMALL_ERROR_THRESHOLD_SEC);
@@ -541,17 +645,39 @@ public class LtcDriver implements OutputDriver {
                 framePrimed = false;
                 initialAligned = false;
                 blockClockInit = true;
+                rateControlMode = "IDLE";
             }
 
+            // === 路径C: Pause-Hold ===
             if (!isPlaying) {
-                // === 状态 C: 停播 ===
-                // LTC 稳定停住，不输出也不抖动
+                // LTC 稳定停住
                 outputState = "PAUSED";
+                rateControlMode = "PAUSE";
                 try { Thread.sleep(20); } catch (InterruptedException ignored) {}
                 continue;
             }
 
-            // === 播放中：执行 Reanchor（真正重置本地 LTC 位置） ===
+            // === 路径D: Resume - 恢复播放时做一次 soft sync ===
+            if (resumeTransitionDetected && upstreamPositionValid) {
+                // Resume 时不做硬重锚，而是做一次软贴合
+                long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
+                // 计算位置误差
+                positionErrorMs = (localLtcSamplePos * 1000L) / sampleRate - upstreamPositionMs;
+                // 只在误差超过 100ms 时才做一次软贴合
+                if (Math.abs(positionErrorMs) > 100) {
+                    localLtcSamplePos = targetSamplePos;
+                    localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
+                    nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
+                    framePrimed = false;
+                    lastSoftSyncAtMs = System.currentTimeMillis();
+                    System.out.println("[LTC] RESUME SOFT SYNC: error=" + positionErrorMs + "ms -> aligned to " + upstreamPositionMs + "ms");
+                }
+                lastResumeReanchorApplied = Math.abs(positionErrorMs) > 100;
+                resumeTransitionDetected = false;
+                rateControlMode = "NORMAL";
+            }
+
+            // === 路径B: Reanchor (媒体变化/大跳变/loop回跳) ===
             if (pendingReanchor && upstreamPositionValid) {
                 // 真正执行 reanchor：重置本地 LTC 主位置到 upstream 位置
                 long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
@@ -563,9 +689,11 @@ public class LtcDriver implements OutputDriver {
 
                 // 记录执行详情
                 lastReanchorAppliedAtMs = System.currentTimeMillis();
+                lastHardReanchorAtMs = System.currentTimeMillis();
                 reanchorCount++;
                 lastReanchorReason = reanchorReason;
                 lastReanchorUpstreamPositionMs = reanchorUpstreamPositionMs;
+                lastAnchorMode = "HARD";
 
                 System.out.println("[LTC] REANCHOR APPLIED: reason=" + reanchorReason + " upstreamPos=" + reanchorUpstreamPositionMs + "ms -> localSample=" + localLtcSamplePos + " frame=" + localLtcFramePos);
 
@@ -573,6 +701,7 @@ public class LtcDriver implements OutputDriver {
                 pendingReanchor = false;
                 reanchorReason = "";
                 reanchorUpstreamPositionMs = 0L;
+                rateControlMode = "NORMAL";
             } else if (!initialAligned && upstreamPositionValid) {
                 // 首次对齐：用上游位置初始化本地 LTC
                 long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
@@ -581,13 +710,18 @@ public class LtcDriver implements OutputDriver {
                 nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                 initialAligned = true;
                 framePrimed = false;
+                rateControlMode = "NORMAL";
                 System.out.println("[LTC] INITIAL ALIGN: upstreamPos=" + upstreamPositionMs + "ms -> localSample=" + localLtcSamplePos);
             }
-            // 正常播放时：保持本地稳定 LTC 时钟推进，不受上游小抖动影响
 
-            // === 状态 A: 正常连续播放 ===
-            // 本地 LTC 按 smoothedRate 稳定推进
-            double effectiveSamplesPerFrame = samplesPerFrameExact / smoothedRate;
+            // === 路径A: 正常连续播放 - 只按 smoothedRate 推进，不做位置纠偏 ===
+            // 设置目标速率和应用速率
+            targetRate = smoothedRate;
+            appliedRate = smoothedRate;
+            rateControlMode = "NORMAL";
+
+            // === 路径A: 正常连续播放 - 按 appliedRate 推进 ===
+            double effectiveSamplesPerFrame = samplesPerFrameExact / appliedRate;
 
             double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
@@ -616,8 +750,8 @@ public class LtcDriver implements OutputDriver {
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
 
-            // 本地 LTC 位置按 smoothedRate 推进
-            localLtcSamplePos += (long) (bufferSamples * smoothedRate);
+            // 本地 LTC 位置按 appliedRate 推进
+            localLtcSamplePos += (long) (bufferSamples * appliedRate);
             // 同步本地帧位置
             localLtcFramePos = (long) (localLtcSamplePos / effectiveSamplesPerFrame);
             nextBlockStartSec += bufferSamples / (double) sampleRate;
