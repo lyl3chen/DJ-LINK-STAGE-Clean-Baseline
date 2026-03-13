@@ -174,13 +174,13 @@ public class LtcDriver implements OutputDriver {
         final LtcFrameBuilder frameBuilder = new LtcFrameBuilder(mode);
         final LtcBmcModulator mod = new LtcBmcModulator(sampleRate, bitRate);
 
-        // 按 sample 计数推进 frame
-        final long samplesPerFrame = sampleRate / mode.nominalFps; // 可能不是整数
+        // 显式 frame 边界推进（非反推）
         final double samplesPerFrameExact = (double) sampleRate / mode.rateFps;
-        final long relockThresholdSamples = samplesPerFrame * 2; // 偏差超 2 帧才重锁
+        final long relockThresholdSamples = (long) (samplesPerFrameExact * 2.5); // 偏差超 2.5 帧才重锁
 
         long totalSamplesWritten = 0L;
-        double sampleAccumulator = 0.0; // 处理非整数 sample/frame
+        long currentFrameStartSample = 0L;
+        long nextFrameStartSample = 0L;
         long currentFrameIndex = -1;
         boolean framePrimed = false;
 
@@ -190,18 +190,20 @@ public class LtcDriver implements OutputDriver {
             if (!blockClockInit) {
                 nextBlockStartSec = clockSec;
                 totalSamplesWritten = 0L;
-                sampleAccumulator = 0.0;
-                currentFrameIndex = -1;
+                currentFrameStartSample = 0L;
+                nextFrameStartSample = (long) samplesPerFrameExact;
+                currentFrameIndex = 0;
                 framePrimed = false;
                 blockClockInit = true;
             }
 
-            // 仅在偏差超过 2 帧时才重锁
+            // 仅在偏差超过 2.5 帧时才重锁
             long expectedSamples = (long) (clockSec * sampleRate);
             if (Math.abs(totalSamplesWritten - expectedSamples) > relockThresholdSamples) {
                 totalSamplesWritten = expectedSamples;
-                sampleAccumulator = 0.0;
-                currentFrameIndex = -1;
+                currentFrameStartSample = expectedSamples;
+                nextFrameStartSample = expectedSamples + (long) samplesPerFrameExact;
+                currentFrameIndex = (long) (expectedSamples / samplesPerFrameExact);
                 framePrimed = false;
             }
 
@@ -211,14 +213,20 @@ public class LtcDriver implements OutputDriver {
 
             for (int i = 0; i < bufferSamples; i++) {
                 long sampleIdx = totalSamplesWritten + i;
-                // 按 sample 数决定当前帧
-                double framesElapsed = sampleIdx / samplesPerFrameExact;
-                long frameIdx = (long) framesElapsed;
 
-                if (!framePrimed || frameIdx != currentFrameIndex) {
-                    currentFrameIndex = frameIdx;
-                    double frameSec = frameIdx / mode.rateFps;
-                    Timecode tc = mode.timecodeFromSeconds(frameSec);
+                // 显式 frame 边界判断
+                if (!framePrimed || sampleIdx >= nextFrameStartSample) {
+                    // 进入新帧
+                    while (sampleIdx >= nextFrameStartSample) {
+                        currentFrameStartSample = nextFrameStartSample;
+                        nextFrameStartSample += (long) samplesPerFrameExact;
+                        currentFrameIndex++;
+                    }
+                    // 如果刚启动或重锁后，取当前 frame 索引
+                    if (currentFrameIndex < 0) {
+                        currentFrameIndex = currentFrameStartSample / (long) samplesPerFrameExact;
+                    }
+                    Timecode tc = mode.timecodeFromSeconds(currentFrameIndex / mode.rateFps);
                     frameInSecond = tc.frame;
                     mod.loadFrame(frameBuilder.buildBits(tc));
                     framePrimed = true;
