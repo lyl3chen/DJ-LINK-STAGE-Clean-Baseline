@@ -679,10 +679,9 @@
         <div class="cfg-row"><label>Port</label><input id="cfgMa2Port" type="number" value="30000" step="1" /></div>
         <div class="cfg-row"><label>User</label><input id="cfgMa2User" type="text" value="remote" /></div>
         <div class="cfg-row"><label>Pass</label><input id="cfgMa2Pass" type="password" value="" /></div>
-        <div class="cfg-row"><label>SpeedMaster X</label><input id="cfgMa2SpeedIndex" type="number" value="1" min="1" step="1" /></div>
+        <div class="cfg-row"><label>SpeedMaster</label><select id="cfgMa2SpeedIndex"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option></select></div>
         <div class="cfg-row"><label>Rate Limit(ms)</label><input id="cfgMa2RateMs" type="number" value="500" step="100" /></div>
         <div class="cfg-row"><label>Only When Playing</label><input id="cfgMa2OnlyPlaying" type="checkbox" checked /></div>
-        <div class="cfg-row"><label>Command Template</label><input id="cfgMa2CmdTpl" type="text" value="SpecialMaster 3.{index} At {bpm}" style="min-width:280px" /></div>
         <div class="cfg-row"><label>Manual BPM</label><input id="cfgMa2ManualBpm" type="number" value="128" step="1" /><button id="ma2SendTestBtn" class="scan-btn">Send Test</button></div>
         <div class="diag-card" id="ma2Diag">MA2: Idle</div>
       </div>
@@ -1084,10 +1083,11 @@
         document.getElementById('cfgMa2User').value = String((ma2.user ?? 'remote'));
         document.getElementById('cfgMa2Pass').value = String((ma2.pass ?? ''));
         ma2PassDirty = false;
-        document.getElementById('cfgMa2SpeedIndex').value = String(Number(ma2.speedMasterIndex || 1));
+        const rawIdx = Number(ma2.speedMasterIndex || 1);
+        const safeIdx = (rawIdx >= 1 && rawIdx <= 15) ? rawIdx : 1;
+        document.getElementById('cfgMa2SpeedIndex').value = String(safeIdx);
         document.getElementById('cfgMa2RateMs').value = String(Number(ma2.rateLimitMs || 500));
         document.getElementById('cfgMa2OnlyPlaying').checked = ma2.onlyWhenPlaying !== false;
-        document.getElementById('cfgMa2CmdTpl').value = String(ma2.commandTemplate || 'SpecialMaster 3.{index} At {bpm}');
 
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
@@ -1132,8 +1132,8 @@
             maxBpm: 240,
             integerOnly: true,
             onlyWhenPlaying: document.getElementById('cfgMa2OnlyPlaying').checked,
-            speedMasterIndex: Number(document.getElementById('cfgMa2SpeedIndex').value || 1),
-            commandTemplate: String(document.getElementById('cfgMa2CmdTpl').value || 'SpecialMaster 3.{index} At {bpm}')
+            speedMasterIndex: Math.max(1, Math.min(15, Number(document.getElementById('cfgMa2SpeedIndex').value || 1))),
+            commandTemplate: 'SpecialMaster 3.{index} At {bpm}'
           }
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }

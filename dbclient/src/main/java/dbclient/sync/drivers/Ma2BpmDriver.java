@@ -210,7 +210,7 @@ public class Ma2BpmDriver implements OutputDriver {
         if (cfg.get("maxBpm") instanceof Number) maxBpm = ((Number) cfg.get("maxBpm")).intValue();
         if (cfg.get("integerOnly") instanceof Boolean) integerOnly = (Boolean) cfg.get("integerOnly");
         if (cfg.get("onlyWhenPlaying") instanceof Boolean) onlyWhenPlaying = (Boolean) cfg.get("onlyWhenPlaying");
-        if (cfg.get("speedMasterIndex") instanceof Number) speedMasterIndex = Math.max(1, Math.min(99, ((Number) cfg.get("speedMasterIndex")).intValue()));
+        if (cfg.get("speedMasterIndex") instanceof Number) speedMasterIndex = Math.max(1, Math.min(15, ((Number) cfg.get("speedMasterIndex")).intValue()));
         if (cfg.get("commandTemplate") != null) commandTemplate = String.valueOf(cfg.get("commandTemplate"));
     }
 
