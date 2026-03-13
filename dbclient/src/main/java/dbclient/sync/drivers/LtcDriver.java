@@ -670,19 +670,24 @@ public class LtcDriver implements OutputDriver {
             rateControlMode = "NORMAL";
 
             // 帧边界按固定 samplesPerFrameExact 计算，不受 appliedRate 影响
-            // 位置推进按 appliedRate 连续积分
+            // 位置推进按 appliedRate 连续积分（sample 级相位累加器）
 
             double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
             double sumSq = 0.0;
 
+            // sample 级相位累加器：每 sample 累加 appliedRate
+            double positionPhase = 0.0;
+
             for (int i = 0; i < bufferSamples; i++) {
-                long sampleIdx = localLtcSamplePos + i;
+                // 每 sample 累加 appliedRate，实现细粒度位置推进
+                positionPhase += appliedRate;
+                long currentSamplePos = localLtcSamplePos + (long) positionPhase;
 
                 // 检查是否到达帧边界 (按固定 samplesPerFrameExact 计算)
-                if (!framePrimed || sampleIdx >= nextFrameBoundarySample) {
+                if (!framePrimed || currentSamplePos >= nextFrameBoundarySample) {
                     // 进入新帧
-                    while (sampleIdx >= nextFrameBoundarySample) {
+                    while (currentSamplePos >= nextFrameBoundarySample) {
                         localLtcFramePos++;
                         nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);  // 固定分母
                     }
@@ -699,8 +704,8 @@ public class LtcDriver implements OutputDriver {
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
 
-            // 本地 LTC 位置按 appliedRate 推进
-            localLtcSamplePos += (long) (bufferSamples * appliedRate);
+            // 本地 LTC 位置按 appliedRate 细粒度推进（相位累加器）
+            localLtcSamplePos += (long) positionPhase;
             // 帧位置按固定 samplesPerFrameExact 计算
             localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
             nextBlockStartSec += bufferSamples / (double) sampleRate;
