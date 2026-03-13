@@ -278,13 +278,30 @@ public class LtcDriver implements OutputDriver {
 
     private SourceDataLine openLineWithFormat(AudioFormat fmt, String name) {
         try {
-            DataLine.Info info = new DataLine.Info(SourceDataLine.class, fmt);
-            if (name != null && !name.isEmpty() && !name.equals("default")) {
-                Mixer mixer = AudioSystem.getMixer(null);
-                return (SourceDataLine) mixer.getLine(info);
+            // 先尝试按名称匹配设备
+            if (name != null && !name.trim().isEmpty() && !"default".equalsIgnoreCase(name)) {
+                Mixer.Info[] infos = AudioSystem.getMixerInfo();
+                for (Mixer.Info info : infos) {
+                    if (info.getName().toLowerCase().contains(name.toLowerCase())) {
+                        Mixer m = AudioSystem.getMixer(info);
+                        DataLine.Info di = new DataLine.Info(SourceDataLine.class, fmt);
+                        if (m.isLineSupported(di)) {
+                            SourceDataLine l = (SourceDataLine) m.getLine(di);
+                            l.open(fmt);
+                            l.start();
+                            return l;
+                        }
+                    }
+                }
             }
-            return (SourceDataLine) AudioSystem.getLine(info);
+            // 回退到默认设备
+            DataLine.Info di = new DataLine.Info(SourceDataLine.class, fmt);
+            SourceDataLine l = (SourceDataLine) AudioSystem.getLine(di);
+            l.open(fmt);
+            l.start();
+            return l;
         } catch (Exception e) {
+            lastError = "设备打开失败: " + e.getMessage();
             return null;
         }
     }
