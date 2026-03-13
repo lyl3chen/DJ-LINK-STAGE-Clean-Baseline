@@ -20,7 +20,7 @@
       "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
-      "enabled": false,
+      "enabled": true,
       "port": 17000.0,
       "updateIntervalMs": 20.0
     },
