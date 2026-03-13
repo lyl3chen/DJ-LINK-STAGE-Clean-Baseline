@@ -144,6 +144,16 @@ public class SyncOutputManager {
                     derived.put("sourceMode", sourceMode);
                     derived.put("sourcePlaying", playing);
                     derived.put("sourceActive", active);
+                    // 传递媒体位置和身份字段，供 LTC re-anchor 使用
+                    if (ms instanceof Number) derived.put("currentTimeMs", ((Number) ms).longValue());
+                    if (ms instanceof Number) derived.put("beatTimeMs", ((Number) ms).longValue());
+                    derived.put("remainingTimeMs", chosen.get("remainingTimeMs"));
+                    derived.put("playerId", chosen.get("number"));
+                    derived.put("trackId", chosen.get("trackId"));
+                    derived.put("rekordboxId", chosen.get("rekordboxId"));
+                    derived.put("playing", playing);
+                    if (bpm instanceof Number) derived.put("bpm", ((Number) bpm).doubleValue());
+                    if (pitch instanceof Number) derived.put("pitch", ((Number) pitch).doubleValue());
                     // 规则：非播放时，beat=-1 视为 STOPPED；否则视为 PAUSED（驻留）
                     String st = !active ? "OFFLINE" : (playing ? "PLAYING" : (beat < 0 || nowSec <= 0.05 ? "STOPPED" : "PAUSED"));
                     sourceState = st;
@@ -155,6 +165,16 @@ public class SyncOutputManager {
                     sourcePlayer = null;
                     lastTimeSec = 0.0;
                     clock.ingestReference(0.0, false, 1.0);
+                    // 传递空值，供 LTC re-anchor 检测离线状态
+                    derived.put("currentTimeMs", 0L);
+                    derived.put("beatTimeMs", 0L);
+                    derived.put("remainingTimeMs", 0L);
+                    derived.put("playerId", 0);
+                    derived.put("trackId", "");
+                    derived.put("rekordboxId", "");
+                    derived.put("playing", false);
+                    derived.put("bpm", 120.0);
+                    derived.put("pitch", 0.0);
                 }
             }
         }
