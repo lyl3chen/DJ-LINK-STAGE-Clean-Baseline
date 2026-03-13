@@ -678,7 +678,7 @@
         <div class="cfg-row"><label>Host</label><input id="cfgMa2Host" type="text" value="127.0.0.1" /></div>
         <div class="cfg-row"><label>Port</label><input id="cfgMa2Port" type="number" value="30000" step="1" /></div>
         <div class="cfg-row"><label>User</label><input id="cfgMa2User" type="text" value="remote" /></div>
-        <div class="cfg-row"><label>Pass</label><input id="cfgMa2Pass" type="password" value="1234" /></div>
+        <div class="cfg-row"><label>Pass</label><input id="cfgMa2Pass" type="password" value="" /></div>
         <div class="cfg-row"><label>SpeedMaster X</label><input id="cfgMa2SpeedIndex" type="number" value="1" min="1" step="1" /></div>
         <div class="cfg-row"><label>Rate Limit(ms)</label><input id="cfgMa2RateMs" type="number" value="500" step="100" /></div>
         <div class="cfg-row"><label>Only When Playing</label><input id="cfgMa2OnlyPlaying" type="checkbox" checked /></div>
@@ -718,6 +718,7 @@
     let mtcPulseBlink = false;
     let metadataWarmupCacheSize = 0;
     let metadataLastLookup = 'UNKNOWN';
+    let ma2PassDirty = false;
     const RENDER_MIN_INTERVAL_MS = 33;
     const waveZoomByDeck = {1:2,2:2,3:2,4:2};
     const waveCanvasCache = new Map();
@@ -1080,8 +1081,9 @@
         document.getElementById('cfgMa2Enabled').checked = !!ma2.enabled;
         document.getElementById('cfgMa2Host').value = String(ma2.host || '127.0.0.1');
         document.getElementById('cfgMa2Port').value = String(Number(ma2.port || 30000));
-        document.getElementById('cfgMa2User').value = String(ma2.user || 'remote');
-        document.getElementById('cfgMa2Pass').value = String(ma2.pass || '1234');
+        document.getElementById('cfgMa2User').value = String((ma2.user ?? 'remote'));
+        document.getElementById('cfgMa2Pass').value = String((ma2.pass ?? ''));
+        ma2PassDirty = false;
         document.getElementById('cfgMa2SpeedIndex').value = String(Number(ma2.speedMasterIndex || 1));
         document.getElementById('cfgMa2RateMs').value = String(Number(ma2.rateLimitMs || 500));
         document.getElementById('cfgMa2OnlyPlaying').checked = ma2.onlyWhenPlaying !== false;
@@ -1125,7 +1127,6 @@
             host: String(document.getElementById('cfgMa2Host').value || '').trim(),
             port: Number(document.getElementById('cfgMa2Port').value || 30000),
             user: String(document.getElementById('cfgMa2User').value || ''),
-            pass: String(document.getElementById('cfgMa2Pass').value || ''),
             rateLimitMs: Number(document.getElementById('cfgMa2RateMs').value || 500),
             minBpm: 40,
             maxBpm: 240,
@@ -1137,6 +1138,9 @@
         },
         ai: { api_key: document.getElementById('aiApiKey').value || '' }
       };
+      if (ma2PassDirty) {
+        patch.sync.ma2Telnet.pass = String(document.getElementById('cfgMa2Pass').value ?? '');
+      }
       const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
       const j = await r.json();
       document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（Sync 输出已热重载）' : '保存失败';
@@ -1656,6 +1660,7 @@
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
     document.getElementById('ma2SendTestBtn')?.addEventListener('click', sendMa2Test);
+    document.getElementById('cfgMa2Pass')?.addEventListener('input', () => { ma2PassDirty = true; });
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
     document.getElementById('deckList')?.addEventListener('wheel', (e) => {

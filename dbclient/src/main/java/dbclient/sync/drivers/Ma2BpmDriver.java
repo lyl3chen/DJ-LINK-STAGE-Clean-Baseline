@@ -33,6 +33,7 @@ public class Ma2BpmDriver implements OutputDriver {
     private volatile String lastAck = "";
     private volatile String lastRawResponse = "";
     private volatile String error = "";
+    private volatile long manualHoldUntilTs = 0L;
 
     @Override
     public String name() { return "ma2Telnet"; }
@@ -84,6 +85,7 @@ public class Ma2BpmDriver implements OutputDriver {
         System.out.println("[BPM] raw=" + raw + " rounded=" + bpmOut);
 
         long now = System.currentTimeMillis();
+        if (now < manualHoldUntilTs) return;
         if (bpmOut == lastSentBpm) return;
         if (now - lastSendTs < rateLimitMs) {
             System.out.println("[BPM] skipped: rate limit");
@@ -165,6 +167,8 @@ public class Ma2BpmDriver implements OutputDriver {
 
     public synchronized Map<String, Object> sendTestCommand(String cmd) {
         Map<String, Object> out = new LinkedHashMap<>();
+        // 手动测试时短暂暂停自动同步，避免测试值立刻被自动线程覆盖。
+        manualHoldUntilTs = System.currentTimeMillis() + 5000;
         try {
             ensureConnected();
             Ma2TelnetClient.CommandResult r = client.sendCommandDetailed(cmd);
