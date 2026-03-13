@@ -42,10 +42,15 @@ public class LtcDriver implements OutputDriver {
     private volatile long lastSourceUpdateMs = 0L;
     private volatile TimecodeClock clock;
 
-    // 简化的位置状态（仅用于 hot cue 检测）
+    // 简化的位置状态（用于 hot cue、换歌、restart 检测）
     private volatile long lastPositionMs = 0L;
     private volatile long lastReanchorAtMs = 0L;
     private volatile long reanchorCount = 0L;
+    // 换歌检测
+    private volatile String currentTrackId = "";
+    private volatile String currentRekordboxId = "";
+    // stop/restart 检测
+    private volatile boolean wasPlaying = false;
 
     private volatile boolean blockClockInit = false;
     private volatile double nextBlockStartSec = 0.0;
@@ -93,10 +98,38 @@ public class LtcDriver implements OutputDriver {
             newPositionMs = ((Number) ctMs).longValue();
         }
 
+        // === 换歌检测：仅当有效 trackId/rekordboxId 变化时触发 ===
+        String newTrackId = String.valueOf(state.getOrDefault("trackId", ""));
+        String newRekordboxId = String.valueOf(state.getOrDefault("rekordboxId", ""));
+        boolean validTrackId = newTrackId != null && !newTrackId.isEmpty() && !newTrackId.equals("null");
+        boolean validRekordboxId = newRekordboxId != null && !newRekordboxId.isEmpty() && !newRekordboxId.equals("null");
+        
+        if ((validTrackId && !newTrackId.equals(currentTrackId)) || 
+            (validRekordboxId && !newRekordboxId.equals(currentRekordboxId))) {
+            // 有效值变化，触发重锚
+            if (validTrackId) currentTrackId = newTrackId;
+            if (validRekordboxId) currentRekordboxId = newRekordboxId;
+            lastReanchorAtMs = System.currentTimeMillis();
+            reanchorCount++;
+            System.out.println("[LTC] TRACK CHANGE: reanchor to " + newPositionMs + "ms");
+        }
+
+        // === stop -> restart 检测 ===
+        if (!wasPlaying && sourcePlaying && newPositionMs > 0) {
+            // 从停止恢复播放
+            if (newPositionMs < lastPositionMs - 1000) {
+                // 位置回跳超过1秒，触发重锚
+                lastReanchorAtMs = System.currentTimeMillis();
+                reanchorCount++;
+                System.out.println("[LTC] RESTART: reanchor to " + newPositionMs + "ms");
+            }
+        }
+        wasPlaying = sourcePlaying;
+
         // Hot cue 检测：大幅跳变 > 2秒
         long diff = Math.abs(newPositionMs - lastPositionMs);
         if (diff > 2000 && lastPositionMs > 0) {
-            // 触发 hot cue reanchor
+            // 触发 hot cue 重锚
             lastReanchorAtMs = System.currentTimeMillis();
             reanchorCount++;
             System.out.println("[LTC] HOT CUE: jump from " + lastPositionMs + " to " + newPositionMs);
