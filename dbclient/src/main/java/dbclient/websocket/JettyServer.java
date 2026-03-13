@@ -336,6 +336,13 @@ public class JettyServer {
                 m.put("label", buildDeviceLabel(info));
                 m.put("sourceLineCount", src.length);
                 if (hwId != null) m.put("hwId", hwId);
+                String probeText = (name + " " + info.getDescription()).toLowerCase();
+                m.put("endpointType", classifyEndpointType(probeText));
+                m.put("channelRole", classifyChannelRole(probeText));
+                m.put("deviceOpenable", probeOpenable(hwId != null ? hwId : name));
+                m.put("matchScore", scoreForLtcPreferred(probeText, probeOpenable(hwId != null ? hwId : name)));
+                String w = occupancyWarning(hwId != null ? hwId : "");
+                if (!w.isBlank()) m.put("warning", w);
                 list.add(m);
             } catch (Exception ignored) {}
         }
@@ -351,8 +358,18 @@ public class JettyServer {
             m.put("hwId", hw);
             m.put("card", pcm.get("card"));
             m.put("device", pcm.get("device"));
-            m.put("label", String.valueOf(pcm.getOrDefault("label", hw)));
-            m.put("desc", String.valueOf(pcm.getOrDefault("desc", "ALSA PCM")));
+            String label = String.valueOf(pcm.getOrDefault("label", hw));
+            String desc = String.valueOf(pcm.getOrDefault("desc", "ALSA PCM"));
+            String probeText = (label + " " + desc + " " + hw).toLowerCase();
+            m.put("label", label);
+            m.put("desc", desc);
+            m.put("endpointType", classifyEndpointType(probeText));
+            m.put("channelRole", classifyChannelRole(probeText));
+            boolean openable = probeOpenable(hw);
+            m.put("deviceOpenable", openable);
+            m.put("matchScore", scoreForLtcPreferred(probeText, openable));
+            String w = occupancyWarning(hw);
+            if (!w.isBlank()) m.put("warning", w);
             list.add(m);
         }
 
@@ -419,6 +436,65 @@ public class JettyServer {
             }
         } catch (Exception ignored) {}
         return out;
+    }
+
+    private static String classifyEndpointType(String s) {
+        String v = s == null ? "" : s.toLowerCase();
+        if (v.contains("hdmi") || v.contains("display audio")) return "hdmi";
+        if (v.contains("spdif") || v.contains("iec958") || v.contains("digital")) return "digital_spdif";
+        if (v.contains("usb")) {
+            if (v.contains("analog") || v.contains("headphone") || v.contains("line out") || v.contains("speaker") || v.contains("front")) return "usb_audio_analog_like";
+            return "usb_audio_digital_like";
+        }
+        if (v.contains("analog") || v.contains("headphone") || v.contains("line out") || v.contains("speaker") || v.contains("front")) return "analog";
+        return "unknown";
+    }
+
+    private static String classifyChannelRole(String s) {
+        String v = s == null ? "" : s.toLowerCase();
+        if (v.contains("headphone")) return "headphone";
+        if (v.contains("front")) return "front";
+        if (v.contains("line out")) return "lineout";
+        if (v.contains("speaker")) return "speaker";
+        if (v.contains("hdmi") || v.contains("spdif") || v.contains("digital")) return "digital";
+        return "unknown";
+    }
+
+    private static int scoreForLtcPreferred(String text, boolean openable) {
+        int score = openable ? 50 : 20;
+        String ep = classifyEndpointType(text);
+        if ("analog".equals(ep) || "usb_audio_analog_like".equals(ep)) score += 35;
+        if ("hdmi".equals(ep) || "digital_spdif".equals(ep) || "usb_audio_digital_like".equals(ep)) score -= 20;
+        String role = classifyChannelRole(text);
+        if ("headphone".equals(role) || "front".equals(role) || "lineout".equals(role) || "speaker".equals(role)) score += 10;
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private static boolean probeOpenable(String idOrName) {
+        try {
+            String dev = idOrName == null ? "" : idOrName.trim().toLowerCase();
+            if (dev.matches("hw:\\d+,\\d+")) {
+                return occupancyWarning(dev).isBlank();
+            }
+        } catch (Exception ignored) {}
+        return true;
+    }
+
+    private static String occupancyWarning(String hw) {
+        try {
+            String dev = hw == null ? "" : hw.trim().toLowerCase();
+            if (!dev.matches("hw:\\d+,\\d+")) return "";
+            String[] p = dev.substring(3).split(",");
+            String target = "/dev/snd/pcmC" + Integer.parseInt(p[0]) + "D" + Integer.parseInt(p[1]) + "p";
+            Process proc = new ProcessBuilder("bash", "-lc", "fuser -v " + target + " 2>/dev/null || true").start();
+            String out = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replaceAll("\\s+", " ").trim();
+            proc.waitFor();
+            if (out.isBlank()) return "";
+            if (out.length() > 140) out = out.substring(0, 140) + "...";
+            return "occupied: " + out;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private static List<Map<String, Object>> listMidiOutDevices() {

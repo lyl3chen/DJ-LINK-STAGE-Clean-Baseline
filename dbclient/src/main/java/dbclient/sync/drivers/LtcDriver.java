@@ -16,6 +16,16 @@ public class LtcDriver implements OutputDriver {
     private volatile String activeDevice = "-";
     private volatile String lastError = "";
     private volatile String outputState = "IDLE";
+    // Phase A: 可解释性状态（不参与选路决策）
+    private volatile String configuredTarget = "default";
+    private volatile String matchedDevice = "-";
+    private volatile String matchMode = "fallback";
+    private volatile int matchScore = 0;
+    private volatile String endpointType = "unknown";
+    private volatile String channelRole = "unknown";
+    private volatile boolean deviceOpenable = false;
+    private volatile String warning = "";
+    private volatile String lastSuccessfulDevice = "-";
     private volatile boolean sourcePlaying = false;
     private volatile boolean sourceActive = false;
     private volatile String sourceState = "OFFLINE";
@@ -36,16 +46,25 @@ public class LtcDriver implements OutputDriver {
         cfg = config != null ? new LinkedHashMap<>(config) : new LinkedHashMap<>();
         int sampleRate = intCfg("sampleRate", 48000);
         String deviceName = strCfg("deviceName", "default");
+        configuredTarget = deviceName;
 
         try {
             AudioFormat fmt = chooseAndOpenLine(sampleRate, deviceName);
             activeDevice = describeActiveDevice(line, deviceName);
+            matchedDevice = activeDevice;
             line.start();
             running = true;
             outputState = "RUNNING";
             blockClockInit = false;
             nextBlockStartSec = 0.0;
             lastError = "";
+            endpointType = classifyEndpoint(activeDevice);
+            channelRole = classifyChannelRole(activeDevice);
+            deviceOpenable = true;
+            matchMode = matchModeOf(configuredTarget, activeDevice);
+            matchScore = computeMatchScore(configuredTarget, activeDevice, true);
+            warning = buildWarning(endpointType, configuredTarget, activeDevice, "");
+            lastSuccessfulDevice = activeDevice;
             System.out.println("[LTC] started device=" + activeDevice + " fps=" + intCfg("fps",25) + " sampleRate=" + (int)fmt.getSampleRate() + " gainDb=" + numCfg("gainDb",-8.0));
             audioThread = new Thread(() -> pumpAudio(fmt), "ltc-audio-thread");
             audioThread.setDaemon(true);
@@ -58,6 +77,13 @@ public class LtcDriver implements OutputDriver {
             String occupancy = detectOccupancyHint(strCfg("deviceName", "default"));
             lastError = occupancy.isBlank() ? msg : (msg + " | " + occupancy);
             activeDevice = "-";
+            matchedDevice = "-";
+            endpointType = classifyEndpoint(configuredTarget);
+            channelRole = classifyChannelRole(configuredTarget);
+            deviceOpenable = false;
+            matchMode = "fallback";
+            matchScore = computeMatchScore(configuredTarget, "-", false);
+            warning = buildWarning(endpointType, configuredTarget, "-", lastError);
             System.out.println("[LTC] start failed: " + lastError);
         }
     }
@@ -117,6 +143,18 @@ public class LtcDriver implements OutputDriver {
         m.put("sourcePlaying", sourcePlaying);
         m.put("sourceActive", sourceActive);
         m.put("sourceState", sourceState);
+
+        // Phase A 解释性状态
+        m.put("configuredTarget", configuredTarget);
+        m.put("matchedDevice", matchedDevice);
+        m.put("matchMode", matchMode);
+        m.put("matchScore", matchScore);
+        m.put("endpointType", endpointType);
+        m.put("channelRole", channelRole);
+        m.put("deviceOpenable", deviceOpenable);
+        m.put("warning", warning);
+        m.put("lastSuccessfulDevice", lastSuccessfulDevice);
+
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("error", lastError);
         return m;
@@ -268,6 +306,59 @@ public class LtcDriver implements OutputDriver {
         } catch (Exception ignored) {
             return "";
         }
+    }
+
+    private String classifyEndpoint(String text) {
+        String s = text == null ? "" : text.toLowerCase();
+        if (s.contains("hdmi") || s.contains("display audio")) return "hdmi";
+        if (s.contains("spdif") || s.contains("iec958") || s.contains("digital")) return "digital_spdif";
+        if (s.contains("usb")) {
+            if (s.contains("analog") || s.contains("headphone") || s.contains("line out") || s.contains("speaker")) return "usb_audio_analog_like";
+            return "usb_audio_digital_like";
+        }
+        if (s.contains("analog") || s.contains("headphone") || s.contains("front") || s.contains("line out") || s.contains("speaker")) return "analog";
+        return "unknown";
+    }
+
+    private String classifyChannelRole(String text) {
+        String s = text == null ? "" : text.toLowerCase();
+        if (s.contains("headphone")) return "headphone";
+        if (s.contains("front")) return "front";
+        if (s.contains("line out")) return "lineout";
+        if (s.contains("speaker")) return "speaker";
+        if (s.contains("spdif") || s.contains("digital") || s.contains("hdmi")) return "digital";
+        return "unknown";
+    }
+
+    private String matchModeOf(String configured, String matched) {
+        String c = configured == null ? "" : configured.trim().toLowerCase();
+        String m = matched == null ? "" : matched.trim().toLowerCase();
+        if (c.isBlank() || "default".equals(c)) return "fallback";
+        if (m.contains(c) || c.contains(m)) return "exact";
+        return "fuzzy";
+    }
+
+    private int computeMatchScore(String configured, String matched, boolean openable) {
+        int score = 0;
+        if (openable) score += 40;
+        String mode = matchModeOf(configured, matched);
+        if ("exact".equals(mode)) score += 40;
+        else if ("fuzzy".equals(mode)) score += 25;
+        String ep = classifyEndpoint(matched);
+        if ("analog".equals(ep) || "usb_audio_analog_like".equals(ep)) score += 20;
+        if ("hdmi".equals(ep) || "digital_spdif".equals(ep) || "usb_audio_digital_like".equals(ep)) score -= 10;
+        return Math.max(0, Math.min(100, score));
+    }
+
+    private String buildWarning(String endpoint, String configured, String matched, String err) {
+        if (err != null && !err.isBlank()) return err;
+        if ("hdmi".equals(endpoint) || "digital_spdif".equals(endpoint) || "usb_audio_digital_like".equals(endpoint)) {
+            return "当前命中数字输出口，LTC建议使用模拟输出（Analog/Headphone/Front/Line Out）";
+        }
+        if ("fallback".equals(matchModeOf(configured, matched))) {
+            return "当前为回退命中，建议确认目标设备是否符合预期";
+        }
+        return "";
     }
 
     private String toTimecode(double sec, int fps) {
