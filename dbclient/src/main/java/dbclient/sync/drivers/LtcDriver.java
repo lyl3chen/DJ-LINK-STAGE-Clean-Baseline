@@ -451,9 +451,10 @@ public class LtcDriver implements OutputDriver {
             writeBcdUnits(bits, 48, hour % 10);
             writeBcdTens(bits, 56, hour / 10, 2);
 
-            // Sync word 16 bits (LTC standard)
-            int sync = 0x3FFD;
-            for (int i = 0; i < 16; i++) bits[64 + i] = ((sync >> i) & 1) == 1;
+            // Sync word 16 bits（按线序写入，避免位序方向歧义）
+            // 线序目标：0011111111111101
+            final int[] syncWireOrder = new int[] {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1};
+            for (int i = 0; i < 16; i++) bits[64 + i] = syncWireOrder[i] == 1;
             return bits;
         }
 
@@ -468,14 +469,16 @@ public class LtcDriver implements OutputDriver {
 
     private static class LtcBmcModulator {
         private final double samplesPerBit;
+        private final double halfSamples;
         private boolean[] bits = new boolean[80];
         private int bitIndex = 0;
-        private double bitPhase = 0.0;
+        private double sampleInBit = 0.0;
         private double level = -1.0;
         private boolean empty = true;
 
         LtcBmcModulator(int sampleRate, double bitRate) {
             this.samplesPerBit = sampleRate / bitRate;
+            this.halfSamples = this.samplesPerBit * 0.5;
         }
 
         boolean isFrameEmpty() { return empty; }
@@ -484,33 +487,34 @@ public class LtcDriver implements OutputDriver {
             if (b == null || b.length != 80) return;
             this.bits = b;
             this.bitIndex = 0;
-            this.bitPhase = 0.0;
+            this.sampleInBit = 0.0;
             this.empty = false;
-            // bit 边界必翻转
-            this.level = -this.level;
+            // 关键：不在 load 时额外翻转，避免与 bit-start 翻转重复导致时序异常。
         }
 
         double nextSample() {
             if (empty) return 0.0;
-            double out = level;
 
-            bitPhase += 1.0;
-            // 中点翻转（bit=1）
+            // BMC 规则1：每个 bit 起始处必翻转
+            if (sampleInBit == 0.0) {
+                level = -level;
+            }
+
+            // BMC 规则2：bit=1 时在半 bit 处再翻转一次
             if (bits[bitIndex]) {
-                double half = samplesPerBit * 0.5;
-                if (bitPhase >= half && bitPhase - 1.0 < half) {
+                if (sampleInBit >= halfSamples && (sampleInBit - 1.0) < halfSamples) {
                     level = -level;
                 }
             }
 
-            if (bitPhase >= samplesPerBit) {
-                bitPhase -= samplesPerBit;
+            double out = level;
+
+            sampleInBit += 1.0;
+            if (sampleInBit >= samplesPerBit) {
+                sampleInBit -= samplesPerBit;
                 bitIndex++;
-                if (bitIndex >= 80) {
-                    bitIndex = 0;
-                }
-                // 每个 bit 边界必翻转
-                level = -level;
+                if (bitIndex >= 80) bitIndex = 0;
+                if (sampleInBit < 1e-9) sampleInBit = 0.0;
             }
             return out;
         }
