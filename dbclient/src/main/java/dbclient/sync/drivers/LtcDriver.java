@@ -31,9 +31,27 @@ public class LtcDriver implements OutputDriver {
     private volatile String sourceState = "OFFLINE";
     private volatile long lastSourceUpdateMs = 0L;
     private volatile TimecodeClock clock;
-    // LTC block 连续承接时间基准
+
+    // === 三层时基架构 ===
+    // 1) 上游 position reference (仅用于初始对齐和大跳变检测)
+    private volatile long upstreamPositionMs = 0L;
+    private volatile boolean upstreamPositionValid = false;
+
+    // 2) 上游 playback rate reference (用于决定 LTC 前进速度)
+    private volatile double upstreamRate = 1.0;
+    private volatile double smoothedRate = 1.0;
+    private static final double RATE_SMOOTH_FACTOR = 0.02; // 慢速平滑
+
+    // 3) 本地稳定 LTC clock (连续输出驱动)
     private volatile boolean blockClockInit = false;
     private volatile double nextBlockStartSec = 0.0;
+    // 本地 LTC 位置（sample 计数）
+    private volatile long localLtcSamplePosition = 0L;
+    private volatile long localLtcFramePosition = 0L; // 当前帧号
+
+    // 状态判断阈值
+    private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
+    private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
     private static final double BLOCK_RELOCK_THRESHOLD_SEC = 0.020; // 20ms
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
@@ -117,6 +135,37 @@ public class LtcDriver implements OutputDriver {
         sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
 
+        // === 1) 捕获上游 position reference ===
+        Object ctMs = state.get("currentTimeMs");
+        if (ctMs instanceof Number) {
+            upstreamPositionMs = ((Number) ctMs).longValue();
+            upstreamPositionValid = true;
+        }
+
+        // === 2) 捕获上游 playback rate reference ===
+        // 优先用 effectiveBpm / baseBpm 计算，其次用 pitch
+        Double effectiveBpm = null;
+        Double baseBpm = null;
+        Double pitch = null;
+
+        Object eb = state.get("effectiveBpm");
+        Object bb = state.get("bpm");
+        Object p = state.get("pitch");
+
+        if (eb instanceof Number) effectiveBpm = ((Number) eb).doubleValue();
+        if (bb instanceof Number) baseBpm = ((Number) bb).doubleValue();
+        if (p instanceof Number) pitch = ((Number) p).doubleValue();
+
+        double newRate = 1.0;
+        if (effectiveBpm != null && baseBpm != null && baseBpm > 0) {
+            newRate = effectiveBpm / baseBpm;
+        } else if (pitch != null) {
+            newRate = 1.0 + pitch / 100.0;
+        }
+        // 平滑 rate 变化
+        smoothedRate = smoothedRate + (newRate - smoothedRate) * RATE_SMOOTH_FACTOR;
+        upstreamRate = newRate;
+
         if (t instanceof Number) {
             seconds = ((Number) t).doubleValue();
         }
@@ -156,7 +205,17 @@ public class LtcDriver implements OutputDriver {
         m.put("warning", warning);
         m.put("lastSuccessfulDevice", lastSuccessfulDevice);
 
+        // 三层时基架构状态
+        m.put("upstreamPositionMs", upstreamPositionMs);
+        m.put("upstreamPositionValid", upstreamPositionValid);
+        m.put("upstreamRate", upstreamRate);
+        m.put("smoothedRate", smoothedRate);
+        m.put("localLtcSamplePosition", localLtcSamplePosition);
+        m.put("localLtcFramePosition", localLtcFramePosition);
+
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
+        m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
+        m.put("smallErrorThresholdSec", SMALL_ERROR_THRESHOLD_SEC);
         m.put("error", lastError);
         return m;
     }
@@ -174,59 +233,86 @@ public class LtcDriver implements OutputDriver {
         final LtcFrameBuilder frameBuilder = new LtcFrameBuilder(mode);
         final LtcBmcModulator mod = new LtcBmcModulator(sampleRate, bitRate);
 
-        // 显式 frame 边界推进（非反推）
+        // 本地 LTC 时基参数
         final double samplesPerFrameExact = (double) sampleRate / mode.rateFps;
-        final long relockThresholdSamples = (long) (samplesPerFrameExact * 2.5); // 偏差超 2.5 帧才重锁
+        final long bigJumpThresholdSamples = (long) (BIG_JUMP_THRESHOLD_SEC * sampleRate);
+        final long smallErrorThresholdSamples = (long) (SMALL_ERROR_THRESHOLD_SEC * sampleRate);
 
-        long totalSamplesWritten = 0L;
-        long currentFrameStartSample = 0L;
-        long nextFrameStartSample = 0L;
-        long currentFrameIndex = -1;
+        // 本地 LTC 位置（sample 计数）
+        long localLtcSamplePos = 0L;
+        long localLtcFramePos = 0L;
+        long nextFrameBoundarySample = 0L;
         boolean framePrimed = false;
+        boolean initialAligned = false;
 
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
-            double clockSec = clock != null ? clock.nowSeconds() : seconds;
+
+            // === 判断当前状态 ===
+            boolean isPlaying = sourcePlaying && sourceActive;
+
             if (!blockClockInit) {
-                nextBlockStartSec = clockSec;
-                totalSamplesWritten = 0L;
-                currentFrameStartSample = 0L;
-                nextFrameStartSample = (long) samplesPerFrameExact;
-                currentFrameIndex = 0;
+                // 首次启动
+                nextBlockStartSec = 0.0;
+                localLtcSamplePos = 0L;
+                localLtcFramePos = 0L;
+                nextFrameBoundarySample = (long) samplesPerFrameExact;
                 framePrimed = false;
+                initialAligned = false;
                 blockClockInit = true;
             }
 
-            // 仅在偏差超过 2.5 帧时才重锁
-            long expectedSamples = (long) (clockSec * sampleRate);
-            if (Math.abs(totalSamplesWritten - expectedSamples) > relockThresholdSamples) {
-                totalSamplesWritten = expectedSamples;
-                currentFrameStartSample = expectedSamples;
-                nextFrameStartSample = expectedSamples + (long) samplesPerFrameExact;
-                currentFrameIndex = (long) (expectedSamples / samplesPerFrameExact);
-                framePrimed = false;
+            if (!isPlaying) {
+                // === 状态 C: 停播 ===
+                // LTC 稳定停住，不输出也不抖动
+                outputState = "PAUSED";
+                try { Thread.sleep(20); } catch (InterruptedException ignored) {}
+                continue;
             }
+
+            // === 播放中：判断是否需要重锁 ===
+            if (upstreamPositionValid && !initialAligned) {
+                // 首次对齐：用上游位置初始化本地 LTC
+                localLtcSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
+                localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
+                nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
+                initialAligned = true;
+                framePrimed = false;
+            } else if (upstreamPositionValid && initialAligned) {
+                // 检查是否大跳变
+                long expectedFromUpstream = (upstreamPositionMs * sampleRate) / 1000L;
+                long diff = Math.abs(localLtcSamplePos - expectedFromUpstream);
+
+                if (diff > bigJumpThresholdSamples) {
+                    // === 状态 B: 大跳变 - 硬重锁 ===
+                    localLtcSamplePos = expectedFromUpstream;
+                    localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
+                    nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
+                    framePrimed = false;
+                    // 小误差不做硬跟随，保持本地稳定
+                }
+                // diff <= bigJumpThresholdSamples: 正常播放，本地 LTC 自己推进
+            }
+
+            // === 状态 A: 正常连续播放 ===
+            // 本地 LTC 按 smoothedRate 稳定推进
+            double effectiveSamplesPerFrame = samplesPerFrameExact / smoothedRate;
 
             double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
             double sumSq = 0.0;
 
             for (int i = 0; i < bufferSamples; i++) {
-                long sampleIdx = totalSamplesWritten + i;
+                long sampleIdx = localLtcSamplePos + i;
 
-                // 显式 frame 边界判断
-                if (!framePrimed || sampleIdx >= nextFrameStartSample) {
+                // 检查是否到达帧边界
+                if (!framePrimed || sampleIdx >= nextFrameBoundarySample) {
                     // 进入新帧
-                    while (sampleIdx >= nextFrameStartSample) {
-                        currentFrameStartSample = nextFrameStartSample;
-                        nextFrameStartSample += (long) samplesPerFrameExact;
-                        currentFrameIndex++;
+                    while (sampleIdx >= nextFrameBoundarySample) {
+                        localLtcFramePos++;
+                        nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * effectiveSamplesPerFrame);
                     }
-                    // 如果刚启动或重锁后，取当前 frame 索引
-                    if (currentFrameIndex < 0) {
-                        currentFrameIndex = currentFrameStartSample / (long) samplesPerFrameExact;
-                    }
-                    Timecode tc = mode.timecodeFromSeconds(currentFrameIndex / mode.rateFps);
+                    Timecode tc = mode.timecodeFromSeconds(localLtcFramePos / mode.rateFps);
                     frameInSecond = tc.frame;
                     mod.loadFrame(frameBuilder.buildBits(tc));
                     framePrimed = true;
@@ -239,7 +325,10 @@ public class LtcDriver implements OutputDriver {
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
 
-            totalSamplesWritten += bufferSamples;
+            // 本地 LTC 位置按 smoothedRate 推进
+            localLtcSamplePos += (long) (bufferSamples * smoothedRate);
+            // 同步本地帧位置
+            localLtcFramePos = (long) (localLtcSamplePos / effectiveSamplesPerFrame);
             nextBlockStartSec += bufferSamples / (double) sampleRate;
 
             double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
