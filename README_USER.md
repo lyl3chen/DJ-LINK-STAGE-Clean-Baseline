@@ -251,3 +251,64 @@ LTC 可视化验收（外行也能看懂）：
 - **界面改动看 `index.html`**
 - **配置改动看 `config/user_settings.json`**
 - **后端逻辑改动看 `JettyServer.java` 和 `SyncOutputManager.java`**
+
+---
+
+## 2026-03-13 当日更新归档（全项目）
+
+### A) Ableton Link（Java + lib-carabiner 单路）
+- 明确并暴露了 Carabiner 运行/参与状态字段（running/enabled/statusSeen/versionSeen/start-stop-sync）。
+- 修复 peer 重入与会话恢复：对端反复关开 Link 时自动重入，减少手工重启。
+- 由 tempo-only 扩展到 tempo+phase 同步，并修正命令语义（`force-beat-at-time`）。
+- 修复 UI 误报与连接抖动：
+  - 启动中不再当 error 红框显示；
+  - `connection refused` 增加短暂抖动窗口，连续失败才报错。
+- `beatPosition` 显示语义优化：
+  - 展示 source 派生 beat；
+  - 同时保留 `carabinerBeatPosition` 原始诊断值。
+
+### B) Titan API（v10/v11）
+- 新增 Titan BPM 同步驱动并接入输出层（`TitanApiDriver` + `TitanAdapter`）。
+- 支持 v10/v11 分支：
+  - v11 扫描 handles 获取 `titanId`；
+  - v10 走 `SetMasterLevel`。
+- BPM 发送前统一整数化（`Math.round`）并范围保护。
+- 配置/UI 简化为仅填写 IP（端口固定 4430）。
+- BPM Master 从单选升级为多选，可同时向多个 master 顺序下发。
+
+### C) MA2 BPM（Telnet，当前阶段仅 BPM）
+- 新增 `Ma2BpmDriver` 与 `Ma2TelnetClient`，接入 `SyncOutputManager`。
+- 新增调试接口：
+  - `POST /api/ma2/test-bpm`
+  - `POST /api/ma2/test-command`
+- Telnet 登录链路重构：
+  - 显式发送 `login "user" "pass"`；
+  - 同时支持空密码与非空密码；
+  - 连接生命周期按 connId 可追踪（connected/login/send/closed）。
+- 自动同步逻辑：
+  - 使用实际播放 BPM（`masterBpm + sourcePitchPct`）;
+  - `onlyWhenPlaying`、整数化、范围过滤、节流/去重。
+- 手动测试保护：发送测试命令后暂停自动同步 5 秒，避免立即被自动值覆盖。
+- 密码保存语义修复：
+  - 未改密码 -> 保留旧值；
+  - 明确清空 -> 保存 `""`。
+- MA2 UI 收口：
+  - SpeedMaster 改为 1~15 下拉（非法值回落 1）；
+  - 命令模板从 UI 隐藏（后端固定默认模板）。
+
+### D) Dashboard / I/O Setup UI
+- I/O Setup 重排为模块化卡片：播放源、SMPTE（含 LTC/MTC 子卡）、Ableton Link、Titan、MA2、Realtime 状态。
+- Dashboard 增加 HTTP 轮询兜底，WS 抖动时避免界面空白。
+
+### E) 配置与接口变更（摘要）
+- 配置新增/扩展：
+  - `sync.titanApi`（IP-only、多 master）
+  - `sync.ma2Telnet`（BPM-only Telnet 配置）
+- 接口新增：
+  - `POST /api/ma2/test-bpm`
+  - `POST /api/ma2/test-command`
+
+### F) 当前已知限制
+- MA2/Titan 属于控制台侧协议，返回文本并非每次都稳定；不返回文本不等于命令未执行。
+- MA2 当前阶段仅 BPM 同步，不含 Beat/Trigger/Macro/Executor 逻辑。
+

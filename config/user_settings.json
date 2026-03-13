@@ -20,12 +20,38 @@
       "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
-      "enabled": true,
+      "enabled": false,
       "port": 17000.0,
       "updateIntervalMs": 20.0
     },
     "consoleApi": {
       "enabled": true
+    },
+    "titanApi": {
+      "versionMode": "auto",
+      "enabled": true,
+      "rateLimitMs": 500.0,
+      "ip": "192.168.100.127",
+      "masterIndices": [
+        0.0,
+        1.0,
+        2.0,
+        3.0
+      ]
+    },
+    "ma2Telnet": {
+      "speedMasterIndex": 1.0,
+      "minBpm": 40.0,
+      "integerOnly": true,
+      "rateLimitMs": 500.0,
+      "port": 30000.0,
+      "enabled": true,
+      "host": "192.168.100.134",
+      "commandTemplate": "SpecialMaster 3.{index} At {bpm}",
+      "maxBpm": 240.0,
+      "user": "sl",
+      "pass": "",
+      "onlyWhenPlaying": true
     }
   },
   "ai": {
