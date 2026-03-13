@@ -95,9 +95,7 @@ public class Ma2BpmDriver implements OutputDriver {
                 .replace("{bpm}", String.valueOf(bpmOut));
         try {
             ensureConnected();
-            System.out.println("[MA2] send: " + cmd);
             Ma2TelnetClient.CommandResult r = client.sendCommandDetailed(cmd);
-            System.out.println("[MA2] raw-response: " + r.rawResponse);
             connected = client.isConnected();
             lastCommand = cmd;
             lastAck = r.ack;
@@ -169,9 +167,7 @@ public class Ma2BpmDriver implements OutputDriver {
         Map<String, Object> out = new LinkedHashMap<>();
         try {
             ensureConnected();
-            System.out.println("[MA2] send: " + cmd);
             Ma2TelnetClient.CommandResult r = client.sendCommandDetailed(cmd);
-            System.out.println("[MA2] raw-response: " + r.rawResponse);
             connected = client.isConnected();
             lastCommand = r.sentCommand;
             lastAck = r.ack;
@@ -212,7 +208,6 @@ public class Ma2BpmDriver implements OutputDriver {
 
     private void ensureConnected() throws Exception {
         if (client.isConnected()) return;
-        System.out.println("[MA2] reconnecting");
         client.configure(host, port, user, pass);
         client.connect();
         connected = client.isConnected();

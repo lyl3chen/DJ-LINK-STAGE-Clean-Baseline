@@ -4,11 +4,14 @@ import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * MA2 Telnet 客户端（仅 BPM 场景最小实现）。
  */
 public class Ma2TelnetClient {
+    private static final AtomicInteger CONN_SEQ = new AtomicInteger(1);
+
     public static class CommandResult {
         public final String sentCommand;
         public final String rawResponse;
@@ -31,6 +34,7 @@ public class Ma2TelnetClient {
 
     private volatile boolean connected = false;
     private volatile String lastAck = "";
+    private volatile String connId = "-";
 
     public synchronized void configure(String host, int port, String user, String pass) {
         if (host != null && !host.isBlank()) this.host = host.trim();
@@ -41,50 +45,48 @@ public class Ma2TelnetClient {
 
     public synchronized void connect() throws Exception {
         disconnect();
-        System.out.println("[MA2] connecting " + host + ":" + port);
+        connId = Integer.toHexString(CONN_SEQ.getAndIncrement());
         Socket s = new Socket();
         s.connect(new InetSocketAddress(host, port), 2000);
-        s.setSoTimeout(2200);
+        s.setSoTimeout(5000);
         this.socket = s;
         this.reader = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
         this.writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8));
-        System.out.println("[MA2] connected");
+        System.out.println("[MA2][" + connId + "] connected");
 
-        // 读取连接后欢迎文本（原始）
-        String banner = readRawWithin(420);
-        System.out.println("[MA2] recv: " + banner.replace("\n", "\\n"));
+        // 连接后先读一次欢迎文本（不打印全文）。
+        readRawWithin(500);
 
-        // 始终执行 login（包括空密码）
+        // 始终执行 login（包括空密码），并在同一 socket 生命周期内完成。
         String u = user == null ? "" : user;
         String p = pass == null ? "" : pass;
         String loginCmd = "login \"" + escapeForQuoted(u) + "\" \"" + escapeForQuoted(p) + "\"";
-        String masked = "login \"" + escapeForQuoted(u) + "\" \"" + (p.isEmpty() ? "" : "***") + "\"";
-        System.out.println("[MA2] send-login: " + masked);
+        System.out.println("[MA2][" + connId + "] send-login");
         writer.write(loginCmd + "\r\n");
         writer.flush();
 
-        String afterLoginRaw = readRawWithin(520);
-        System.out.println("[MA2] login-response: " + afterLoginRaw.replace("\n", "\\n"));
-
+        String afterLoginRaw = readRawWithin(900);
         String loginAck = sanitizeAck(afterLoginRaw == null ? "" : afterLoginRaw);
         String lowAck = loginAck.toLowerCase();
         if (lowAck.contains("login needed") || lowAck.contains("please login") || lowAck.contains("error #43") || lowAck.contains("bad login") || lowAck.contains("invalid")) {
             connected = false;
-            System.out.println("[MA2] login-failed");
-            throw new IOException("login rejected: " + loginAck);
+            System.out.println("[MA2][" + connId + "] login-failed: " + (loginAck.isBlank() ? "unknown" : loginAck));
+            throw new IOException("login rejected: " + (loginAck.isBlank() ? "unknown" : loginAck));
         }
 
         connected = true;
         lastAck = loginAck.isBlank() ? "login-ok" : loginAck;
-        System.out.println("[MA2] login-ok");
+        System.out.println("[MA2][" + connId + "] login-ok");
     }
 
     public synchronized void disconnect() {
+        boolean had = socket != null;
         try { if (socket != null) socket.close(); } catch (Exception ignored) {}
         socket = null;
         reader = null;
         writer = null;
         connected = false;
+        if (had) System.out.println("[MA2][" + connId + "] closed");
     }
 
     public synchronized String sendCommand(String cmd) throws Exception {
@@ -96,14 +98,22 @@ public class Ma2TelnetClient {
         if (!connected || socket == null || writer == null) {
             throw new IOException("not connected");
         }
-        writer.write(cmd + "\n");
-        writer.flush();
+        try {
+            writer.write(cmd + "\r\n");
+            writer.flush();
+            System.out.println("[MA2][" + connId + "] send-command");
+        } catch (Exception e) {
+            connected = false;
+            System.out.println("[MA2][" + connId + "] command-failed: write-error");
+            throw e;
+        }
 
         // 读取命令后的原始响应
-        String raw = readRawWithin(300);
+        String raw = readRawWithin(500);
         String ack = sanitizeAck(raw == null ? "sent" : raw);
         if (ack == null || ack.isBlank()) ack = "sent";
         lastAck = ack;
+        System.out.println("[MA2][" + connId + "] command-ok");
         return new CommandResult(cmd, raw == null ? "" : raw, ack);
     }
 
