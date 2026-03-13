@@ -60,6 +60,19 @@ public class LtcDriver implements OutputDriver {
     // 上一次有效的锚点位置（用于检测跳变）
     private volatile long lastAnchoredPositionMs = 0L;
 
+    // === Reanchor 执行状态（真正执行，不只是标记） ===
+    // 检测到的 reanchor 触发条件
+    private volatile boolean pendingReanchor = false;
+    private volatile String reanchorReason = "";
+    private volatile long reanchorUpstreamPositionMs = 0L;
+    private volatile long reanchorRequestedAtMs = 0L;
+    // 实际执行的 reanchor
+    private volatile long lastReanchorAppliedAtMs = 0L;
+    private volatile long reanchorCount = 0L;
+    // 调试：上一次 reanchor 的详情
+    private volatile String lastReanchorReason = "";
+    private volatile long lastReanchorUpstreamPositionMs = 0L;
+
     // 状态判断阈值
     private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
     private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
@@ -147,12 +160,20 @@ public class LtcDriver implements OutputDriver {
         sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
 
+        // === 1) 捕获上游 position reference ===
+        Object ctMs = state.get("currentTimeMs");
+        long newPositionMs = 0L;
+        if (ctMs instanceof Number) {
+            newPositionMs = ((Number) ctMs).longValue();
+            upstreamPositionValid = true;
+        }
+
         // === 媒体锚点管理：捕获媒体上下文 ===
         String newTrackId = strVal(state, "trackId", "");
         String newRekordboxId = strVal(state, "rekordboxId", "");
         int newPlayerId = intVal(state, "playerId", 0);
 
-        // 检测媒体上下文变化
+        // 检测媒体上下文变化并触发 reanchor
         boolean mediaContextChanged = !newTrackId.equals(currentTrackId)
             || !newRekordboxId.equals(currentRekordboxId)
             || newPlayerId != currentPlayerId;
@@ -164,27 +185,39 @@ public class LtcDriver implements OutputDriver {
                 currentTrackId = newTrackId;
                 currentRekordboxId = newRekordboxId;
                 currentPlayerId = newPlayerId;
-                // 标记需要重新锚定
-                System.out.println("[LTC] media context changed: trackId=" + newTrackId + " rekordboxId=" + newRekordboxId + " playerId=" + newPlayerId);
+                // 立即触发 reanchor
+                pendingReanchor = true;
+                reanchorReason = "media_context_change";
+                reanchorUpstreamPositionMs = newPositionMs;
+                reanchorRequestedAtMs = now;
+                System.out.println("[LTC] MEDIA REANCHOR TRIGGERED: trackId=" + newTrackId + " rekordboxId=" + newRekordboxId + " playerId=" + newPlayerId + " pos=" + newPositionMs);
             }
         }
 
-        // === 1) 捕获上游 position reference ===
-        Object ctMs = state.get("currentTimeMs");
-        long newPositionMs = 0L;
-        if (ctMs instanceof Number) {
-            newPositionMs = ((Number) ctMs).longValue();
-            upstreamPositionValid = true;
+        // 检测位置跳变（可能是 seek / cue / loop jump）
+        boolean positionJumped = upstreamPositionValid && newPositionMs < 500
+            && lastAnchoredPositionMs > 5000; // 突然跳到接近 0 且之前 > 5s
+
+        // 检测大跳变（seek / cue / loop jump）- 位置大幅前进又回来
+        boolean bigJump = upstreamPositionValid && Math.abs(newPositionMs - lastAnchoredPositionMs) > (long)(BIG_JUMP_THRESHOLD_SEC * 1000);
+
+        if (positionJumped && !pendingReanchor) {
+            // 位置跳到接近 0，触发 reanchor
+            pendingReanchor = true;
+            reanchorReason = "position_jump_to_zero";
+            reanchorUpstreamPositionMs = newPositionMs;
+            reanchorRequestedAtMs = System.currentTimeMillis();
+            System.out.println("[LTC] POSITION JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
+        } else if (bigJump && !pendingReanchor) {
+            // 大跳变触发 reanchor
+            pendingReanchor = true;
+            reanchorReason = "big_jump";
+            reanchorUpstreamPositionMs = newPositionMs;
+            reanchorRequestedAtMs = System.currentTimeMillis();
+            System.out.println("[LTC] BIG JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
         }
 
-        // 检测位置跳变（可能是 seek / cue / loop jump）
-        boolean positionJumped = upstreamPositionValid && Math.abs(newPositionMs - lastAnchoredPositionMs) > 1000
-            && newPositionMs < 500; // 突然跳到接近 0
-
-        if (positionJumped || mediaContextChanged) {
-            // 需要重新锚定
-            lastAnchoredPositionMs = newPositionMs;
-        } else if (newPositionMs > 0) {
+        if (newPositionMs > 0) {
             lastAnchoredPositionMs = newPositionMs;
         }
         upstreamPositionMs = newPositionMs;
@@ -278,6 +311,16 @@ public class LtcDriver implements OutputDriver {
         m.put("currentPlayerId", currentPlayerId);
         m.put("lastMediaChangeDetectedMs", lastMediaChangeDetectedMs);
 
+        // Reanchor 执行状态
+        m.put("pendingReanchor", pendingReanchor);
+        m.put("reanchorReason", reanchorReason);
+        m.put("reanchorRequestedAtMs", reanchorRequestedAtMs);
+        m.put("reanchorUpstreamPositionMs", reanchorUpstreamPositionMs);
+        m.put("lastReanchorAppliedAtMs", lastReanchorAppliedAtMs);
+        m.put("reanchorCount", reanchorCount);
+        m.put("lastReanchorReason", lastReanchorReason);
+        m.put("lastReanchorUpstreamPositionMs", lastReanchorUpstreamPositionMs);
+
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
         m.put("smallErrorThresholdSec", SMALL_ERROR_THRESHOLD_SEC);
@@ -335,45 +378,37 @@ public class LtcDriver implements OutputDriver {
                 continue;
             }
 
-            // === 播放中：判断是否需要重锁 ===
-            // 媒体锚点管理：检测是否需要重新锚定
-            boolean needReanchor = false;
-
-            // 条件1：媒体上下文变化（换歌、player切换）
-            if (!currentTrackId.isEmpty() || !currentRekordboxId.isEmpty() || currentPlayerId != 0) {
-                // 记录当前媒体上下文状态供 pumpAudio 使用
-            }
-
-            // 条件2：位置突然跳到接近0（可能是新曲目开始）
-            if (upstreamPositionValid && upstreamPositionMs < (long)(POSITION_NEAR_ZERO_SEC * 1000)
-                && lastAnchoredPositionMs > 5000) {
-                needReanchor = true;
-            }
-
-            // 条件3：大跳变（seek/cue/loop jump）
-            long expectedFromUpstream = upstreamPositionValid ? (upstreamPositionMs * sampleRate) / 1000L : 0;
-            if (upstreamPositionValid && initialAligned) {
-                long diff = Math.abs(localLtcSamplePos - expectedFromUpstream);
-                if (diff > bigJumpThresholdSamples) {
-                    needReanchor = true;
-                }
-            }
-
-            // 执行重新锚定
-            if (needReanchor && upstreamPositionValid) {
-                localLtcSamplePos = expectedFromUpstream;
+            // === 播放中：执行 Reanchor（真正重置本地 LTC 位置） ===
+            if (pendingReanchor && upstreamPositionValid) {
+                // 真正执行 reanchor：重置本地 LTC 主位置到 upstream 位置
+                long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
+                localLtcSamplePos = targetSamplePos;
                 localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
                 nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                 initialAligned = true;
                 framePrimed = false;
-                System.out.println("[LTC] re-anchored to upstream position: " + upstreamPositionMs + "ms");
-            } else if (upstreamPositionValid && !initialAligned) {
+
+                // 记录执行详情
+                lastReanchorAppliedAtMs = System.currentTimeMillis();
+                reanchorCount++;
+                lastReanchorReason = reanchorReason;
+                lastReanchorUpstreamPositionMs = reanchorUpstreamPositionMs;
+
+                System.out.println("[LTC] REANCHOR APPLIED: reason=" + reanchorReason + " upstreamPos=" + reanchorUpstreamPositionMs + "ms -> localSample=" + localLtcSamplePos + " frame=" + localLtcFramePos);
+
+                // 清除 pending 状态
+                pendingReanchor = false;
+                reanchorReason = "";
+                reanchorUpstreamPositionMs = 0L;
+            } else if (!initialAligned && upstreamPositionValid) {
                 // 首次对齐：用上游位置初始化本地 LTC
-                localLtcSamplePos = expectedFromUpstream;
+                long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
+                localLtcSamplePos = targetSamplePos;
                 localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
                 nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                 initialAligned = true;
                 framePrimed = false;
+                System.out.println("[LTC] INITIAL ALIGN: upstreamPos=" + upstreamPositionMs + "ms -> localSample=" + localLtcSamplePos);
             }
             // 正常播放时：保持本地稳定 LTC 时钟推进，不受上游小抖动影响
 
