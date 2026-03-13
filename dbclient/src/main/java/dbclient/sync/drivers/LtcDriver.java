@@ -160,7 +160,7 @@ public class LtcDriver implements OutputDriver {
     private volatile double parsedPitch = 0.0;
 
     // 状态判断阈值
-    private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
+    private static final double BIG_JUMP_THRESHOLD_SEC = 2.0; // 2000ms 大跳变阈值（仅用于 whitelisted jump）
     private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
     private static final double BLOCK_RELOCK_THRESHOLD_SEC = 0.020; // 20ms
     private static final double POSITION_NEAR_ZERO_SEC = 0.5; // 接近 0 的阈值
@@ -309,7 +309,8 @@ public class LtcDriver implements OutputDriver {
 
         currUpstreamPositionMs = newPositionMs;
 
-        // === 媒体锚点管理：捕获媒体上下文 ===
+        // === 媒体锚点管理：捕获媒体上下文 (暂禁用，避免干扰主路径) ===
+        // 禁用：media_context_change 自动重锚
         String newTrackId = strVal(state, "trackId", "");
         String newRekordboxId = strVal(state, "rekordboxId", "");
         int newPlayerId = intVal(state, "playerId", 0);
@@ -324,69 +325,30 @@ public class LtcDriver implements OutputDriver {
         reanchorTriggerType = "";
         reanchorSuppressedReason = "";
 
-        // 检测媒体上下文变化
+        // 检测媒体上下文变化 (禁用触发，仅记录状态)
         mediaContextChanged = !newTrackId.equals(prevTrackId)
             || !newRekordboxId.equals(prevRekordboxId)
             || newPlayerId != prevPlayerId;
 
-        if (mediaContextChanged) {
-            long now = System.currentTimeMillis();
-            if (now - lastMediaChangeDetectedMs > MEDIA_CHANGE_DEBOUNCE_MS) {
-                lastMediaChangeDetectedMs = now;
-                currentTrackId = newTrackId;
-                currentRekordboxId = newRekordboxId;
-                currentPlayerId = newPlayerId;
-                // 立即触发 reanchor
-                pendingReanchor = true;
-                reanchorReason = "media_context_change";
-                reanchorUpstreamPositionMs = newPositionMs;
-                reanchorRequestedAtMs = now;
-                reanchorTriggerMatched = true;
-                reanchorTriggerType = "media_context_change";
-                System.out.println("[LTC] MEDIA REANCHOR TRIGGERED: trackId=" + newTrackId + " rekordboxId=" + newRekordboxId + " playerId=" + newPlayerId + " pos=" + newPositionMs);
-            } else {
-                reanchorSuppressedReason = "media_change_debounce";
-            }
-        }
-
-        // 检测位置跳变（可能是 seek / cue / loop jump）
+        // === 位置跳变检测 (简化：只保留 whitelisted jump) ===
+        // 禁用：position_jump_to_zero, big_jump (原0.5s), loop_jump
+        // 仅保留：whitelisted_jump (当跳变 > 2.0s 时作为唯一允许的 jump)
         if (upstreamPositionValid) {
             computedJumpDiffMs = Math.abs(newPositionMs - lastAnchoredPositionMs);
-            nearZeroDetected = newPositionMs < 500 && lastAnchoredPositionMs > 5000;
+            // 仅当跳变 > 2.0s 时触发 whitelisted_jump（当前作为 hot_cue_like 白名单）
             bigJumpDetected = computedJumpDiffMs > (long)(BIG_JUMP_THRESHOLD_SEC * 1000);
 
-            if (nearZeroDetected && !pendingReanchor) {
-                // 位置跳到接近 0，触发 reanchor
+            if (bigJumpDetected && !pendingReanchor) {
+                // 仅保留这一个 jump 触发
                 pendingReanchor = true;
-                reanchorReason = "position_jump_to_zero";
+                reanchorReason = "whitelisted_jump";
                 reanchorUpstreamPositionMs = newPositionMs;
                 reanchorRequestedAtMs = System.currentTimeMillis();
                 reanchorTriggerMatched = true;
-                reanchorTriggerType = "position_jump_to_zero";
-                System.out.println("[LTC] POSITION JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
-            } else if (bigJumpDetected && !pendingReanchor) {
-                // 大跳变（seek/hot cue/loop回跳）触发 reanchor
-                pendingReanchor = true;
-                reanchorReason = "big_jump";
-                reanchorUpstreamPositionMs = newPositionMs;
-                reanchorRequestedAtMs = System.currentTimeMillis();
-                reanchorTriggerMatched = true;
-                reanchorTriggerType = "big_jump";
-                System.out.println("[LTC] BIG JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
-            } else if (loopLikeJumpDetected && !pendingReanchor) {
-                // Loop 回跳触发 reanchor
-                pendingReanchor = true;
-                reanchorReason = "loop_jump";
-                reanchorUpstreamPositionMs = newPositionMs;
-                reanchorRequestedAtMs = System.currentTimeMillis();
-                reanchorTriggerMatched = true;
-                reanchorTriggerType = "loop_jump";
-                loopLikeJumpDetected = false; // reset after triggering
-                System.out.println("[LTC] LOOP JUMP REANCHOR TRIGGERED: from=" + lastLoopJumpFromMs + " to=" + lastLoopJumpToMs);
+                reanchorTriggerType = "whitelisted_jump";
+                System.out.println("[LTC] WHITELISTED JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs + " diff=" + computedJumpDiffMs + "ms");
             }
         } else {
-            nearZeroDetected = false;
-            bigJumpDetected = false;
             computedJumpDiffMs = 0;
             reanchorSuppressedReason = upstreamPositionSource.equals("none") ? "no_upstream_position" : reanchorSuppressedReason;
         }
@@ -416,35 +378,11 @@ public class LtcDriver implements OutputDriver {
             System.out.println("[LTC] RESUME DETECTED at " + newPositionMs + "ms");
         }
 
-        // 检测媒体变化时是否处于暂停状态 - 换歌未播放时标记
-        if (mediaContextChanged && !parsedPlaying) {
-            mediaChangedWhilePaused = true;
-            // 立即触发 pendingReanchor，这样 resume 时会立即贴合新曲位置
-            pendingReanchor = true;
-            reanchorReason = "media_change_while_paused";
-            reanchorUpstreamPositionMs = newPositionMs;
-            reanchorRequestedAtMs = System.currentTimeMillis();
-            reanchorTriggerMatched = true;
-            reanchorTriggerType = "media_change_while_paused";
-            System.out.println("[LTC] MEDIA CHANGED WHILE PAUSED: trackId=" + newTrackId + " - will reanchor on resume");
-        }
+        // === 媒体变化时暂停状态检测 (暂禁用) ===
+        // 禁用：media_change_while_paused 自动重锚
 
-        // Loop 跳变检测：位置回到之前的位置（loop repeat）
-        if (upstreamPositionValid && parsedPlaying) {
-            // 检测是否在 loop 区间内反复跳回
-            if (lastLoopJumpToMs > 0 && newPositionMs == lastLoopJumpToMs && prevUpstreamPositionMs > newPositionMs) {
-                // 位置又跳回之前的 loop 点
-                loopLikeJumpDetected = true;
-                lastLoopJumpAtMs = now;
-                lastLoopJumpFromMs = prevUpstreamPositionMs;
-                lastLoopJumpToMs = newPositionMs;
-                System.out.println("[LTC] LOOP-LIKE JUMP DETECTED: from=" + prevUpstreamPositionMs + " to=" + newPositionMs);
-            } else if (Math.abs(newPositionMs - prevUpstreamPositionMs) > 2000 && newPositionMs < prevUpstreamPositionMs) {
-                // 大幅回跳，可能是 loop 开始
-                lastLoopJumpFromMs = prevUpstreamPositionMs;
-                lastLoopJumpToMs = newPositionMs;
-            }
-        }
+        // === Loop 跳变检测 (暂禁用) ===
+        // 禁用：loopLikeJumpDetected 自动重锚
 
         // 更新播放状态
         wasPlaying = parsedPlaying;
