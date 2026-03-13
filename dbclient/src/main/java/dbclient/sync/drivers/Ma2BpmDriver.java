@@ -155,6 +155,10 @@ public class Ma2BpmDriver implements OutputDriver {
 
         String cmd = commandTemplate.replace("{index}", String.valueOf(speedMasterIndex)).replace("{bpm}", String.valueOf(b));
         Map<String, Object> sent = sendTestCommand(cmd);
+        if (Boolean.TRUE.equals(sent.get("ok"))) {
+            lastSentBpm = b;
+            lastSendTs = now;
+        }
         sent.put("inputBpm", bpm);
         sent.put("roundedBpm", b);
         sent.put("filtered", false);

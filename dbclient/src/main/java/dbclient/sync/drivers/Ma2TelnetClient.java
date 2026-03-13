@@ -44,43 +44,39 @@ public class Ma2TelnetClient {
         System.out.println("[MA2] connecting " + host + ":" + port);
         Socket s = new Socket();
         s.connect(new InetSocketAddress(host, port), 2000);
-        s.setSoTimeout(1800);
+        s.setSoTimeout(2200);
         this.socket = s;
         this.reader = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
         this.writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8));
+        System.out.println("[MA2] connected");
 
-        // Telnet 登录：先读欢迎文本，再按提示发送 user/pass。
-        String banner = readLatestAckWithin(260);
-        if (banner != null && !banner.isBlank()) {
-            System.out.println("[MA2] banner: " + sanitizeAck(banner));
-        }
+        // 读取连接后欢迎文本（原始）
+        String banner = readRawWithin(420);
+        System.out.println("[MA2] recv: " + banner.replace("\n", "\\n"));
 
-        if (user != null && !user.isBlank()) {
-            writer.write(user + "\r\n");
-            writer.flush();
-            sleep(120);
-        }
-        if (pass != null && !pass.isBlank()) {
-            writer.write(pass + "\r\n");
-            writer.flush();
-            sleep(120);
-        }
+        // 始终执行 login（包括空密码）
+        String u = user == null ? "" : user;
+        String p = pass == null ? "" : pass;
+        String loginCmd = "login \"" + escapeForQuoted(u) + "\" \"" + escapeForQuoted(p) + "\"";
+        String masked = "login \"" + escapeForQuoted(u) + "\" \"" + (p.isEmpty() ? "" : "***") + "\"";
+        System.out.println("[MA2] send-login: " + masked);
+        writer.write(loginCmd + "\r\n");
+        writer.flush();
 
-        String afterLogin = readLatestAckWithin(300);
-        if (afterLogin != null && !afterLogin.isBlank()) {
-            System.out.println("[MA2] login-response: " + sanitizeAck(afterLogin));
-        }
+        String afterLoginRaw = readRawWithin(520);
+        System.out.println("[MA2] login-response: " + afterLoginRaw.replace("\n", "\\n"));
 
-        String loginAck = sanitizeAck(afterLogin == null ? "login sent" : afterLogin);
+        String loginAck = sanitizeAck(afterLoginRaw == null ? "" : afterLoginRaw);
         String lowAck = loginAck.toLowerCase();
-        if (lowAck.contains("please login") || lowAck.contains("login needed") || lowAck.contains("error #43")) {
+        if (lowAck.contains("login needed") || lowAck.contains("please login") || lowAck.contains("error #43") || lowAck.contains("bad login") || lowAck.contains("invalid")) {
             connected = false;
+            System.out.println("[MA2] login-failed");
             throw new IOException("login rejected: " + loginAck);
         }
+
         connected = true;
-        lastAck = loginAck;
-        System.out.println("[MA2] connected");
-        System.out.println("[MA2] login success");
+        lastAck = loginAck.isBlank() ? "login-ok" : loginAck;
+        System.out.println("[MA2] login-ok");
     }
 
     public synchronized void disconnect() {
@@ -103,8 +99,8 @@ public class Ma2TelnetClient {
         writer.write(cmd + "\n");
         writer.flush();
 
-        // 读取一个短窗口内返回，只保留“最新一条”可读内容。
-        String raw = readLatestAckWithin(220);
+        // 读取命令后的原始响应
+        String raw = readRawWithin(300);
         String ack = sanitizeAck(raw == null ? "sent" : raw);
         if (ack == null || ack.isBlank()) ack = "sent";
         lastAck = ack;
@@ -127,21 +123,32 @@ public class Ma2TelnetClient {
     }
 
     private String readLatestAckWithin(long windowMs) {
+        String raw = readRawWithin(windowMs);
+        if (raw == null || raw.isBlank()) return null;
+        String[] lines = raw.split("\\r?\\n");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            if (!lines[i].isBlank()) return lines[i];
+        }
+        return null;
+    }
+
+    private String readRawWithin(long windowMs) {
         long end = System.currentTimeMillis() + Math.max(40, windowMs);
-        String latest = null;
+        StringBuilder sb = new StringBuilder();
         while (System.currentTimeMillis() < end) {
             try {
                 if (reader == null || !reader.ready()) {
                     sleep(15);
                     continue;
                 }
-                String line = reader.readLine();
-                if (line != null && !line.isBlank()) latest = line;
+                int ch = reader.read();
+                if (ch < 0) break;
+                sb.append((char) ch);
             } catch (Exception ignored) {
                 break;
             }
         }
-        return latest;
+        return sb.toString();
     }
 
     private static String sanitizeAck(String raw) {
@@ -154,6 +161,11 @@ public class Ma2TelnetClient {
         String s = sb.toString().replaceAll("\\s+", " ").trim();
         if (s.length() > 96) s = s.substring(s.length() - 96).trim();
         return s;
+    }
+
+    private static String escapeForQuoted(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static void sleep(long ms) {
