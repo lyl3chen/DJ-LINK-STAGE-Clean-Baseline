@@ -73,6 +73,29 @@ public class LtcDriver implements OutputDriver {
     private volatile String lastReanchorReason = "";
     private volatile long lastReanchorUpstreamPositionMs = 0L;
 
+    // === Reanchor 判定原始输入（完全可观测） ===
+    // 当前帧数据
+    private volatile String currTrackId = "";
+    private volatile String currRekordboxId = "";
+    private volatile int currPlayerId = 0;
+    private volatile long currUpstreamPositionMs = 0L;
+    private volatile String upstreamPositionSource = "none"; // currentTimeMs / beatTimeMs / fallback / none
+    // 上一帧数据
+    private volatile String prevTrackId = "";
+    private volatile String prevRekordboxId = "";
+    private volatile int prevPlayerId = 0;
+    private volatile long prevUpstreamPositionMs = 0L;
+    // 判定结果
+    private volatile boolean mediaContextChanged = false;
+    private volatile boolean nearZeroDetected = false;
+    private volatile boolean bigJumpDetected = false;
+    private volatile long computedJumpDiffMs = 0L;
+    // 判定执行状态
+    private volatile boolean reanchorCheckRan = false;
+    private volatile boolean reanchorTriggerMatched = false;
+    private volatile String reanchorTriggerType = "";
+    private volatile String reanchorSuppressedReason = "";
+
     // 状态判断阈值
     private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
     private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
@@ -160,23 +183,54 @@ public class LtcDriver implements OutputDriver {
         sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
 
+        // === Reanchor 判定：记录原始输入 ===
+        // 先保存上一帧数据
+        prevTrackId = currTrackId;
+        prevRekordboxId = currRekordboxId;
+        prevPlayerId = currPlayerId;
+        prevUpstreamPositionMs = currUpstreamPositionMs;
+
         // === 1) 捕获上游 position reference ===
         Object ctMs = state.get("currentTimeMs");
+        Object btMs = state.get("beatTimeMs");
         long newPositionMs = 0L;
+        upstreamPositionSource = "none";
+
         if (ctMs instanceof Number) {
             newPositionMs = ((Number) ctMs).longValue();
             upstreamPositionValid = true;
+            upstreamPositionSource = "currentTimeMs";
+        } else if (btMs instanceof Number) {
+            // 回退到 beatTimeMs
+            newPositionMs = ((Number) btMs).longValue();
+            upstreamPositionValid = true;
+            upstreamPositionSource = "beatTimeMs";
+        } else {
+            upstreamPositionValid = false;
+            upstreamPositionSource = "none";
         }
+
+        currUpstreamPositionMs = newPositionMs;
 
         // === 媒体锚点管理：捕获媒体上下文 ===
         String newTrackId = strVal(state, "trackId", "");
         String newRekordboxId = strVal(state, "rekordboxId", "");
         int newPlayerId = intVal(state, "playerId", 0);
 
-        // 检测媒体上下文变化并触发 reanchor
-        boolean mediaContextChanged = !newTrackId.equals(currentTrackId)
-            || !newRekordboxId.equals(currentRekordboxId)
-            || newPlayerId != currentPlayerId;
+        currTrackId = newTrackId;
+        currRekordboxId = newRekordboxId;
+        currPlayerId = newPlayerId;
+
+        // 重置判定状态
+        reanchorCheckRan = true;
+        reanchorTriggerMatched = false;
+        reanchorTriggerType = "";
+        reanchorSuppressedReason = "";
+
+        // 检测媒体上下文变化
+        mediaContextChanged = !newTrackId.equals(prevTrackId)
+            || !newRekordboxId.equals(prevRekordboxId)
+            || newPlayerId != prevPlayerId;
 
         if (mediaContextChanged) {
             long now = System.currentTimeMillis();
@@ -190,31 +244,44 @@ public class LtcDriver implements OutputDriver {
                 reanchorReason = "media_context_change";
                 reanchorUpstreamPositionMs = newPositionMs;
                 reanchorRequestedAtMs = now;
+                reanchorTriggerMatched = true;
+                reanchorTriggerType = "media_context_change";
                 System.out.println("[LTC] MEDIA REANCHOR TRIGGERED: trackId=" + newTrackId + " rekordboxId=" + newRekordboxId + " playerId=" + newPlayerId + " pos=" + newPositionMs);
+            } else {
+                reanchorSuppressedReason = "media_change_debounce";
             }
         }
 
         // 检测位置跳变（可能是 seek / cue / loop jump）
-        boolean positionJumped = upstreamPositionValid && newPositionMs < 500
-            && lastAnchoredPositionMs > 5000; // 突然跳到接近 0 且之前 > 5s
+        if (upstreamPositionValid) {
+            computedJumpDiffMs = Math.abs(newPositionMs - lastAnchoredPositionMs);
+            nearZeroDetected = newPositionMs < 500 && lastAnchoredPositionMs > 5000;
+            bigJumpDetected = computedJumpDiffMs > (long)(BIG_JUMP_THRESHOLD_SEC * 1000);
 
-        // 检测大跳变（seek / cue / loop jump）- 位置大幅前进又回来
-        boolean bigJump = upstreamPositionValid && Math.abs(newPositionMs - lastAnchoredPositionMs) > (long)(BIG_JUMP_THRESHOLD_SEC * 1000);
-
-        if (positionJumped && !pendingReanchor) {
-            // 位置跳到接近 0，触发 reanchor
-            pendingReanchor = true;
-            reanchorReason = "position_jump_to_zero";
-            reanchorUpstreamPositionMs = newPositionMs;
-            reanchorRequestedAtMs = System.currentTimeMillis();
-            System.out.println("[LTC] POSITION JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
-        } else if (bigJump && !pendingReanchor) {
-            // 大跳变触发 reanchor
-            pendingReanchor = true;
-            reanchorReason = "big_jump";
-            reanchorUpstreamPositionMs = newPositionMs;
-            reanchorRequestedAtMs = System.currentTimeMillis();
-            System.out.println("[LTC] BIG JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
+            if (nearZeroDetected && !pendingReanchor) {
+                // 位置跳到接近 0，触发 reanchor
+                pendingReanchor = true;
+                reanchorReason = "position_jump_to_zero";
+                reanchorUpstreamPositionMs = newPositionMs;
+                reanchorRequestedAtMs = System.currentTimeMillis();
+                reanchorTriggerMatched = true;
+                reanchorTriggerType = "position_jump_to_zero";
+                System.out.println("[LTC] POSITION JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
+            } else if (bigJumpDetected && !pendingReanchor) {
+                // 大跳变触发 reanchor
+                pendingReanchor = true;
+                reanchorReason = "big_jump";
+                reanchorUpstreamPositionMs = newPositionMs;
+                reanchorRequestedAtMs = System.currentTimeMillis();
+                reanchorTriggerMatched = true;
+                reanchorTriggerType = "big_jump";
+                System.out.println("[LTC] BIG JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
+            }
+        } else {
+            nearZeroDetected = false;
+            bigJumpDetected = false;
+            computedJumpDiffMs = 0;
+            reanchorSuppressedReason = upstreamPositionSource.equals("none") ? "no_upstream_position" : reanchorSuppressedReason;
         }
 
         if (newPositionMs > 0) {
@@ -320,6 +387,25 @@ public class LtcDriver implements OutputDriver {
         m.put("reanchorCount", reanchorCount);
         m.put("lastReanchorReason", lastReanchorReason);
         m.put("lastReanchorUpstreamPositionMs", lastReanchorUpstreamPositionMs);
+
+        // Reanchor 判定原始输入（完全可观测）
+        m.put("currTrackId", currTrackId);
+        m.put("currRekordboxId", currRekordboxId);
+        m.put("currPlayerId", currPlayerId);
+        m.put("currUpstreamPositionMs", currUpstreamPositionMs);
+        m.put("upstreamPositionSource", upstreamPositionSource);
+        m.put("prevTrackId", prevTrackId);
+        m.put("prevRekordboxId", prevRekordboxId);
+        m.put("prevPlayerId", prevPlayerId);
+        m.put("prevUpstreamPositionMs", prevUpstreamPositionMs);
+        m.put("mediaContextChanged", mediaContextChanged);
+        m.put("nearZeroDetected", nearZeroDetected);
+        m.put("bigJumpDetected", bigJumpDetected);
+        m.put("computedJumpDiffMs", computedJumpDiffMs);
+        m.put("reanchorCheckRan", reanchorCheckRan);
+        m.put("reanchorTriggerMatched", reanchorTriggerMatched);
+        m.put("reanchorTriggerType", reanchorTriggerType);
+        m.put("reanchorSuppressedReason", reanchorSuppressedReason);
 
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
