@@ -365,7 +365,7 @@ public class LtcDriver implements OutputDriver {
                 reanchorTriggerType = "position_jump_to_zero";
                 System.out.println("[LTC] POSITION JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
             } else if (bigJumpDetected && !pendingReanchor) {
-                // 大跳变触发 reanchor
+                // 大跳变（seek/hot cue/loop回跳）触发 reanchor
                 pendingReanchor = true;
                 reanchorReason = "big_jump";
                 reanchorUpstreamPositionMs = newPositionMs;
@@ -373,6 +373,16 @@ public class LtcDriver implements OutputDriver {
                 reanchorTriggerMatched = true;
                 reanchorTriggerType = "big_jump";
                 System.out.println("[LTC] BIG JUMP REANCHOR TRIGGERED: from=" + lastAnchoredPositionMs + " to=" + newPositionMs);
+            } else if (loopLikeJumpDetected && !pendingReanchor) {
+                // Loop 回跳触发 reanchor
+                pendingReanchor = true;
+                reanchorReason = "loop_jump";
+                reanchorUpstreamPositionMs = newPositionMs;
+                reanchorRequestedAtMs = System.currentTimeMillis();
+                reanchorTriggerMatched = true;
+                reanchorTriggerType = "loop_jump";
+                loopLikeJumpDetected = false; // reset after triggering
+                System.out.println("[LTC] LOOP JUMP REANCHOR TRIGGERED: from=" + lastLoopJumpFromMs + " to=" + lastLoopJumpToMs);
             }
         } else {
             nearZeroDetected = false;
@@ -406,10 +416,17 @@ public class LtcDriver implements OutputDriver {
             System.out.println("[LTC] RESUME DETECTED at " + newPositionMs + "ms");
         }
 
-        // 检测媒体变化时是否处于暂停状态
+        // 检测媒体变化时是否处于暂停状态 - 换歌未播放时标记
         if (mediaContextChanged && !parsedPlaying) {
             mediaChangedWhilePaused = true;
-            System.out.println("[LTC] MEDIA CHANGED WHILE PAUSED: trackId=" + newTrackId);
+            // 立即触发 pendingReanchor，这样 resume 时会立即贴合新曲位置
+            pendingReanchor = true;
+            reanchorReason = "media_change_while_paused";
+            reanchorUpstreamPositionMs = newPositionMs;
+            reanchorRequestedAtMs = System.currentTimeMillis();
+            reanchorTriggerMatched = true;
+            reanchorTriggerType = "media_change_while_paused";
+            System.out.println("[LTC] MEDIA CHANGED WHILE PAUSED: trackId=" + newTrackId + " - will reanchor on resume");
         }
 
         // Loop 跳变检测：位置回到之前的位置（loop repeat）
@@ -648,38 +665,34 @@ public class LtcDriver implements OutputDriver {
                 rateControlMode = "IDLE";
             }
 
-            // === 路径C: Pause-Hold ===
+            // === 路径C: PAUSE - 立即冻结位置 ===
             if (!isPlaying) {
-                // LTC 稳定停住
+                // LTC 立即冻结，不推进，不等待
                 outputState = "PAUSED";
                 rateControlMode = "PAUSE";
                 try { Thread.sleep(20); } catch (InterruptedException ignored) {}
                 continue;
             }
 
-            // === 路径D: Resume - 恢复播放时做一次 soft sync ===
-            if (resumeTransitionDetected && upstreamPositionValid) {
-                // Resume 时不做硬重锚，而是做一次软贴合
-                long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
-                // 计算位置误差
-                positionErrorMs = (localLtcSamplePos * 1000L) / sampleRate - upstreamPositionMs;
-                // 只在误差超过 100ms 时才做一次软贴合
-                if (Math.abs(positionErrorMs) > 100) {
+            // === RESUME 处理：在进入 NORMAL 之前先决定恢复点 ===
+            if (resumeTransitionDetected) {
+                resumeTransitionDetected = false;
+                if (upstreamPositionValid) {
+                    // Resume 时立即贴合到当前上游位置，不带任何条件判断
+                    long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
                     localLtcSamplePos = targetSamplePos;
                     localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
                     nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                     framePrimed = false;
                     lastSoftSyncAtMs = System.currentTimeMillis();
-                    System.out.println("[LTC] RESUME SOFT SYNC: error=" + positionErrorMs + "ms -> aligned to " + upstreamPositionMs + "ms");
+                    System.out.println("[LTC] RESUME IMMEDIATE ALIGN: upstreamPos=" + upstreamPositionMs + "ms -> localSample=" + localLtcSamplePos);
                 }
-                lastResumeReanchorApplied = Math.abs(positionErrorMs) > 100;
-                resumeTransitionDetected = false;
-                rateControlMode = "NORMAL";
+                // 贴合完成后立即进入 NORMAL 路径，不额外延迟
             }
 
-            // === 路径B: Reanchor (媒体变化/大跳变/loop回跳) ===
+            // === 路径B: JUMP (媒体变化/seek/hot cue/loop回跳) - 立即重锚 ===
             if (pendingReanchor && upstreamPositionValid) {
-                // 真正执行 reanchor：重置本地 LTC 主位置到 upstream 位置
+                // 立即执行重锚，不犹豫，不判断阈值
                 long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
                 localLtcSamplePos = targetSamplePos;
                 localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
@@ -693,29 +706,27 @@ public class LtcDriver implements OutputDriver {
                 reanchorCount++;
                 lastReanchorReason = reanchorReason;
                 lastReanchorUpstreamPositionMs = reanchorUpstreamPositionMs;
-                lastAnchorMode = "HARD";
+                lastAnchorMode = "JUMP";
 
-                System.out.println("[LTC] REANCHOR APPLIED: reason=" + reanchorReason + " upstreamPos=" + reanchorUpstreamPositionMs + "ms -> localSample=" + localLtcSamplePos + " frame=" + localLtcFramePos);
+                System.out.println("[LTC] JUMP APPLIED: reason=" + reanchorReason + " upstreamPos=" + reanchorUpstreamPositionMs + "ms -> localSample=" + localLtcSamplePos);
 
                 // 清除 pending 状态
                 pendingReanchor = false;
                 reanchorReason = "";
                 reanchorUpstreamPositionMs = 0L;
-                rateControlMode = "NORMAL";
             } else if (!initialAligned && upstreamPositionValid) {
-                // 首次对齐：用上游位置初始化本地 LTC
+                // 首次对齐
                 long targetSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
                 localLtcSamplePos = targetSamplePos;
                 localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
                 nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                 initialAligned = true;
                 framePrimed = false;
-                rateControlMode = "NORMAL";
                 System.out.println("[LTC] INITIAL ALIGN: upstreamPos=" + upstreamPositionMs + "ms -> localSample=" + localLtcSamplePos);
             }
 
-            // === 路径A: 正常连续播放 - 只按 smoothedRate 推进，不做位置纠偏 ===
-            // 设置目标速率和应用速率
+            // === 路径A: NORMAL - 纯连续推进，不做任何纠偏 ===
+            // 只按 smoothedRate 连续前进，不做 snap / catch-up / hold / wait
             targetRate = smoothedRate;
             appliedRate = smoothedRate;
             rateControlMode = "NORMAL";
