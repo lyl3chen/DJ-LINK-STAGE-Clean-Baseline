@@ -18,7 +18,12 @@ import javax.sound.sampled.Mixer;
 import javax.sound.midi.MidiDevice;
 import javax.sound.midi.MidiSystem;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -301,6 +306,9 @@ public class JettyServer {
 
     private static List<Map<String, Object>> listAudioDevices() {
         List<Map<String, Object>> list = new ArrayList<>();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+
+        // 1) Java Sound 可直接输出的设备
         Mixer.Info[] infos = AudioSystem.getMixerInfo();
         int idx = 1;
         for (Mixer.Info info : infos) {
@@ -311,18 +319,43 @@ public class JettyServer {
                 for (javax.sound.sampled.Line.Info li : src) {
                     if (li.toString().contains("SourceDataLine")) { canOutput = true; break; }
                 }
-                if (!canOutput) continue; // 过滤只能录音的设备
+                if (!canOutput) continue;
+
+                String name = info.getName();
+                String hwId = extractHwId(name);
+                String key = hwId != null ? hwId : name;
+                if (key == null || key.isBlank() || seen.contains(key)) continue;
+                seen.add(key);
 
                 Map<String, Object> m = new ConcurrentHashMap<>();
                 m.put("index", idx++);
-                m.put("name", info.getName());           // 底层代号（用于选择）
+                m.put("name", hwId != null ? hwId : name); // value 用于配置保存
+                m.put("mixerName", name);
                 m.put("vendor", info.getVendor());
-                m.put("desc", info.getDescription());    // 更友好的描述
-                m.put("label", buildDeviceLabel(info));  // 友好名
+                m.put("desc", info.getDescription());
+                m.put("label", buildDeviceLabel(info));
                 m.put("sourceLineCount", src.length);
+                if (hwId != null) m.put("hwId", hwId);
                 list.add(m);
             } catch (Exception ignored) {}
         }
+
+        // 2) 补充 ALSA PCM 设备（确保如 hw:0,0 出现在下拉）
+        for (Map<String, Object> pcm : listAlsaPcmDevices()) {
+            String hw = String.valueOf(pcm.getOrDefault("hwId", ""));
+            if (hw.isBlank() || seen.contains(hw)) continue;
+            seen.add(hw);
+            Map<String, Object> m = new ConcurrentHashMap<>();
+            m.put("index", idx++);
+            m.put("name", hw);
+            m.put("hwId", hw);
+            m.put("card", pcm.get("card"));
+            m.put("device", pcm.get("device"));
+            m.put("label", String.valueOf(pcm.getOrDefault("label", hw)));
+            m.put("desc", String.valueOf(pcm.getOrDefault("desc", "ALSA PCM")));
+            list.add(m);
+        }
+
         return list;
     }
 
@@ -331,15 +364,61 @@ public class JettyServer {
         String desc = info.getDescription() == null ? "" : info.getDescription().trim();
         String low = name.toLowerCase();
         if (low.contains("default")) return "系统默认输出";
+        String hw = extractHwId(name);
         if (!desc.isEmpty() && !desc.toLowerCase().contains("direct audio device")) {
-            return desc;
+            return hw == null ? desc : (desc + " [" + hw + "]");
         }
         int idx = name.indexOf("[");
         if (idx > 0) {
             String shortName = name.substring(0, idx).trim();
-            if (!shortName.isEmpty()) return shortName;
+            if (!shortName.isEmpty()) return hw == null ? shortName : (shortName + " [" + hw + "]");
         }
         return name.isEmpty() ? "可用声卡" : name;
+    }
+
+    private static String extractHwId(String s) {
+        if (s == null) return null;
+        String low = s.toLowerCase();
+        int p = low.indexOf("hw:");
+        if (p < 0) return null;
+        int end = p + 3;
+        while (end < s.length()) {
+            char c = s.charAt(end);
+            if (!(Character.isDigit(c) || c == ',')) break;
+            end++;
+        }
+        String id = s.substring(p, end).toLowerCase();
+        return id.matches("hw:\\d+,\\d+") ? id : null;
+    }
+
+    private static List<Map<String, Object>> listAlsaPcmDevices() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try {
+            Path p = Path.of("/proc/asound/pcm");
+            if (!Files.exists(p)) return out;
+            List<String> lines = Files.readAllLines(p, StandardCharsets.UTF_8);
+            for (String line : lines) {
+                // 例：00-00: ALC887-VD Analog : ALC887-VD Analog : playback 1 : capture 1
+                if (line == null || line.isBlank() || !line.contains("playback")) continue;
+                String[] parts = line.split(":", 3);
+                if (parts.length < 2) continue;
+                String id = parts[0].trim();
+                String[] cd = id.split("-");
+                if (cd.length != 2) continue;
+                int card = Integer.parseInt(cd[0]);
+                int dev = Integer.parseInt(cd[1]);
+                String hw = "hw:" + card + "," + dev;
+                String label = parts[1].trim();
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("card", card);
+                m.put("device", dev);
+                m.put("hwId", hw);
+                m.put("label", label + " [" + hw + "]");
+                m.put("desc", line.trim());
+                out.add(m);
+            }
+        } catch (Exception ignored) {}
+        return out;
     }
 
     private static List<Map<String, Object>> listMidiOutDevices() {

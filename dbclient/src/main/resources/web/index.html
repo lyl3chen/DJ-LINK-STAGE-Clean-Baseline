@@ -1008,14 +1008,15 @@
         const name = (d && d.name) ? String(d.name) : '';
         const label = (d && d.label) ? String(d.label) : name;
         if (!name) return;
-        const code = (() => {
-          const m = name.match(/\[(.*?)\]/);
-          return m ? m[1] : name;
-        })();
+        const hw = (d && d.hwId) ? String(d.hwId) : '';
+        const card = (d && d.card != null) ? Number(d.card) : null;
+        const dev = (d && d.device != null) ? Number(d.device) : null;
+        const code = hw || name;
         const index = Number(d && d.index) || (i + 1);
+        const extra = (card != null && dev != null) ? ` card${card}/dev${dev}` : '';
         const o = document.createElement('option');
         o.value = name;
-        o.textContent = `${index}. ${label} (${code})`;
+        o.textContent = `${index}. ${label}${extra} (${code})`;
         sel.appendChild(o);
       });
       sel.value = selected || 'default';
@@ -1213,13 +1214,14 @@
         if (diag) {
           if (ltc.error) {
             diag.classList.add('error');
-            diag.textContent = `ERROR: Device Busy or Not Found (${ltc.error})`;
+            diag.textContent = `ERROR: ${ltc.error}`;
           } else {
             diag.classList.remove('error');
             const status = String(ltc.outputState || 'IDLE').toUpperCase() === 'OUTPUTTING' ? 'Outputting' : 'Idle';
-            const dev = ltc.activeDevice || ltc.deviceName || '-';
+            const cfgDev = ltc.deviceName || '-';
+            const activeDev = ltc.activeDevice || '-';
             const fps = ltc.fps || 25;
-            diag.textContent = `Status: ${status} | Target: ${dev} | FPS: ${fps}`;
+            diag.textContent = `Status: ${status} | Configured: ${cfgDev} | Active: ${activeDev} | FPS: ${fps}`;
           }
         }
 

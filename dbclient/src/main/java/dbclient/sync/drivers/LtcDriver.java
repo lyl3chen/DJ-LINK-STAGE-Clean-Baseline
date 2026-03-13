@@ -39,7 +39,7 @@ public class LtcDriver implements OutputDriver {
 
         try {
             AudioFormat fmt = chooseAndOpenLine(sampleRate, deviceName);
-            activeDevice = line.getLineInfo().toString();
+            activeDevice = describeActiveDevice(line, deviceName);
             line.start();
             running = true;
             outputState = "RUNNING";
@@ -54,7 +54,9 @@ public class LtcDriver implements OutputDriver {
         } catch (Exception e) {
             running = false;
             outputState = "ERROR";
-            lastError = e.getMessage() == null ? e.toString() : e.getMessage();
+            String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+            String occupancy = detectOccupancyHint(strCfg("deviceName", "default"));
+            lastError = occupancy.isBlank() ? msg : (msg + " | " + occupancy);
             activeDevice = "-";
             System.out.println("[LTC] start failed: " + lastError);
         }
@@ -240,6 +242,32 @@ public class LtcDriver implements OutputDriver {
     private String strCfg(String key, String def) {
         Object v = cfg.get(key);
         return v == null ? def : String.valueOf(v);
+    }
+
+    private String describeActiveDevice(SourceDataLine l, String configured) {
+        String lineInfo = l == null ? "-" : String.valueOf(l.getLineInfo());
+        String cfgDev = configured == null ? "default" : configured;
+        return cfgDev + " | " + lineInfo;
+    }
+
+    private String detectOccupancyHint(String configured) {
+        try {
+            String dev = configured == null ? "" : configured.trim().toLowerCase();
+            if (!dev.matches("hw:\\d+,\\d+")) return "";
+            String[] p = dev.substring(3).split(",");
+            int card = Integer.parseInt(p[0]);
+            int pcm = Integer.parseInt(p[1]);
+            String target = "/dev/snd/pcmC" + card + "D" + pcm + "p";
+            Process proc = new ProcessBuilder("bash", "-lc", "fuser -v " + target + " 2>/dev/null || true").start();
+            String out = new String(proc.getInputStream().readAllBytes());
+            proc.waitFor();
+            if (out == null || out.isBlank()) return "";
+            String s = out.replaceAll("\\s+", " ").trim();
+            if (s.length() > 160) s = s.substring(0, 160) + "...";
+            return "设备可能被占用(" + target + "): " + s;
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private String toTimecode(double sec, int fps) {
