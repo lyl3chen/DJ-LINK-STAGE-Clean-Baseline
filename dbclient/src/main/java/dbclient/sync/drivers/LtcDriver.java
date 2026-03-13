@@ -664,13 +664,13 @@ public class LtcDriver implements OutputDriver {
             }
 
             // === 路径A: NORMAL - 纯连续推进，不做任何纠偏 ===
-            // 只按 smoothedRate 连续前进，不做 snap / catch-up / hold / wait
+            // appliedRate 只控制位置推进速度，不影响帧边界计算
             targetRate = smoothedRate;
             appliedRate = smoothedRate;
             rateControlMode = "NORMAL";
 
-            // === 路径A: 正常连续播放 - 按 appliedRate 推进 ===
-            double effectiveSamplesPerFrame = samplesPerFrameExact / appliedRate;
+            // 帧边界按固定 samplesPerFrameExact 计算，不受 appliedRate 影响
+            // 位置推进按 appliedRate 连续积分
 
             double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
@@ -679,12 +679,12 @@ public class LtcDriver implements OutputDriver {
             for (int i = 0; i < bufferSamples; i++) {
                 long sampleIdx = localLtcSamplePos + i;
 
-                // 检查是否到达帧边界
+                // 检查是否到达帧边界 (按固定 samplesPerFrameExact 计算)
                 if (!framePrimed || sampleIdx >= nextFrameBoundarySample) {
                     // 进入新帧
                     while (sampleIdx >= nextFrameBoundarySample) {
                         localLtcFramePos++;
-                        nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * effectiveSamplesPerFrame);
+                        nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);  // 固定分母
                     }
                     Timecode tc = mode.timecodeFromSeconds(localLtcFramePos / mode.rateFps);
                     frameInSecond = tc.frame;
@@ -701,8 +701,8 @@ public class LtcDriver implements OutputDriver {
 
             // 本地 LTC 位置按 appliedRate 推进
             localLtcSamplePos += (long) (bufferSamples * appliedRate);
-            // 同步本地帧位置
-            localLtcFramePos = (long) (localLtcSamplePos / effectiveSamplesPerFrame);
+            // 帧位置按固定 samplesPerFrameExact 计算
+            localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
             nextBlockStartSec += bufferSamples / (double) sampleRate;
 
             double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
