@@ -96,6 +96,30 @@ public class LtcDriver implements OutputDriver {
     private volatile String reanchorTriggerType = "";
     private volatile String reanchorSuppressedReason = "";
 
+    // === Update() 原始输入观测 ===
+    private volatile long updateInvocationCount = 0L;
+    private volatile long lastUpdateAtMs = 0L;
+    private volatile String lastUpdateKeys = ""; // 逗号分隔的 key 列表
+    // 原始值
+    private volatile String rawCurrentTimeMs = "";
+    private volatile String rawBeatTimeMs = "";
+    private volatile String rawRemainingTimeMs = "";
+    private volatile String rawPlayerId = "";
+    private volatile String rawTrackId = "";
+    private volatile String rawRekordboxId = "";
+    private volatile String rawPlaying = "";
+    private volatile String rawBpm = "";
+    private volatile String rawPitch = "";
+    // 解析后值
+    private volatile long parsedCurrentTimeMs = 0L;
+    private volatile long parsedBeatTimeMs = 0L;
+    private volatile int parsedPlayerId = 0;
+    private volatile String parsedTrackId = "";
+    private volatile String parsedRekordboxId = "";
+    private volatile boolean parsedPlaying = false;
+    private volatile double parsedBpm = 0.0;
+    private volatile double parsedPitch = 0.0;
+
     // 状态判断阈值
     private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
     private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
@@ -175,6 +199,28 @@ public class LtcDriver implements OutputDriver {
 
     public void update(Map<String, Object> state) {
         if (!running || state == null) return;
+
+        // === 记录原始 state keys ===
+        updateInvocationCount++;
+        lastUpdateAtMs = System.currentTimeMillis();
+        StringBuilder keysSb = new StringBuilder();
+        for (String k : state.keySet()) {
+            if (keysSb.length() > 0) keysSb.append(",");
+            keysSb.append(k);
+        }
+        lastUpdateKeys = keysSb.toString();
+
+        // 记录原始值
+        rawCurrentTimeMs = String.valueOf(state.get("currentTimeMs"));
+        rawBeatTimeMs = String.valueOf(state.get("beatTimeMs"));
+        rawRemainingTimeMs = String.valueOf(state.get("remainingTimeMs"));
+        rawPlayerId = String.valueOf(state.get("playerId"));
+        rawTrackId = String.valueOf(state.get("trackId"));
+        rawRekordboxId = String.valueOf(state.get("rekordboxId"));
+        rawPlaying = String.valueOf(state.get("playing"));
+        rawBpm = String.valueOf(state.get("bpm"));
+        rawPitch = String.valueOf(state.get("pitch"));
+
         Object t = state.get("masterTimeSec");
         Object sp = state.get("sourcePlaying");
         Object sa = state.get("sourceActive");
@@ -200,15 +246,27 @@ public class LtcDriver implements OutputDriver {
             newPositionMs = ((Number) ctMs).longValue();
             upstreamPositionValid = true;
             upstreamPositionSource = "currentTimeMs";
+            parsedCurrentTimeMs = newPositionMs;
         } else if (btMs instanceof Number) {
             // 回退到 beatTimeMs
             newPositionMs = ((Number) btMs).longValue();
             upstreamPositionValid = true;
             upstreamPositionSource = "beatTimeMs";
+            parsedBeatTimeMs = newPositionMs;
         } else {
             upstreamPositionValid = false;
             upstreamPositionSource = "none";
+            parsedCurrentTimeMs = 0L;
+            parsedBeatTimeMs = 0L;
         }
+
+        // 解析其他字段
+        parsedPlayerId = intVal(state, "playerId", 0);
+        parsedTrackId = strVal(state, "trackId", "");
+        parsedRekordboxId = strVal(state, "rekordboxId", "");
+        parsedPlaying = Boolean.TRUE.equals(state.get("playing"));
+        parsedBpm = numVal(state, "bpm", 0.0);
+        parsedPitch = numVal(state, "pitch", 0.0);
 
         currUpstreamPositionMs = newPositionMs;
 
@@ -332,6 +390,13 @@ public class LtcDriver implements OutputDriver {
         return def;
     }
 
+    private static double numVal(Map<String, Object> m, String key, double def) {
+        Object v = m.get(key);
+        if (v instanceof Number) return ((Number) v).doubleValue();
+        try { return Double.parseDouble(String.valueOf(v)); } catch (Exception ignored) {}
+        return def;
+    }
+
     public Map<String, Object> status() {
         FrameRateMode mode = FrameRateMode.fromConfig(cfg.get("fps"));
         int fps = mode.nominalFps;
@@ -406,6 +471,28 @@ public class LtcDriver implements OutputDriver {
         m.put("reanchorTriggerMatched", reanchorTriggerMatched);
         m.put("reanchorTriggerType", reanchorTriggerType);
         m.put("reanchorSuppressedReason", reanchorSuppressedReason);
+
+        // Update() 原始输入观测
+        m.put("updateInvocationCount", updateInvocationCount);
+        m.put("lastUpdateAtMs", lastUpdateAtMs);
+        m.put("lastUpdateKeys", lastUpdateKeys);
+        m.put("rawCurrentTimeMs", rawCurrentTimeMs);
+        m.put("rawBeatTimeMs", rawBeatTimeMs);
+        m.put("rawRemainingTimeMs", rawRemainingTimeMs);
+        m.put("rawPlayerId", rawPlayerId);
+        m.put("rawTrackId", rawTrackId);
+        m.put("rawRekordboxId", rawRekordboxId);
+        m.put("rawPlaying", rawPlaying);
+        m.put("rawBpm", rawBpm);
+        m.put("rawPitch", rawPitch);
+        m.put("parsedCurrentTimeMs", parsedCurrentTimeMs);
+        m.put("parsedBeatTimeMs", parsedBeatTimeMs);
+        m.put("parsedPlayerId", parsedPlayerId);
+        m.put("parsedTrackId", parsedTrackId);
+        m.put("parsedRekordboxId", parsedRekordboxId);
+        m.put("parsedPlaying", parsedPlaying);
+        m.put("parsedBpm", parsedBpm);
+        m.put("parsedPitch", parsedPitch);
 
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
