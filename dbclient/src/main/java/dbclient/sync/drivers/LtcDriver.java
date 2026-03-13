@@ -599,6 +599,7 @@ public class LtcDriver implements OutputDriver {
                 nextFrameBoundarySample = (long) samplesPerFrameExact;
                 framePrimed = false;
                 initialAligned = false;
+                appliedRate = 1.0;  // 初始化为 1.0，避免首次计算时为 0
                 blockClockInit = true;
                 rateControlMode = "IDLE";
             }
@@ -665,8 +666,10 @@ public class LtcDriver implements OutputDriver {
 
             // === 路径A: NORMAL - 纯连续推进，不做任何纠偏 ===
             // appliedRate 只控制位置推进速度，不影响帧边界计算
+            // targetRate 从 update() 获取，appliedRate 在 audio thread 内部平滑
             targetRate = smoothedRate;
-            appliedRate = smoothedRate;
+            // 在 audio thread 内部每 buffer 做一次平滑，避免跨线程阶梯式突变
+            appliedRate = appliedRate + (targetRate - appliedRate) * RATE_SMOOTH_FACTOR;
             rateControlMode = "NORMAL";
 
             // 帧边界按固定 samplesPerFrameExact 计算，不受 appliedRate 影响
