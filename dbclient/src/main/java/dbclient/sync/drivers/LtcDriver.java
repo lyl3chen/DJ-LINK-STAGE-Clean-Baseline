@@ -119,19 +119,20 @@ public class LtcDriver implements OutputDriver {
 
         if (t instanceof Number) {
             seconds = ((Number) t).doubleValue();
-            int fps = intCfg("fps", 25);
-            frameInSecond = (int) Math.floor((seconds - Math.floor(seconds)) * Math.max(1, fps));
         }
         Object clk = state.get("__clock");
         if (clk instanceof TimecodeClock) clock = (TimecodeClock) clk;
     }
 
     public Map<String, Object> status() {
-        int fps = intCfg("fps", 25);
+        FrameRateMode mode = FrameRateMode.fromConfig(cfg.get("fps"));
+        int fps = mode.nominalFps;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
         m.put("seconds", seconds);
         m.put("fps", fps);
+        m.put("frameRate", mode.rateFps);
+        m.put("dropFrame", mode.dropFrame);
         m.put("sampleRate", line != null ? (int) line.getFormat().getSampleRate() : intCfg("sampleRate", 48000));
         m.put("deviceName", strCfg("deviceName", "default"));
         m.put("activeDevice", activeDevice);
@@ -162,28 +163,32 @@ public class LtcDriver implements OutputDriver {
 
     private void pumpAudio(AudioFormat fmt) {
         final int sampleRate = (int) fmt.getSampleRate();
-        final int fps = Math.max(1, intCfg("fps", 25));
+        final FrameRateMode mode = FrameRateMode.fromConfig(cfg.get("fps"));
         final double gainDb = numCfg("gainDb", -8.0);
         final double amp = Math.max(0.01, Math.min(0.95, Math.pow(10.0, gainDb / 20.0)));
 
-        final int bufferSamples = sampleRate / 40; // ~25ms blocks
-        byte[] out = new byte[bufferSamples * 2];
-        double phase = 0.0;
+        final int bufferSamples = sampleRate / 40; // ~25ms
+        final byte[] out = new byte[bufferSamples * 2];
+        final double bitRate = 80.0 * mode.rateFps;
+
+        final LtcFrameBuilder frameBuilder = new LtcFrameBuilder(mode);
+        final LtcBmcModulator mod = new LtcBmcModulator(sampleRate, bitRate);
 
         final double blockDurationSec = bufferSamples / (double) sampleRate;
+        double frameAnchorSec = 0.0;
 
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
             double clockSec = clock != null ? clock.nowSeconds() : seconds;
             if (!blockClockInit) {
                 nextBlockStartSec = clockSec;
+                frameAnchorSec = clockSec;
                 blockClockInit = true;
             } else {
-                // 优先连续承接上一块理论结束时间
                 nextBlockStartSec += blockDurationSec;
-                // 偏差大于阈值才重贴，避免块边界抖动
                 if (Math.abs(clockSec - nextBlockStartSec) > BLOCK_RELOCK_THRESHOLD_SEC) {
                     nextBlockStartSec = clockSec;
+                    frameAnchorSec = clockSec;
                 }
             }
 
@@ -192,31 +197,29 @@ public class LtcDriver implements OutputDriver {
             double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
                 double t = blockStartSec + (i / (double) sampleRate);
-                int bitClock = 160 * fps;
-                double bitPos = (t * bitClock) % 1.0;
-                boolean edge = bitPos < 0.5;
+                // 每当进入新帧，按标准 80bit 重新组帧（时码由策略层决定）
+                if (t - frameAnchorSec >= mode.frameDurationSec || mod.isFrameEmpty()) {
+                    frameAnchorSec = t;
+                    Timecode tc = mode.timecodeFromSeconds(t);
+                    frameInSecond = tc.frame;
+                    mod.loadFrame(frameBuilder.buildBits(tc));
+                }
 
-                // 简化版双相位风格：每bit至少一次翻转，帧头更强，用于先打通真实可监听输出链路。
-                double baseFreq = fps * 80.0;
-                phase += (2.0 * Math.PI * baseFreq) / sampleRate;
-                if (phase > Math.PI * 2) phase -= Math.PI * 2;
-                double s = Math.sin(phase);
-                double pulse = edge ? 1.0 : -1.0;
-                double mixed = (s * 0.35 + pulse * 0.65) * amp;
-                sumSq += mixed * mixed;
-                short v = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, (int) (mixed * 32767.0)));
+                double sample = mod.nextSample() * amp;
+                sumSq += sample * sample;
+                short v = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, (int) (sample * 32767.0)));
                 out[i * 2] = (byte) (v & 0xff);
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
+
             double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
-            // 平滑处理，避免电平条抖动过快
             signalLevel = signalLevel * 0.55 + rms * 0.45;
             try {
-              line.write(out, 0, out.length);
+                line.write(out, 0, out.length);
             } catch (Exception e) {
-              lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
-              outputState = "ERROR";
-              running = false;
+                lastError = "音频设备写入失败: " + (e.getMessage() == null ? e.toString() : e.getMessage());
+                outputState = "ERROR";
+                running = false;
             }
         }
 
@@ -359,6 +362,158 @@ public class LtcDriver implements OutputDriver {
             return "当前为回退命中，建议确认目标设备是否符合预期";
         }
         return "";
+    }
+
+    private static class Timecode {
+        int hh, mm, ss, frame;
+    }
+
+    private enum FrameRateMode {
+        FPS_24(24.0, false),
+        FPS_25(25.0, false),
+        FPS_2997_DF(29.97, true),
+        FPS_30(30.0, false);
+
+        final double rateFps;
+        final boolean dropFrame;
+        final int nominalFps;
+        final double frameDurationSec;
+
+        FrameRateMode(double rateFps, boolean dropFrame) {
+            this.rateFps = rateFps;
+            this.dropFrame = dropFrame;
+            this.nominalFps = (int) Math.round(rateFps);
+            this.frameDurationSec = 1.0 / rateFps;
+        }
+
+        static FrameRateMode fromConfig(Object v) {
+            double fps = 25.0;
+            if (v instanceof Number) fps = ((Number) v).doubleValue();
+            else {
+                try { fps = Double.parseDouble(String.valueOf(v)); } catch (Exception ignored) {}
+            }
+            if (Math.abs(fps - 29.97) < 0.05) return FPS_2997_DF;
+            if (Math.abs(fps - 30.0) < 0.1) return FPS_30;
+            if (Math.abs(fps - 24.0) < 0.1) return FPS_24;
+            return FPS_25;
+        }
+
+        Timecode timecodeFromSeconds(double sec) {
+            Timecode t = new Timecode();
+            if (dropFrame) {
+                long totalFrames = (long) Math.floor(Math.max(0.0, sec) * 30000.0 / 1001.0);
+                long d = totalFrames / 17982;
+                long m = totalFrames % 17982;
+                long dropped = 18L * d + 2L * Math.max(0, (int) ((m - 2) / 1798));
+                long frameNumber = totalFrames + dropped;
+                t.hh = (int) ((frameNumber / 108000) % 24);
+                t.mm = (int) ((frameNumber / 1800) % 60);
+                t.ss = (int) ((frameNumber / 30) % 60);
+                t.frame = (int) (frameNumber % 30);
+                return t;
+            }
+            long totalFrames = (long) Math.floor(Math.max(0.0, sec) * rateFps);
+            t.hh = (int) ((totalFrames / (nominalFps * 3600L)) % 24);
+            t.mm = (int) ((totalFrames / (nominalFps * 60L)) % 60);
+            t.ss = (int) ((totalFrames / nominalFps) % 60);
+            t.frame = (int) (totalFrames % nominalFps);
+            return t;
+        }
+    }
+
+    private static class LtcFrameBuilder {
+        private final FrameRateMode mode;
+
+        LtcFrameBuilder(FrameRateMode mode) { this.mode = mode; }
+
+        boolean[] buildBits(Timecode tc) {
+            boolean[] bits = new boolean[80];
+            int frame = Math.max(0, tc.frame);
+            int sec = Math.max(0, tc.ss);
+            int min = Math.max(0, tc.mm);
+            int hour = Math.max(0, tc.hh);
+
+            // Frames
+            writeBcdUnits(bits, 0, frame % 10);
+            writeBcdTens(bits, 8, frame / 10, 2);
+            bits[10] = false;                 // color frame
+            bits[11] = mode.dropFrame;        // drop-frame flag
+
+            // Seconds
+            writeBcdUnits(bits, 16, sec % 10);
+            writeBcdTens(bits, 24, sec / 10, 3);
+
+            // Minutes
+            writeBcdUnits(bits, 32, min % 10);
+            writeBcdTens(bits, 40, min / 10, 3);
+
+            // Hours
+            writeBcdUnits(bits, 48, hour % 10);
+            writeBcdTens(bits, 56, hour / 10, 2);
+
+            // Sync word 16 bits (LTC standard)
+            int sync = 0x3FFD;
+            for (int i = 0; i < 16; i++) bits[64 + i] = ((sync >> i) & 1) == 1;
+            return bits;
+        }
+
+        private void writeBcdUnits(boolean[] bits, int start, int v) {
+            for (int i = 0; i < 4; i++) bits[start + i] = ((v >> i) & 1) == 1;
+        }
+
+        private void writeBcdTens(boolean[] bits, int start, int v, int width) {
+            for (int i = 0; i < width; i++) bits[start + i] = ((v >> i) & 1) == 1;
+        }
+    }
+
+    private static class LtcBmcModulator {
+        private final double samplesPerBit;
+        private boolean[] bits = new boolean[80];
+        private int bitIndex = 0;
+        private double bitPhase = 0.0;
+        private double level = -1.0;
+        private boolean empty = true;
+
+        LtcBmcModulator(int sampleRate, double bitRate) {
+            this.samplesPerBit = sampleRate / bitRate;
+        }
+
+        boolean isFrameEmpty() { return empty; }
+
+        void loadFrame(boolean[] b) {
+            if (b == null || b.length != 80) return;
+            this.bits = b;
+            this.bitIndex = 0;
+            this.bitPhase = 0.0;
+            this.empty = false;
+            // bit 边界必翻转
+            this.level = -this.level;
+        }
+
+        double nextSample() {
+            if (empty) return 0.0;
+            double out = level;
+
+            bitPhase += 1.0;
+            // 中点翻转（bit=1）
+            if (bits[bitIndex]) {
+                double half = samplesPerBit * 0.5;
+                if (bitPhase >= half && bitPhase - 1.0 < half) {
+                    level = -level;
+                }
+            }
+
+            if (bitPhase >= samplesPerBit) {
+                bitPhase -= samplesPerBit;
+                bitIndex++;
+                if (bitIndex >= 80) {
+                    bitIndex = 0;
+                }
+                // 每个 bit 边界必翻转
+                level = -level;
+            }
+            return out;
+        }
     }
 
     private String toTimecode(double sec, int fps) {
