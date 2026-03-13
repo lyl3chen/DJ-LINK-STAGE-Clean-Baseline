@@ -175,20 +175,32 @@ public class LtcDriver implements OutputDriver {
         final LtcBmcModulator mod = new LtcBmcModulator(sampleRate, bitRate);
 
         final double blockDurationSec = bufferSamples / (double) sampleRate;
-        double frameAnchorSec = 0.0;
+        final double relockThresholdSec = mode.frameDurationSec; // 偏差超过1帧才重锁
+
+        double outputTimelineSec = 0.0;
+        double nextFrameAtSec = 0.0;
+        boolean framePrimed = false;
 
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
             double clockSec = clock != null ? clock.nowSeconds() : seconds;
             if (!blockClockInit) {
                 nextBlockStartSec = clockSec;
-                frameAnchorSec = clockSec;
+                outputTimelineSec = clockSec;
+                nextFrameAtSec = clockSec;
+                framePrimed = false;
                 blockClockInit = true;
             } else {
+                // 严格 frame-locked/stream-locked 推进，不做每轮细粒度 wall-clock 重贴。
                 nextBlockStartSec += blockDurationSec;
-                if (Math.abs(clockSec - nextBlockStartSec) > BLOCK_RELOCK_THRESHOLD_SEC) {
+                outputTimelineSec += blockDurationSec;
+
+                // 仅偏差明显时重锁（> 1 frame）
+                if (Math.abs(clockSec - outputTimelineSec) > relockThresholdSec) {
                     nextBlockStartSec = clockSec;
-                    frameAnchorSec = clockSec;
+                    outputTimelineSec = clockSec;
+                    nextFrameAtSec = clockSec;
+                    framePrimed = false;
                 }
             }
 
@@ -197,12 +209,20 @@ public class LtcDriver implements OutputDriver {
             double sumSq = 0.0;
             for (int i = 0; i < bufferSamples; i++) {
                 double t = blockStartSec + (i / (double) sampleRate);
-                // 每当进入新帧，按标准 80bit 重新组帧（时码由策略层决定）
-                if (t - frameAnchorSec >= mode.frameDurationSec || mod.isFrameEmpty()) {
-                    frameAnchorSec = t;
-                    Timecode tc = mode.timecodeFromSeconds(t);
+
+                // 每帧只构建一次完整 80-bit，帧内保持不变。
+                if (!framePrimed) {
+                    Timecode tc = mode.timecodeFromSeconds(nextFrameAtSec);
                     frameInSecond = tc.frame;
                     mod.loadFrame(frameBuilder.buildBits(tc));
+                    framePrimed = true;
+                    nextFrameAtSec += mode.frameDurationSec;
+                }
+                while (t >= nextFrameAtSec) {
+                    Timecode tc = mode.timecodeFromSeconds(nextFrameAtSec);
+                    frameInSecond = tc.frame;
+                    mod.loadFrame(frameBuilder.buildBits(tc));
+                    nextFrameAtSec += mode.frameDurationSec;
                 }
 
                 double sample = mod.nextSample() * amp;
