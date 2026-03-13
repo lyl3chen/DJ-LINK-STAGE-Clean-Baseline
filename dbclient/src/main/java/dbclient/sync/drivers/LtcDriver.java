@@ -174,11 +174,14 @@ public class LtcDriver implements OutputDriver {
         final LtcFrameBuilder frameBuilder = new LtcFrameBuilder(mode);
         final LtcBmcModulator mod = new LtcBmcModulator(sampleRate, bitRate);
 
-        final double blockDurationSec = bufferSamples / (double) sampleRate;
-        final double relockThresholdSec = mode.frameDurationSec; // 偏差超过1帧才重锁
+        // 按 sample 计数推进 frame
+        final long samplesPerFrame = sampleRate / mode.nominalFps; // 可能不是整数
+        final double samplesPerFrameExact = (double) sampleRate / mode.rateFps;
+        final long relockThresholdSamples = samplesPerFrame * 2; // 偏差超 2 帧才重锁
 
-        double outputTimelineSec = 0.0;
-        double nextFrameAtSec = 0.0;
+        long totalSamplesWritten = 0L;
+        double sampleAccumulator = 0.0; // 处理非整数 sample/frame
+        long currentFrameIndex = -1;
         boolean framePrimed = false;
 
         while (running && line != null && line.isOpen()) {
@@ -186,43 +189,39 @@ public class LtcDriver implements OutputDriver {
             double clockSec = clock != null ? clock.nowSeconds() : seconds;
             if (!blockClockInit) {
                 nextBlockStartSec = clockSec;
-                outputTimelineSec = clockSec;
-                nextFrameAtSec = clockSec;
+                totalSamplesWritten = 0L;
+                sampleAccumulator = 0.0;
+                currentFrameIndex = -1;
                 framePrimed = false;
                 blockClockInit = true;
-            } else {
-                // 严格 frame-locked/stream-locked 推进，不做每轮细粒度 wall-clock 重贴。
-                nextBlockStartSec += blockDurationSec;
-                outputTimelineSec += blockDurationSec;
+            }
 
-                // 仅偏差明显时重锁（> 1 frame）
-                if (Math.abs(clockSec - outputTimelineSec) > relockThresholdSec) {
-                    nextBlockStartSec = clockSec;
-                    outputTimelineSec = clockSec;
-                    nextFrameAtSec = clockSec;
-                    framePrimed = false;
-                }
+            // 仅在偏差超过 2 帧时才重锁
+            long expectedSamples = (long) (clockSec * sampleRate);
+            if (Math.abs(totalSamplesWritten - expectedSamples) > relockThresholdSamples) {
+                totalSamplesWritten = expectedSamples;
+                sampleAccumulator = 0.0;
+                currentFrameIndex = -1;
+                framePrimed = false;
             }
 
             double blockStartSec = nextBlockStartSec;
             seconds = blockStartSec;
             double sumSq = 0.0;
-            for (int i = 0; i < bufferSamples; i++) {
-                double t = blockStartSec + (i / (double) sampleRate);
 
-                // 每帧只构建一次完整 80-bit，帧内保持不变。
-                if (!framePrimed) {
-                    Timecode tc = mode.timecodeFromSeconds(nextFrameAtSec);
+            for (int i = 0; i < bufferSamples; i++) {
+                long sampleIdx = totalSamplesWritten + i;
+                // 按 sample 数决定当前帧
+                double framesElapsed = sampleIdx / samplesPerFrameExact;
+                long frameIdx = (long) framesElapsed;
+
+                if (!framePrimed || frameIdx != currentFrameIndex) {
+                    currentFrameIndex = frameIdx;
+                    double frameSec = frameIdx / mode.rateFps;
+                    Timecode tc = mode.timecodeFromSeconds(frameSec);
                     frameInSecond = tc.frame;
                     mod.loadFrame(frameBuilder.buildBits(tc));
                     framePrimed = true;
-                    nextFrameAtSec += mode.frameDurationSec;
-                }
-                while (t >= nextFrameAtSec) {
-                    Timecode tc = mode.timecodeFromSeconds(nextFrameAtSec);
-                    frameInSecond = tc.frame;
-                    mod.loadFrame(frameBuilder.buildBits(tc));
-                    nextFrameAtSec += mode.frameDurationSec;
                 }
 
                 double sample = mod.nextSample() * amp;
@@ -231,6 +230,9 @@ public class LtcDriver implements OutputDriver {
                 out[i * 2] = (byte) (v & 0xff);
                 out[i * 2 + 1] = (byte) ((v >> 8) & 0xff);
             }
+
+            totalSamplesWritten += bufferSamples;
+            nextBlockStartSec += bufferSamples / (double) sampleRate;
 
             double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
             signalLevel = signalLevel * 0.55 + rms * 0.45;
