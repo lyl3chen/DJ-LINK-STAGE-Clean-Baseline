@@ -49,10 +49,22 @@ public class LtcDriver implements OutputDriver {
     private volatile long localLtcSamplePosition = 0L;
     private volatile long localLtcFramePosition = 0L; // 当前帧号
 
+    // === 媒体锚点管理 ===
+    // 当前媒体上下文标识
+    private volatile String currentTrackId = "";
+    private volatile String currentRekordboxId = "";
+    private volatile int currentPlayerId = 0;
+    private volatile long lastMediaChangeDetectedMs = 0L;
+    private static final long MEDIA_CHANGE_DEBOUNCE_MS = 1000; // 媒体变化防抖
+
+    // 上一次有效的锚点位置（用于检测跳变）
+    private volatile long lastAnchoredPositionMs = 0L;
+
     // 状态判断阈值
     private static final double BIG_JUMP_THRESHOLD_SEC = 0.5; // 500ms 大跳变
     private static final double SMALL_ERROR_THRESHOLD_SEC = 0.05; // 50ms 小误差
     private static final double BLOCK_RELOCK_THRESHOLD_SEC = 0.020; // 20ms
+    private static final double POSITION_NEAR_ZERO_SEC = 0.5; // 接近 0 的阈值
     private Map<String, Object> cfg = new LinkedHashMap<>();
 
     private SourceDataLine line;
@@ -135,12 +147,47 @@ public class LtcDriver implements OutputDriver {
         sourceState = String.valueOf(state.getOrDefault("sourceState", "OFFLINE"));
         lastSourceUpdateMs = System.currentTimeMillis();
 
+        // === 媒体锚点管理：捕获媒体上下文 ===
+        String newTrackId = strVal(state, "trackId", "");
+        String newRekordboxId = strVal(state, "rekordboxId", "");
+        int newPlayerId = intVal(state, "playerId", 0);
+
+        // 检测媒体上下文变化
+        boolean mediaContextChanged = !newTrackId.equals(currentTrackId)
+            || !newRekordboxId.equals(currentRekordboxId)
+            || newPlayerId != currentPlayerId;
+
+        if (mediaContextChanged) {
+            long now = System.currentTimeMillis();
+            if (now - lastMediaChangeDetectedMs > MEDIA_CHANGE_DEBOUNCE_MS) {
+                lastMediaChangeDetectedMs = now;
+                currentTrackId = newTrackId;
+                currentRekordboxId = newRekordboxId;
+                currentPlayerId = newPlayerId;
+                // 标记需要重新锚定
+                System.out.println("[LTC] media context changed: trackId=" + newTrackId + " rekordboxId=" + newRekordboxId + " playerId=" + newPlayerId);
+            }
+        }
+
         // === 1) 捕获上游 position reference ===
         Object ctMs = state.get("currentTimeMs");
+        long newPositionMs = 0L;
         if (ctMs instanceof Number) {
-            upstreamPositionMs = ((Number) ctMs).longValue();
+            newPositionMs = ((Number) ctMs).longValue();
             upstreamPositionValid = true;
         }
+
+        // 检测位置跳变（可能是 seek / cue / loop jump）
+        boolean positionJumped = upstreamPositionValid && Math.abs(newPositionMs - lastAnchoredPositionMs) > 1000
+            && newPositionMs < 500; // 突然跳到接近 0
+
+        if (positionJumped || mediaContextChanged) {
+            // 需要重新锚定
+            lastAnchoredPositionMs = newPositionMs;
+        } else if (newPositionMs > 0) {
+            lastAnchoredPositionMs = newPositionMs;
+        }
+        upstreamPositionMs = newPositionMs;
 
         // === 2) 捕获上游 playback rate reference ===
         // 优先用 effectiveBpm / baseBpm 计算，其次用 pitch
@@ -171,6 +218,18 @@ public class LtcDriver implements OutputDriver {
         }
         Object clk = state.get("__clock");
         if (clk instanceof TimecodeClock) clock = (TimecodeClock) clk;
+    }
+
+    private static String strVal(Map<String, Object> m, String key, String def) {
+        Object v = m.get(key);
+        return v == null ? def : String.valueOf(v);
+    }
+
+    private static int intVal(Map<String, Object> m, String key, int def) {
+        Object v = m.get(key);
+        if (v instanceof Number) return ((Number) v).intValue();
+        try { return Integer.parseInt(String.valueOf(v)); } catch (Exception ignored) {}
+        return def;
     }
 
     public Map<String, Object> status() {
@@ -212,6 +271,12 @@ public class LtcDriver implements OutputDriver {
         m.put("smoothedRate", smoothedRate);
         m.put("localLtcSamplePosition", localLtcSamplePosition);
         m.put("localLtcFramePosition", localLtcFramePosition);
+
+        // 媒体锚点管理状态
+        m.put("currentTrackId", currentTrackId);
+        m.put("currentRekordboxId", currentRekordboxId);
+        m.put("currentPlayerId", currentPlayerId);
+        m.put("lastMediaChangeDetectedMs", lastMediaChangeDetectedMs);
 
         m.put("blockRelockThresholdSec", BLOCK_RELOCK_THRESHOLD_SEC);
         m.put("bigJumpThresholdSec", BIG_JUMP_THRESHOLD_SEC);
@@ -271,28 +336,46 @@ public class LtcDriver implements OutputDriver {
             }
 
             // === 播放中：判断是否需要重锁 ===
-            if (upstreamPositionValid && !initialAligned) {
-                // 首次对齐：用上游位置初始化本地 LTC
-                localLtcSamplePos = (upstreamPositionMs * sampleRate) / 1000L;
+            // 媒体锚点管理：检测是否需要重新锚定
+            boolean needReanchor = false;
+
+            // 条件1：媒体上下文变化（换歌、player切换）
+            if (!currentTrackId.isEmpty() || !currentRekordboxId.isEmpty() || currentPlayerId != 0) {
+                // 记录当前媒体上下文状态供 pumpAudio 使用
+            }
+
+            // 条件2：位置突然跳到接近0（可能是新曲目开始）
+            if (upstreamPositionValid && upstreamPositionMs < (long)(POSITION_NEAR_ZERO_SEC * 1000)
+                && lastAnchoredPositionMs > 5000) {
+                needReanchor = true;
+            }
+
+            // 条件3：大跳变（seek/cue/loop jump）
+            long expectedFromUpstream = upstreamPositionValid ? (upstreamPositionMs * sampleRate) / 1000L : 0;
+            if (upstreamPositionValid && initialAligned) {
+                long diff = Math.abs(localLtcSamplePos - expectedFromUpstream);
+                if (diff > bigJumpThresholdSamples) {
+                    needReanchor = true;
+                }
+            }
+
+            // 执行重新锚定
+            if (needReanchor && upstreamPositionValid) {
+                localLtcSamplePos = expectedFromUpstream;
                 localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
                 nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
                 initialAligned = true;
                 framePrimed = false;
-            } else if (upstreamPositionValid && initialAligned) {
-                // 检查是否大跳变
-                long expectedFromUpstream = (upstreamPositionMs * sampleRate) / 1000L;
-                long diff = Math.abs(localLtcSamplePos - expectedFromUpstream);
-
-                if (diff > bigJumpThresholdSamples) {
-                    // === 状态 B: 大跳变 - 硬重锁 ===
-                    localLtcSamplePos = expectedFromUpstream;
-                    localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
-                    nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
-                    framePrimed = false;
-                    // 小误差不做硬跟随，保持本地稳定
-                }
-                // diff <= bigJumpThresholdSamples: 正常播放，本地 LTC 自己推进
+                System.out.println("[LTC] re-anchored to upstream position: " + upstreamPositionMs + "ms");
+            } else if (upstreamPositionValid && !initialAligned) {
+                // 首次对齐：用上游位置初始化本地 LTC
+                localLtcSamplePos = expectedFromUpstream;
+                localLtcFramePos = (long) (localLtcSamplePos / samplesPerFrameExact);
+                nextFrameBoundarySample = (long) ((localLtcFramePos + 1) * samplesPerFrameExact);
+                initialAligned = true;
+                framePrimed = false;
             }
+            // 正常播放时：保持本地稳定 LTC 时钟推进，不受上游小抖动影响
 
             // === 状态 A: 正常连续播放 ===
             // 本地 LTC 按 smoothedRate 稳定推进
