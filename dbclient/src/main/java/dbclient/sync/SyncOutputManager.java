@@ -201,13 +201,16 @@ public class SyncOutputManager {
         Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
         Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
         int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
-        
-        // 构建 timecode derived (LTC/MTC 用) - 手动指定 source
-        Map<String, Object> timecodeDerived = null;
+
+        // 构建 timecode derived (LTC/MTC 用) - 手动指定 source；未选择或无效时明确 NO_SOURCE
+        Map<String, Object> timecodeDerived = buildNoSourceDerived();
         if (timecodeSource > 0) {
-            timecodeDerived = buildTimecodeDerived(timecodeSource);
+            Map<String, Object> selected = buildTimecodeDerived(timecodeSource);
+            if (selected != null) {
+                timecodeDerived = selected;
+            }
         }
-        
+
         // 传给各 driver
         for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
             String name = e.getKey();
@@ -220,6 +223,28 @@ public class SyncOutputManager {
                 d.update(derived);
             }
         }
+    }
+
+    private Map<String, Object> buildNoSourceDerived() {
+        Map<String, Object> d = new LinkedHashMap<>(buildDerivedState());
+        d.put("masterTimeSec", 0.0);
+        d.put("rawTimeSec", 0.0);
+        d.put("masterBpm", 120.0);
+        d.put("sourcePitchPct", 0.0);
+        d.put("sourcePlayer", null);
+        d.put("sourcePlaying", false);
+        d.put("sourceActive", false);
+        d.put("sourceState", "NO_SOURCE");
+        d.put("currentTimeMs", 0L);
+        d.put("beatTimeMs", 0L);
+        d.put("remainingTimeMs", 0L);
+        d.put("playerId", 0);
+        d.put("trackId", "");
+        d.put("rekordboxId", "");
+        d.put("playing", false);
+        d.put("bpm", 120.0);
+        d.put("pitch", 0.0);
+        return d;
     }
     
     private Map<String, Object> buildTimecodeDerived(int playerNum) {
@@ -286,19 +311,31 @@ public class SyncOutputManager {
         Map<String, Object> ds = new LinkedHashMap<>();
         for (OutputDriver d : drivers.values()) ds.put(d.name(), d.status());
         out.put("drivers", ds);
-        out.put("sourceState", sourceState);
-        out.put("sourcePlayer", sourcePlayer);
 
         boolean ltcEnabled = ds.get("ltc") instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) ds.get("ltc")).get("running"));
         boolean mtcEnabled = ds.get("mtc") instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) ds.get("mtc")).get("running"));
         boolean anyTcEnabled = ltcEnabled || mtcEnabled;
 
+        Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
+        Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+        int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
+        boolean tcSourceValid = timecodeSource > 0 && buildTimecodeDerived(timecodeSource) != null;
+
+        String statusSourceState = sourceState;
+        Integer statusSourcePlayer = sourcePlayer;
         double displaySec = clock.nowSeconds();
-        if (!anyTcEnabled || "OFFLINE".equals(sourceState) || "STOPPED".equals(sourceState)) {
+
+        if (anyTcEnabled && !tcSourceValid) {
+            statusSourceState = "NO_SOURCE";
+            statusSourcePlayer = null;
+            displaySec = 0.0;
+        } else if (!anyTcEnabled || "OFFLINE".equals(sourceState) || "STOPPED".equals(sourceState)) {
             displaySec = 0.0;
         }
 
-        out.put("rawTimeSec", anyTcEnabled ? lastTimeSec : 0.0);
+        out.put("sourceState", statusSourceState);
+        out.put("sourcePlayer", statusSourcePlayer);
+        out.put("rawTimeSec", (anyTcEnabled && tcSourceValid) ? lastTimeSec : 0.0);
         out.put("timecode", toTimecode(displaySec, 25));
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;

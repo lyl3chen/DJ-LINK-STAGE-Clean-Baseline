@@ -6,22 +6,22 @@
   "sync": {
     "enabled": true,
     "sourceMode": "master",
-    "timecodeSource": 0,
+    "timecodeSource": 0.0,
     "masterPlayer": 1.0,
     "ltc": {
-      "enabled": true,
+      "enabled": false,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
-      "gainDb": -16.0,
+      "gainDb": -8.0,
       "deviceName": "default"
     },
     "mtc": {
-      "enabled": true,
-      "midiPort": "CH345 [hw:1,0,0]"
+      "enabled": false,
+      "midiPort": "default"
     },
     "abletonLink": {
-      "enabled": true,
+      "enabled": false,
       "port": 17000.0,
       "updateIntervalMs": 20.0
     },

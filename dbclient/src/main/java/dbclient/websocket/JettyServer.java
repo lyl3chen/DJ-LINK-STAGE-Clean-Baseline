@@ -80,7 +80,14 @@ public class JettyServer {
                     Map<String, Object> result = null;
                     
                     if (path.equals("/api/config")) {
-                        result = withRuntime(settingsStore.getAll());
+                        try {
+                            Map<String, Object> ps = (Map<String, Object>) dmClass.getMethod("getPlayersState").invoke(dm);
+                            if (ps != null && ps.get("players") != null) {
+                                updateState(ps.get("players"));
+                            }
+                        } catch (Exception ignored) {}
+                        Map<String, Object> allSettings = settingsStore.getAll();
+                        result = withRuntime(allSettings != null ? allSettings : new ConcurrentHashMap<>());
                     } else if (path.equals("/api/sync/state")) {
                         result = syncOutputManager.getStatus();
                     } else if (path.equals("/api/scan")) {
@@ -157,8 +164,10 @@ public class JettyServer {
                     response.setContentType("application/json");
                     response.getWriter().print(gson.toJson(result));
                 } catch (Exception e) {
+                    e.printStackTrace();
                     response.setContentType("application/json");
-                    response.getWriter().print(gson.toJson(Map.of("error", e.getMessage())));
+                    String errMsg = e.getMessage();
+                    response.getWriter().print(gson.toJson(Map.of("error", errMsg != null ? errMsg : e.getClass().getSimpleName())));
                 }
             }
             
@@ -178,7 +187,8 @@ public class JettyServer {
                     if (path.equals("/api/config")) {
                         settingsStore.patch(payload);
                         syncOutputManager.applySettings();
-                        response.getWriter().print(gson.toJson(Map.of("ok", true, "settings", withRuntime(settingsStore.getAll()))));
+                        Map<String, Object> allSettings = settingsStore.getAll();
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "settings", withRuntime(allSettings != null ? allSettings : new ConcurrentHashMap<>()))));
                         return;
                     }
                     if (path.equals("/api/ai/command")) {
@@ -313,10 +323,12 @@ public class JettyServer {
                     if (o instanceof Map) {
                         Map<String, Object> p = (Map<String, Object>) o;
                         if (Boolean.TRUE.equals(p.get("active"))) {
-                            Map<String, Object> playerInfo = new ConcurrentHashMap<>();
-                            playerInfo.put("number", p.get("number"));
-                            playerInfo.put("name", p.get("name"));
-                            playerInfo.put("playing", p.get("playing"));
+                            Object num = p.get("number");
+                            if (!(num instanceof Number)) continue;
+                            Map<String, Object> playerInfo = new LinkedHashMap<>();
+                            playerInfo.put("number", ((Number) num).intValue());
+                            playerInfo.put("name", p.get("name") == null ? ("Player " + ((Number) num).intValue()) : String.valueOf(p.get("name")));
+                            playerInfo.put("playing", Boolean.TRUE.equals(p.get("playing")));
                             onlinePlayers.add(playerInfo);
                         }
                     }
