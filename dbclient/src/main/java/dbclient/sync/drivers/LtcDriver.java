@@ -249,8 +249,8 @@ public class LtcDriver implements OutputDriver {
                 continue;
             }
 
-            // 应用一次性重锚
-            if (pendingReanchor && pendingReanchorTargetMs > 0) {
+            // 应用一次性重锚（target=0 也是合法起点）
+            if (pendingReanchor) {
                 long reanchorSample = (pendingReanchorTargetMs * sampleRate) / 1000L;
                 localLtcSamplePosition = reanchorSample;
                 localLtcFramePosition = (long) (reanchorSample / effectiveSamplesPerFrame);
