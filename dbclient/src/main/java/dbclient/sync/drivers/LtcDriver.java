@@ -44,13 +44,16 @@ public class LtcDriver implements OutputDriver {
 
     // 简化的位置状态（用于 hot cue、换歌、restart 检测）
     private volatile long lastPositionMs = 0L;
-    private volatile long lastReanchorAtMs = 0L;
     private volatile long reanchorCount = 0L;
     // 换歌检测
     private volatile String currentTrackId = "";
     private volatile String currentRekordboxId = "";
     // stop/restart 检测
     private volatile boolean wasPlaying = false;
+    // 一次性重锚标志位
+    private volatile boolean pendingReanchor = false;
+    private volatile long pendingReanchorTargetMs = 0L;
+    private volatile String pendingReanchorReason = "";
 
     private volatile boolean blockClockInit = false;
     private volatile double nextBlockStartSec = 0.0;
@@ -98,39 +101,50 @@ public class LtcDriver implements OutputDriver {
             newPositionMs = ((Number) ctMs).longValue();
         }
 
-        // === 换歌检测：仅当有效 trackId/rekordboxId 变化时触发 ===
+        // === 换歌检测 ===
         String newTrackId = String.valueOf(state.getOrDefault("trackId", ""));
         String newRekordboxId = String.valueOf(state.getOrDefault("rekordboxId", ""));
         boolean validTrackId = newTrackId != null && !newTrackId.isEmpty() && !newTrackId.equals("null");
         boolean validRekordboxId = newRekordboxId != null && !newRekordboxId.isEmpty() && !newRekordboxId.equals("null");
         
+        // 优先条件：有效的 trackId 或 rekordboxId 变化
         if ((validTrackId && !newTrackId.equals(currentTrackId)) || 
             (validRekordboxId && !newRekordboxId.equals(currentRekordboxId))) {
-            // 有效值变化，触发重锚
             if (validTrackId) currentTrackId = newTrackId;
             if (validRekordboxId) currentRekordboxId = newRekordboxId;
-            lastReanchorAtMs = System.currentTimeMillis();
+            pendingReanchor = true;
+            pendingReanchorTargetMs = newPositionMs;
+            pendingReanchorReason = "track_change";
             reanchorCount++;
             System.out.println("[LTC] TRACK CHANGE: reanchor to " + newPositionMs + "ms");
+        } else if (!validTrackId && !validRekordboxId) {
+            // 兜底条件：trackId/rekordboxId 都不可用时，用位置回跳判断
+            if (newPositionMs > 0 && newPositionMs < 500 && lastPositionMs > 5000) {
+                pendingReanchor = true;
+                pendingReanchorTargetMs = newPositionMs;
+                pendingReanchorReason = "near_zero_fallback";
+                reanchorCount++;
+                System.out.println("[LTC] NEAR ZERO FALLBACK: reanchor to " + newPositionMs + "ms");
+            }
         }
 
         // === stop -> restart 检测 ===
-        if (!wasPlaying && sourcePlaying && newPositionMs > 0) {
-            // 从停止恢复播放
-            if (newPositionMs < lastPositionMs - 1000) {
-                // 位置回跳超过1秒，触发重锚
-                lastReanchorAtMs = System.currentTimeMillis();
-                reanchorCount++;
-                System.out.println("[LTC] RESTART: reanchor to " + newPositionMs + "ms");
-            }
+        if (!wasPlaying && sourcePlaying) {
+            // 从停止恢复播放，触发一次重锚
+            pendingReanchor = true;
+            pendingReanchorTargetMs = newPositionMs;
+            pendingReanchorReason = "restart";
+            reanchorCount++;
+            System.out.println("[LTC] RESTART: reanchor to " + newPositionMs + "ms");
         }
         wasPlaying = sourcePlaying;
 
         // Hot cue 检测：大幅跳变 > 2秒
         long diff = Math.abs(newPositionMs - lastPositionMs);
         if (diff > 2000 && lastPositionMs > 0) {
-            // 触发 hot cue 重锚
-            lastReanchorAtMs = System.currentTimeMillis();
+            pendingReanchor = true;
+            pendingReanchorTargetMs = newPositionMs;
+            pendingReanchorReason = "hot_cue";
             reanchorCount++;
             System.out.println("[LTC] HOT CUE: jump from " + lastPositionMs + " to " + newPositionMs);
         }
@@ -178,7 +192,8 @@ public class LtcDriver implements OutputDriver {
 
         // 简化状态
         m.put("reanchorCount", reanchorCount);
-        m.put("lastReanchorAtMs", lastReanchorAtMs);
+        m.put("pendingReanchor", pendingReanchor);
+        m.put("pendingReanchorReason", pendingReanchorReason);
         m.put("error", lastError);
         return m;
     }
@@ -234,14 +249,18 @@ public class LtcDriver implements OutputDriver {
                 continue;
             }
 
-            // Hot cue reanchor
-            if (reanchorCount > 0 && lastReanchorAtMs > 0) {
-                long reanchorSample = (lastPositionMs * sampleRate) / 1000L;
+            // 应用一次性重锚
+            if (pendingReanchor && pendingReanchorTargetMs > 0) {
+                long reanchorSample = (pendingReanchorTargetMs * sampleRate) / 1000L;
                 localLtcSamplePosition = reanchorSample;
                 localLtcFramePosition = (long) (reanchorSample / effectiveSamplesPerFrame);
                 nextFrameBoundarySample = (long) ((localLtcFramePosition + 1) * effectiveSamplesPerFrame);
                 framePrimed = false;
-                lastReanchorAtMs = 0; // 清除，避免重复
+                System.out.println("[LTC] APPLY REANCHOR: reason=" + pendingReanchorReason + " target=" + pendingReanchorTargetMs + "ms");
+                // 清除一次性标志
+                pendingReanchor = false;
+                pendingReanchorTargetMs = 0L;
+                pendingReanchorReason = "";
             }
 
             double blockStartSec = nextBlockStartSec;
