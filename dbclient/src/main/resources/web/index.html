@@ -619,7 +619,7 @@
         <h3>播放源</h3>
         <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
-        <div class="cfg-row"><label>Timecode 播放源</label><select id="cfgTimecodeSource"><option value="0">-- 未选择 --</option><option value="1">Player 1</option><option value="2">Player 2</option><option value="3">Player 3</option><option value="4">Player 4</option></select><span id="timecodeSourceStatus" style="font-size:11px;color:#888;margin-left:8px;"></span></div>
+        <div class="cfg-row"><label>Timecode 播放源</label><select id="cfgTimecodeSource"></select><span id="timecodeSourceStatus" style="font-size:11px;color:#888;margin-left:8px;"></span></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
 
@@ -1067,6 +1067,17 @@
         const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
+        // Dynamic Timecode source options from online players
+        const tcSel = document.getElementById('cfgTimecodeSource');
+        tcSel.innerHTML = '<option value="0">-- 未选择 --</option>';
+        const tcPlayers = tcInfo.onlinePlayers || [];
+        for (const p of tcPlayers) {
+            const opt = document.createElement('option');
+            opt.value = String(p.number || 0);
+            opt.textContent = 'Player ' + (p.number || '?');
+            if (p.number === sync.timecodeSource) opt.selected = true;
+            tcSel.appendChild(opt);
+        }
         document.getElementById('cfgTimecodeSource').value = String((sync.timecodeSource ?? 0));
         const tcInfo = runtime.timecodeSource || {};
         document.getElementById('timecodeSourceStatus').textContent = tcInfo.timecodeSourceValid ? '(有效)' : (sync.timecodeSource ? '(player不在线)' : '(未选择)');
