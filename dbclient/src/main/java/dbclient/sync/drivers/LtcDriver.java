@@ -112,8 +112,8 @@ public class LtcDriver implements OutputDriver {
         boolean validTrackId = newTrackId != null && !newTrackId.isEmpty() && !newTrackId.equals("null");
         boolean validRekordboxId = newRekordboxId != null && !newRekordboxId.isEmpty() && !newRekordboxId.equals("null");
         
-        // Player 切换检测
-        if (newPlayerId != currentPlayerId && currentPlayerId != 0) {
+        // Player 切换检测（排除 newPlayerId = 0 的误触发）
+        if (newPlayerId != currentPlayerId && currentPlayerId != 0 && newPlayerId > 0) {
             // Player 切换，触发完整状态重置
             pendingReanchor = true;
             pendingReanchorTargetMs = newPositionMs;
