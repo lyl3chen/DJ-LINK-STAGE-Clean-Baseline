@@ -58,7 +58,7 @@ public class LtcDriver2 implements OutputDriver {
             
             System.out.println("[LTC2] sampleRate=" + sampleRate + " fps=" + fps + " device=" + deviceName + " gainDb=" + gainDb);
             
-            fmt = new AudioFormat(sampleRate, 16, 2, true, false);
+            fmt = new AudioFormat(sampleRate, 16, 1, true, false); // MONO to match reference
             
             // 尝试打开设备
             line = null;
@@ -179,7 +179,7 @@ public class LtcDriver2 implements OutputDriver {
     
     private void audioLoop() {
         int bufferSamples = sampleRate / 40;
-        byte[] out = new byte[bufferSamples * 4];
+        byte[] out = new byte[bufferSamples * 2]; // MONO
         double samplesPerFrame = (double) sampleRate / fps;
         
         System.out.println("[LTC2] audioLoop started, bufferSamples=" + bufferSamples);
@@ -242,10 +242,10 @@ public class LtcDriver2 implements OutputDriver {
                 }
                 
                 short s = (short) (sample * 32767.0);
-                out[i * 4] = (byte) (s & 0xff);
-                out[i * 4 + 1] = (byte) ((s >> 8) & 0xff);
-                out[i * 4 + 2] = (byte) (s & 0xff);
-                out[i * 4 + 3] = (byte) ((s >> 8) & 0xff);
+                out[i * 2] = (byte) (s & 0xff);
+                out[i * 2 + 1] = (byte) ((s >> 8) & 0xff);
+                // mono: removed second channel
+                // mono
             }
             
             localSamplePosition += (long) positionPhase;
@@ -255,7 +255,7 @@ public class LtcDriver2 implements OutputDriver {
             
             try {
                 int written = line.write(out, 0, out.length);
-                samplesWritten += written / 4;  // 4 bytes per sample
+                samplesWritten += written / 2;  // 4 bytes per sample
                 
                 if (samplesWritten % 10000 == 0) {
                     System.out.println("[LTC2] Written " + samplesWritten + " samples, level=" + signalLevel);
