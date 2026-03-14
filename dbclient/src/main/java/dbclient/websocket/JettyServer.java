@@ -300,6 +300,36 @@ public class JettyServer {
         Map<String, Object> rt = new ConcurrentHashMap<>();
         rt.put("audioDevices", listAudioDevices());
         rt.put("midiOutDevices", listMidiOutDevices());
+        
+        // Timecode source info
+        Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+        int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
+        
+        // 在线 CDJ 列表
+        List<Map<String, Object>> onlinePlayers = new ArrayList<>();
+        if (playersStateCache != null) {
+            if (playersStateCache instanceof List) {
+                for (Object o : (List<?>) playersStateCache) {
+                    if (o instanceof Map) {
+                        Map<String, Object> p = (Map<String, Object>) o;
+                        if (Boolean.TRUE.equals(p.get("active"))) {
+                            Map<String, Object> playerInfo = new ConcurrentHashMap<>();
+                            playerInfo.put("number", p.get("number"));
+                            playerInfo.put("name", p.get("name"));
+                            playerInfo.put("playing", p.get("playing"));
+                            onlinePlayers.add(playerInfo);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Map<String, Object> tcInfo = new ConcurrentHashMap<>();
+        tcInfo.put("timecodeSource", timecodeSource);
+        tcInfo.put("onlinePlayers", onlinePlayers);
+        tcInfo.put("timecodeSourceValid", timecodeSource > 0 && onlinePlayers.stream().anyMatch(p -> p.get("number") instanceof Number && ((Number) p.get("number")).intValue() == timecodeSource));
+        rt.put("timecodeSource", tcInfo);
+        
         out.put("_runtime", rt);
         return out;
     }
