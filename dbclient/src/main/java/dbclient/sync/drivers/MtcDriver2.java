@@ -10,7 +10,7 @@ import java.util.Map;
  */
 public class MtcDriver2 implements OutputDriver {
     
-    public String name() { return "mtc2"; }
+    public String name() { return "mtc"; }
     
     private volatile boolean running = false;
     private Thread sendThread = null;

@@ -23,10 +23,12 @@ public class SyncOutputManager {
     public static SyncOutputManager getInstance() { return INSTANCE; }
 
     private SyncOutputManager() {
-        register(new LtcDriver());
-        register(new MtcDriver());
+        // 新驱动（默认）
         register(new LtcDriver2());
         register(new MtcDriver2());
+        // 旧驱动（legacy，仅保留）
+        register(new LtcDriver());
+        register(new MtcDriver());
         register(new AbletonLinkDriver());
         register(new TitanApiDriver());
         register(new Ma2BpmDriver());
@@ -368,6 +370,14 @@ public class SyncOutputManager {
         out.put("sourcePlayer", statusSourcePlayer);
         out.put("rawTimeSec", (anyTcEnabled && tcSourceValid) ? lastTimeSec : 0.0);
         out.put("timecode", toTimecode(displaySec, 25));
+        
+        // 新 timeline 状态
+        out.put("timecodeSource", timecodeSource);
+        out.put("timecodeSourceValid", tcSourceValid);
+        out.put("timecodeTransportState", timeline.getPlayState().name());
+        out.put("timecodeTimelineSec", timeline.getTimelineSec());
+        out.put("timecodeSourcePlayer", timeline.getSourcePlayer());
+        
         out.put("semantic", new LinkedHashMap<>(lastSemantic));
         return out;
     }

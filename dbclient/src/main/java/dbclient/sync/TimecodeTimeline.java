@@ -192,36 +192,56 @@ public class TimecodeTimeline {
      * @param trackId track ID（用于检测换歌）
      */
     public void updateFromSource(int playerId, long currentTimeMs, boolean playing, boolean active, String trackId) {
+        PlayState oldState = playState;
+        int oldPlayer = sourcePlayer;
+        
         // 更新 source
         if (playerId != sourcePlayer) {
             sourcePlayer = playerId;
             lastEvent = "source_change:" + playerId;
+            System.out.println("[Timeline] SOURCE_CHANGE: " + oldPlayer + " -> " + playerId);
         }
         
         // 无效 source
         if (playerId <= 0 || !active) {
+            if (playState != PlayState.STOPPED) {
+                System.out.println("[Timeline] STOP: no valid source, playerId=" + playerId + " active=" + active);
+            }
             playState = PlayState.STOPPED;
             return;
         }
         
         double trackSec = currentTimeMs / 1000.0;
         
+        // 检测跳变 (>2秒)
+        if (playState == PlayState.PLAYING && playing) {
+            double oldTimelineSec = getTimelineSec();
+            if (Math.abs(trackSec - oldTimelineSec) > 2.0) {
+                System.out.println("[Timeline] JUMP DETECTED: " + oldTimelineSec + " -> " + trackSec + " (diff=" + (trackSec - oldTimelineSec) + ")");
+                onJump(trackSec);
+                return;
+            }
+        }
+        
         // 状态机
         switch (playState) {
             case STOPPED:
                 if (playing) {
+                    System.out.println("[Timeline] PLAY_START: trackSec=" + trackSec);
                     onPlayStart(trackSec);
                 }
                 break;
                 
             case PAUSED:
                 if (playing) {
+                    System.out.println("[Timeline] RESUME: trackSec=" + trackSec);
                     onResume(trackSec);
                 }
                 break;
                 
             case PLAYING:
                 if (!playing) {
+                    System.out.println("[Timeline] PAUSE: trackSec=" + trackSec);
                     onPause();
                 }
                 break;

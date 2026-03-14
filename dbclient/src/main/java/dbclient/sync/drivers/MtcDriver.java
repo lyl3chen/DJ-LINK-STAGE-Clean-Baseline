@@ -43,7 +43,7 @@ public class MtcDriver implements OutputDriver {
     private volatile int lockedSs = 0;
     private volatile int lockedFf = 0;
 
-    public String name() { return "mtc"; }
+    public String name() { return "mtc-legacy"; }
 
     public synchronized void start(Map<String, Object> config) {
         cfg = config != null ? new LinkedHashMap<>(config) : new LinkedHashMap<>();

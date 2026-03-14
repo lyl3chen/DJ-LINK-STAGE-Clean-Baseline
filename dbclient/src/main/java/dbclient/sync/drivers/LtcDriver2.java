@@ -10,7 +10,7 @@ import java.util.Map;
  */
 public class LtcDriver2 implements OutputDriver {
     
-    public String name() { return "ltc2"; }
+    public String name() { return "ltc"; }
     
     private volatile boolean running = false;
     private Thread audioThread = null;

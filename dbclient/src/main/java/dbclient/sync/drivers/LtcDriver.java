@@ -69,7 +69,7 @@ public class LtcDriver implements OutputDriver {
     private SourceDataLine line = null;
 
     @Override
-    public String name() { return "ltc"; }
+    public String name() { return "ltc-legacy"; }
 
     @Override
     public void start(Map<String, Object> cfg) {
