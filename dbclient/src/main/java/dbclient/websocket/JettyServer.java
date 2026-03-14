@@ -302,7 +302,7 @@ public class JettyServer {
         rt.put("midiOutDevices", listMidiOutDevices());
         
         // Timecode source info
-        Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+        Map<String, Object> sync = (settings != null && settings.get("sync") instanceof Map) ? (Map<String, Object>) settings.get("sync") : new ConcurrentHashMap<>();
         int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
         
         // 在线 CDJ 列表
