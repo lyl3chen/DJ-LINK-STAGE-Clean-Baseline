@@ -48,6 +48,7 @@ public class LtcDriver implements OutputDriver {
     // 换歌检测
     private volatile String currentTrackId = "";
     private volatile String currentRekordboxId = "";
+    private volatile int currentPlayerId = 0;
     // stop/restart 检测
     private volatile boolean wasPlaying = false;
     // 一次性重锚标志位
@@ -104,8 +105,27 @@ public class LtcDriver implements OutputDriver {
         // === 换歌检测 ===
         String newTrackId = String.valueOf(state.getOrDefault("trackId", ""));
         String newRekordboxId = String.valueOf(state.getOrDefault("rekordboxId", ""));
+        int newPlayerId = 0;
+        if (state.get("playerId") instanceof Number) {
+            newPlayerId = ((Number) state.get("playerId")).intValue();
+        }
         boolean validTrackId = newTrackId != null && !newTrackId.isEmpty() && !newTrackId.equals("null");
         boolean validRekordboxId = newRekordboxId != null && !newRekordboxId.isEmpty() && !newRekordboxId.equals("null");
+        
+        // Player 切换检测
+        if (newPlayerId != currentPlayerId && currentPlayerId != 0) {
+            // Player 切换，触发完整状态重置
+            pendingReanchor = true;
+            pendingReanchorTargetMs = newPositionMs;
+            pendingReanchorReason = "player_change";
+            reanchorCount++;
+            // 重置与旧 source 绑定的状态
+            lastPositionMs = newPositionMs;
+            currentTrackId = newTrackId;
+            currentRekordboxId = newRekordboxId;
+            System.out.println("[LTC] PLAYER CHANGE: from " + currentPlayerId + " to " + newPlayerId + " reanchor to " + newPositionMs + "ms");
+        }
+        currentPlayerId = newPlayerId;
         
         // 优先条件：有效的 trackId 或 rekordboxId 变化
         if ((validTrackId && !newTrackId.equals(currentTrackId)) || 
