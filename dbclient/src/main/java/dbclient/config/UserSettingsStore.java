@@ -112,15 +112,7 @@ public class UserSettingsStore {
                 "enabled", true,
                 "sourceMode", "master",
                 "masterPlayer", 1,
-                "ltc", new LinkedHashMap<>(Map.of(
-                        "enabled", false,
-                        "fps", 25,
-                        "start", "00:00:00:00",
-                        "sampleRate", 48000,
-                        "gainDb", -8,
-                        "deviceName", "default"
-                )),
-                "mtc", new LinkedHashMap<>(Map.of("enabled", false, "midiPort", "")),
+                // LTC/MTC 已移除
                 "abletonLink", new LinkedHashMap<>(Map.of(
                         "enabled", false,
                         "port", 17000,

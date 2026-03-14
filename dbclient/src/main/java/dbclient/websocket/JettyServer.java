@@ -311,10 +311,7 @@ public class JettyServer {
         rt.put("audioDevices", listAudioDevices());
         rt.put("midiOutDevices", listMidiOutDevices());
         
-        // Timecode source info
-        Map<String, Object> sync = (settings != null && settings.get("sync") instanceof Map) ? (Map<String, Object>) settings.get("sync") : new ConcurrentHashMap<>();
-        int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
-        
+        // timecodeSource 已移除，只保留在线 CDJ 列表
         // 在线 CDJ 列表
         List<Map<String, Object>> onlinePlayers = new ArrayList<>();
         if (playersStateCache != null) {
@@ -336,11 +333,7 @@ public class JettyServer {
             }
         }
         
-        Map<String, Object> tcInfo = new ConcurrentHashMap<>();
-        tcInfo.put("timecodeSource", timecodeSource);
-        tcInfo.put("onlinePlayers", onlinePlayers);
-        tcInfo.put("timecodeSourceValid", timecodeSource > 0 && onlinePlayers.stream().anyMatch(p -> p.get("number") instanceof Number && ((Number) p.get("number")).intValue() == timecodeSource));
-        rt.put("timecodeSource", tcInfo);
+        rt.put("onlinePlayers", onlinePlayers);
         
         out.put("_runtime", rt);
         return out;

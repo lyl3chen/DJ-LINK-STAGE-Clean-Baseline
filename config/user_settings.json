@@ -13,15 +13,15 @@
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
-      "gainDb": -6.0,
-      "deviceName": "hw:0,0"
+      "gainDb": -8.0,
+      "deviceName": "default"
     },
     "mtc": {
       "enabled": true,
       "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
-      "enabled": true,
+      "enabled": false,
       "port": 17000.0,
       "updateIntervalMs": 20.0
     },
@@ -30,10 +30,12 @@
     },
     "titanApi": {
       "versionMode": "auto",
-      "enabled": true,
+      "enabled": false,
       "rateLimitMs": 500.0,
-      "ip": "192.168.100.127",
-      "masterIndices": []
+      "ip": "127.0.0.1",
+      "masterIndices": [
+        0.0
+      ]
     },
     "ma2Telnet": {
       "speedMasterIndex": 1.0,
@@ -41,13 +43,13 @@
       "integerOnly": true,
       "rateLimitMs": 500.0,
       "port": 30000.0,
-      "enabled": true,
+      "enabled": false,
       "host": "127.0.0.1",
       "commandTemplate": "SpecialMaster 3.{index} At {bpm}",
       "maxBpm": 240.0,
       "user": "remote",
       "pass": "",
-      "onlyWhenPlaying": false
+      "onlyWhenPlaying": true
     }
   },
   "ai": {

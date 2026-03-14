@@ -67,14 +67,8 @@
     .cfg-row input, .cfg-row select, .cfg-row textarea { background:#0b111b; color:#dce8ff; border:1px solid #2a3c57; border-radius:4px; padding:5px 6px; }
     .master-picks { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .master-pick { display:inline-flex; align-items:center; gap:4px; color:#dce8ff; font-size:12px; }
-    .ltc-meter { height:14px; border:1px solid #2f425e; border-radius:4px; background:#0a121d; overflow:hidden; width:260px; }
-    .ltc-meter > div { height:100%; width:0%; background:linear-gradient(90deg,#19d66b,#83ff3f); transition:width .08s linear; }
-    .ltc-timecode { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 34px; letter-spacing: 2px; color:#d9eeff; font-weight:700; transition: color .15s ease; }
-    .ltc-timecode.dim { color:#7f8ea4; }
     .diag-card { border:1px solid #2f425e; border-radius:6px; background:#0b1320; padding:8px; font-size:12px; color:#b9d8ff; }
     .diag-card.error { border-color:#8b2c2c; background:#210d0d; color:#ff9c9c; }
-    .ltc-snapshot { font-size:12px; color:#b9d8ff; }
-    .ltc-snapshot.error { color:#ff7b7b; font-weight:700; }
     .mixer-row {
       display:grid;
       gap:8px;
@@ -619,34 +613,11 @@
         <h3>播放源</h3>
         <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
-        <div class="cfg-row"><label>Timecode 播放源</label><select id="cfgTimecodeSource"></select><span id="timecodeSourceStatus" style="font-size:11px;color:#888;margin-left:8px;"></span></div>
+        <!-- timecodeSource UI 已移除 -->
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
 
-      <div class="cfg-card">
-        <h3>SMPTE Timecode</h3>
-        <div class="cfg-row"><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
-        <div class="cfg-subgrid">
-          <div class="cfg-subcard">
-            <h3>LTC <span id="ltcDisabledNotice" style="color:#ff6b6b;font-size:11px;display:none;">(已停用)</span></h3>
-            <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
-            <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
-            <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
-            <div class="cfg-row"><label>LTC Gain(dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" /></div>
-            <div class="cfg-row"><label>LTC SampleRate</label><input id="cfgLtcSampleRate" type="number" value="48000" step="1000" /></div>
-            <div class="cfg-row"><label>LTC 电平</label><div class="ltc-meter"><div id="ltcLevelBar"></div></div><span id="ltcLevelText">0%</span></div>
-            <div class="diag-card" id="ltcDiag">Status: Idle | Target: - | FPS: -</div>
-          </div>
-
-          <div class="cfg-subcard">
-            <h3>MTC</h3>
-            <div class="cfg-row"><label>MTC Enabled</label><input id="cfgMtcEnabled" type="checkbox" /></div>
-            <div class="cfg-row"><label>MTC 端口</label><select id="cfgMtcPort"></select></div>
-            <div class="cfg-row"><label>MTC 信号</label><span id="mtcPulse" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b3a52"></span><span id="mtcPulseText">空闲</span></div>
-            <div class="diag-card" id="mtcDiag">状态：空闲 ｜ 目标端口：-</div>
-          </div>
-        </div>
-      </div>
+      <!-- SMPTE Timecode 卡片已移除 -->
 
       <div class="cfg-card">
         <h3>Ableton Link</h3>
@@ -715,7 +686,7 @@
     let renderQueued = false;
     let rafId = null;
     let userSettings = {};
-    let mtcPulseBlink = false;
+    // let mtcPulseBlink = false; // 已移除
     let metadataWarmupCacheSize = 0;
     let metadataLastLookup = 'UNKNOWN';
     let ma2PassDirty = false;
@@ -1059,40 +1030,15 @@
         const r = await fetch('/api/config');
         userSettings = await r.json();
         const sync = userSettings.sync || {};
-        const ltc = sync.ltc || {};
-        const mtc = sync.mtc || {};
+        // LTC/MTC 已移除
         const link = sync.abletonLink || {};
         const titan = sync.titanApi || {};
         const ma2 = sync.ma2Telnet || {};
         const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
-        // Dynamic Timecode source options from online players
-        const tcInfo = runtime.timecodeSource || {};
-        const tcSel = document.getElementById('cfgTimecodeSource');
-        tcSel.innerHTML = '<option value="0">-- 未选择 --</option>';
-        const tcPlayers = (Array.isArray(tcInfo.onlinePlayers) && tcInfo.onlinePlayers.length > 0)
-          ? tcInfo.onlinePlayers
-          : (Array.isArray(players) ? players.filter(p => p && p.active).map(p => ({ number: p.number, name: p.name, playing: p.playing })) : []);
-        for (const p of tcPlayers) {
-            const pn = Number(p.number || 0);
-            if (!Number.isFinite(pn) || pn <= 0) continue;
-            const opt = document.createElement('option');
-            opt.value = String(pn);
-            opt.textContent = 'Player ' + pn;
-            if (pn === Number(sync.timecodeSource || 0)) opt.selected = true;
-            tcSel.appendChild(opt);
-        }
-        document.getElementById('cfgTimecodeSource').value = String((sync.timecodeSource ?? 0));
-        document.getElementById('timecodeSourceStatus').textContent = tcInfo.timecodeSourceValid ? '(有效)' : (sync.timecodeSource ? '(player不在线)' : '(未选择)');
-        refreshAudioDeviceOptions(runtime.audioDevices || [], String(ltc.deviceName || 'default'));
-        refreshMidiDeviceOptions(runtime.midiOutDevices || [], String(mtc.midiPort || 'default'));
-        document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
-        document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
-        document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
-        document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
-        document.getElementById('ltcDisabledNotice').style.display = ltc.enabled ? 'none' : 'inline';
-        document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
+        // timecodeSource UI 已移除
+        // LTC/MTC UI 已移除
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
         document.getElementById('cfgLinkPort').value = String(link.port || 17000);
         document.getElementById('cfgLinkUpdateMs').value = String(link.updateIntervalMs || 20);
@@ -1129,18 +1075,8 @@
         sync: {
           sourceMode: document.getElementById('cfgSourceMode').value || 'master',
           masterPlayer: Number(document.getElementById('cfgManualPlayer').value || 1),
-          timecodeSource: Number(document.getElementById('cfgTimecodeSource').value || 0),
-          ltc: {
-            enabled: document.getElementById('cfgLtcEnabled').checked,
-            fps: Number(document.getElementById('cfgLtcFps').value || 25),
-            deviceName: (document.getElementById('cfgLtcDevice').value || 'default').trim(),
-            gainDb: Number(document.getElementById('cfgLtcGain').value || -8),
-            sampleRate: Number(document.getElementById('cfgLtcSampleRate').value || 48000)
-          },
-          mtc: {
-            enabled: document.getElementById('cfgMtcEnabled').checked,
-            midiPort: document.getElementById('cfgMtcPort').value || 'default'
-          },
+          // timecodeSource 已移除
+          // LTC/MTC 配置已移除
           abletonLink: {
             enabled: document.getElementById('cfgLinkEnabled').checked,
             port: Number(document.getElementById('cfgLinkPort').value || 17000),
@@ -1216,71 +1152,15 @@
         const j = await r.json();
         document.getElementById('syncStatus').textContent = JSON.stringify(j, null, 2);
 
-        const ltc = (((j || {}).drivers || {}).ltc) || {};
-        const level = Math.max(0, Math.min(1, Number(ltc.signalLevel || 0)));
-        const levelPct = Math.round(level * 100);
-        const bar = document.getElementById('ltcLevelBar');
-        const txt = document.getElementById('ltcLevelText');
-        if (bar) bar.style.width = `${levelPct}%`;
-        if (txt) txt.textContent = `${levelPct}%`;
+        // LTC/MTC 状态显示已移除
 
-        const mtc = (((j || {}).drivers || {}).mtc) || {};
-        const selectedTcSource = Number((((userSettings || {}).sync || {}).timecodeSource) || 0);
-        const tcSourceSelected = selectedTcSource > 0;
-        const ltcOut = String(ltc.outputState || '').toUpperCase();
-        const mtcOut = String(mtc.outputState || '').toUpperCase();
-        const tcOutputting = ltcOut === 'OUTPUTTING' || mtcOut === 'OUTPUTTING';
-        const globalTc = (tcSourceSelected && tcOutputting) ? (ltc.timecode || j.timecode || '00:00:00:00') : '00:00:00:00';
+        const globalTc = tcSourceSelected ? (j.timecode || '00:00:00:00') : '00:00:00:00';
 
         const dashboardStatus = document.getElementById('dashboardStatus');
         if (dashboardStatus) {
           const srcState = tcSourceSelected ? String(j.sourceState || 'OFFLINE') : 'NO_SOURCE';
           const srcPlayer = tcSourceSelected ? (j.sourcePlayer == null ? '-' : j.sourcePlayer) : '-';
           dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | SMPTE Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'} | Metadata Warmup Cache: ${metadataWarmupCacheSize} | Last Lookup: ${metadataLastLookup}`;
-        }
-        const tcEl = document.getElementById('ltcTimecode');
-        if (tcEl) {
-          tcEl.textContent = globalTc;
-          tcEl.classList.toggle('dim', !tcOutputting);
-        }
-
-        const diag = document.getElementById('ltcDiag');
-        if (diag) {
-          if (ltc.error) {
-            diag.classList.add('error');
-            diag.textContent = `ERROR: ${ltc.error}`;
-          } else {
-            diag.classList.remove('error');
-            const status = String(ltc.outputState || 'IDLE').toUpperCase() === 'OUTPUTTING' ? 'Outputting' : 'Idle';
-            const cfgDev = ltc.deviceName || '-';
-            const activeDev = ltc.activeDevice || '-';
-            const fps = ltc.fps || 25;
-            diag.textContent = `Status: ${status} | Configured: ${cfgDev} | Active: ${activeDev} | FPS: ${fps}`;
-          }
-        }
-
-        const pulse = document.getElementById('mtcPulse');
-        const pulseText = document.getElementById('mtcPulseText');
-        const mtcOutBool = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
-        mtcPulseBlink = mtcOutBool ? !mtcPulseBlink : false;
-        const lit = mtcOutBool && mtcPulseBlink;
-        if (pulse) pulse.style.background = lit ? '#2dff7a' : '#2b3a52';
-        if (pulseText) pulseText.textContent = mtcOutBool ? '发送中' : '空闲';
-
-        const mtcDiag = document.getElementById('mtcDiag');
-        if (mtcDiag) {
-          if (mtc.error) {
-            mtcDiag.classList.add('error');
-            mtcDiag.textContent = `错误：MIDI 端口占用或不存在（${mtc.error}）`;
-          } else {
-            mtcDiag.classList.remove('error');
-            const os = String(mtc.outputState || '').toUpperCase();
-            let st = '空闲';
-            if (os === 'OUTPUTTING') st = '输出中';
-            else if (os.startsWith('SILENT_')) st = '已断流（源未播放/离线）';
-            const target = mtc.activePort || mtc.midiPort || '-';
-            mtcDiag.textContent = `状态：${st} ｜ 目标端口：${target}`;
-          }
         }
 
         const link = (((j || {}).drivers || {}).abletonLink) || {};
