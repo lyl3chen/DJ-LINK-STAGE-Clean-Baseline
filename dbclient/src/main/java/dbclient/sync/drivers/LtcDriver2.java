@@ -288,61 +288,41 @@ public class LtcDriver2 implements OutputDriver {
         return v != null ? String.valueOf(v) : def;
     }
     
-    // 标准 LTC 80-bit frame 格式
+    // LTC frame builder (对齐旧版已验证实现)
     static class LtcFrameBuilder2 {
         boolean[] build(int hh, int mm, int ss, int ff) {
             boolean[] bits = new boolean[80];
-            
-            // Frame (bits 0-15)
-            // Frame units (bits 0-3)
-            bits[0] = (ff % 10 & 1) != 0;
-            bits[1] = (ff % 10 & 2) != 0;
-            bits[2] = (ff % 10 & 4) != 0;
-            bits[3] = (ff % 10 & 8) != 0;
-            // Frame tens (bits 8-9, 2 bits for 00-02)
-            bits[8] = ((ff / 10) & 1) != 0;
-            bits[9] = ((ff / 10) & 2) != 0;
-            // Sync (bits 10-15): 001111
+
+            int frame = Math.max(0, ff);
+            int sec = Math.max(0, ss);
+            int min = Math.max(0, mm);
+            int hour = Math.max(0, hh);
+
+            writeBcdUnits(bits, 0, frame % 10);
+            writeBcdTens(bits, 8, frame / 10, 2);
             bits[10] = false;
-            bits[11] = false;
-            bits[12] = true;
-            bits[13] = true;
-            bits[14] = true;
-            bits[15] = true;
-            
-            // Seconds (bits 16-23)
-            bits[16] = (ss % 10 & 1) != 0;
-            bits[17] = (ss % 10 & 2) != 0;
-            bits[18] = (ss % 10 & 4) != 0;
-            bits[19] = (ss % 10 & 8) != 0;
-            bits[20] = ((ss / 10) & 1) != 0;
-            bits[21] = ((ss / 10) & 2) != 0;
-            bits[22] = ((ss / 10) & 4) != 0;
-            
-            // Minutes (bits 24-31)
-            bits[24] = (mm % 10 & 1) != 0;
-            bits[25] = (mm % 10 & 2) != 0;
-            bits[26] = (mm % 10 & 4) != 0;
-            bits[27] = (mm % 10 & 8) != 0;
-            bits[28] = ((mm / 10) & 1) != 0;
-            bits[29] = ((mm / 10) & 2) != 0;
-            bits[30] = ((mm / 10) & 4) != 0;
-            
-            // Hours (bits 32-39)
-            bits[32] = (hh % 10 & 1) != 0;
-            bits[33] = (hh % 10 & 2) != 0;
-            bits[34] = (hh % 10 & 4) != 0;
-            bits[35] = (hh % 10 & 8) != 0;
-            bits[36] = ((hh / 10) & 1) != 0;
-            bits[37] = ((hh / 10) & 2) != 0;
-            
-            // User bits (bits 40-63) - all zero
-            
-            // Sync word (bits 64-79): 0011111111111101
+            bits[11] = false; // drop-frame=false for 25fps
+
+            writeBcdUnits(bits, 16, sec % 10);
+            writeBcdTens(bits, 24, sec / 10, 3);
+
+            writeBcdUnits(bits, 32, min % 10);
+            writeBcdTens(bits, 40, min / 10, 3);
+
+            writeBcdUnits(bits, 48, hour % 10);
+            writeBcdTens(bits, 56, hour / 10, 2);
+
             int[] syncWireOrder = new int[] {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1};
             for (int i = 0; i < 16; i++) bits[64 + i] = syncWireOrder[i] == 1;
-            
             return bits;
+        }
+
+        private void writeBcdUnits(boolean[] bits, int start, int v) {
+            for (int i = 0; i < 4; i++) bits[start + i] = ((v >> i) & 1) == 1;
+        }
+
+        private void writeBcdTens(boolean[] bits, int start, int v, int width) {
+            for (int i = 0; i < width; i++) bits[start + i] = ((v >> i) & 1) == 1;
         }
     }
     
@@ -353,7 +333,7 @@ public class LtcDriver2 implements OutputDriver {
         private boolean[] bits = new boolean[80];
         private int bitIndex = 0;
         private double sampleInBit = 0.0;
-        private double level = -1.0;
+        private double level = 1.0;
         private boolean empty = true;
 
         LtcBmcModulator2(int sampleRate, int bitRate) {
