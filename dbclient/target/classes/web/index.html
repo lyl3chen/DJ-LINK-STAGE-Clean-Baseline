@@ -1260,11 +1260,11 @@
 
         const pulse = document.getElementById('mtcPulse');
         const pulseText = document.getElementById('mtcPulseText');
-        const mtcOut = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
-        mtcPulseBlink = mtcOut ? !mtcPulseBlink : false;
-        const lit = mtcOut && mtcPulseBlink;
+        const mtcOutBool = String(mtc.outputState || '').toUpperCase() === 'OUTPUTTING';
+        mtcPulseBlink = mtcOutBool ? !mtcPulseBlink : false;
+        const lit = mtcOutBool && mtcPulseBlink;
         if (pulse) pulse.style.background = lit ? '#2dff7a' : '#2b3a52';
-        if (pulseText) pulseText.textContent = mtcOut ? '发送中' : '空闲';
+        if (pulseText) pulseText.textContent = mtcOutBool ? '发送中' : '空闲';
 
         const mtcDiag = document.getElementById('mtcDiag');
         if (mtcDiag) {
