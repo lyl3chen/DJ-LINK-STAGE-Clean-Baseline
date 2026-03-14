@@ -63,8 +63,23 @@ public class SyncOutputManager {
         broadcastState(buildDerivedState());
     }
 
+    private List<Map<String, Object>> lastPlayersList = new ArrayList<>();
+    
     @SuppressWarnings("unchecked")
     public synchronized void onPlayersState(Map<String, Object> playersState) {
+        // 保存 player 列表供 timecodeSource 查找
+        this.lastPlayersList.clear();
+        if (playersState != null) {
+            Object players = playersState.get("players");
+            if (players instanceof List) {
+                for (Object o : (List<?>) players) {
+                    if (o instanceof Map) {
+                        lastPlayersList.add((Map<String, Object>) o);
+                    }
+                }
+            }
+        }
+        
         Map<String, Object> derived = buildDerivedState();
         if (playersState != null) {
             Object players = playersState.get("players");
@@ -181,8 +196,76 @@ public class SyncOutputManager {
         broadcastState(derived);
     }
 
-    private void broadcastState(Map<String, Object> state) {
-        for (OutputDriver d : drivers.values()) d.update(state);
+    private void broadcastState(Map<String, Object> derived) {
+        // 获取 timecodeSource 配置
+        Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
+        Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+        int timecodeSource = sync.get("timecodeSource") instanceof Number ? ((Number) sync.get("timecodeSource")).intValue() : 0;
+        
+        // 构建 timecode derived (LTC/MTC 用) - 手动指定 source
+        Map<String, Object> timecodeDerived = null;
+        if (timecodeSource > 0) {
+            timecodeDerived = buildTimecodeDerived(timecodeSource);
+        }
+        
+        // 传给各 driver
+        for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
+            String name = e.getKey();
+            OutputDriver d = e.getValue();
+            if ("ltc".equals(name) || "mtc".equals(name)) {
+                // LTC/MTC 使用 timecodeSource
+                d.update(timecodeDerived);
+            } else {
+                // 其他 driver 使用自动选择的 derived
+                d.update(derived);
+            }
+        }
+    }
+    
+    private Map<String, Object> buildTimecodeDerived(int playerNum) {
+        // 从保存的 player 列表中查找指定 player
+        for (Map<String, Object> p : lastPlayersList) {
+            int num = p.get("number") instanceof Number ? ((Number) p.get("number")).intValue() : -1;
+            if (num == playerNum && Boolean.TRUE.equals(p.get("active"))) {
+                return buildPlayerDerived(p);
+            }
+        }
+        return null;
+    }
+    
+    private Map<String, Object> buildPlayerDerived(Map<String, Object> p) {
+        Map<String, Object> derived = new LinkedHashMap<>(buildDerivedState());
+        // 构建单个 player 的 derived
+        Object ms = p.get("currentTimeMs");
+        if (!(ms instanceof Number)) ms = p.get("beatTimeMs");
+        Object bpm = p.get("bpm");
+        Object pitch = p.get("pitch");
+        boolean playing = Boolean.TRUE.equals(p.get("playing"));
+        boolean active = !Boolean.FALSE.equals(p.get("active"));
+        
+        double nowSec = ms instanceof Number ? ((Number) ms).doubleValue()/1000.0 : 0.0;
+        int beat = p.get("beat") instanceof Number ? ((Number) p.get("beat")).intValue() : -1;
+        double speed = pitch instanceof Number ? 1.0 + ((Number) pitch).doubleValue()/100.0 : 1.0;
+        
+        derived.put("masterTimeSec", nowSec);
+        if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
+        if (pitch instanceof Number) derived.put("sourcePitchPct", ((Number) pitch).doubleValue());
+        derived.put("sourcePlayer", p.get("number"));
+        derived.put("sourcePlaying", playing);
+        derived.put("sourceActive", active);
+        if (ms instanceof Number) derived.put("currentTimeMs", ((Number) ms).longValue());
+        if (ms instanceof Number) derived.put("beatTimeMs", ((Number) ms).longValue());
+        derived.put("remainingTimeMs", p.get("remainingTimeMs"));
+        derived.put("playerId", p.get("number"));
+        derived.put("trackId", p.get("trackId"));
+        derived.put("rekordboxId", p.get("rekordboxId"));
+        derived.put("playing", playing);
+        if (bpm instanceof Number) derived.put("bpm", ((Number) bpm).doubleValue());
+        if (pitch instanceof Number) derived.put("pitch", ((Number) pitch).doubleValue());
+        
+        String st = !active ? "OFFLINE" : (playing ? "PLAYING" : "PAUSED");
+        derived.put("sourceState", st);
+        return derived;
     }
 
     private Map<String, Object> buildDerivedState() {

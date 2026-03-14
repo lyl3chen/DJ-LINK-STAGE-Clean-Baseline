@@ -6,17 +6,18 @@
   "sync": {
     "enabled": true,
     "sourceMode": "master",
+    "timecodeSource": 0,
     "masterPlayer": 1.0,
     "ltc": {
-      "enabled": false,
+      "enabled": true,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
-      "gainDb": -8.0,
+      "gainDb": -16.0,
       "deviceName": "default"
     },
     "mtc": {
-      "enabled": false,
+      "enabled": true,
       "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
@@ -33,10 +34,7 @@
       "rateLimitMs": 500.0,
       "ip": "192.168.100.127",
       "masterIndices": [
-        0.0,
-        1.0,
-        2.0,
-        3.0
+        0.0
       ]
     },
     "ma2Telnet": {
@@ -45,11 +43,11 @@
       "integerOnly": true,
       "rateLimitMs": 500.0,
       "port": 30000.0,
-      "enabled": true,
-      "host": "192.168.100.134",
+      "enabled": false,
+      "host": "127.0.0.1",
       "commandTemplate": "SpecialMaster 3.{index} At {bpm}",
       "maxBpm": 240.0,
-      "user": "sl",
+      "user": "remote",
       "pass": "",
       "onlyWhenPlaying": true
     }
