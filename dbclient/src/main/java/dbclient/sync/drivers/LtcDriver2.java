@@ -104,7 +104,7 @@ public class LtcDriver2 implements OutputDriver {
             // 即使 isRunning=false 也尝试写入，有时 Java Sound 会延迟启动
             System.out.println("[LTC2] Line opened and started: " + line.isRunning());
             
-            frameBuilder = new LtcFrameBuilder2(fps);
+            frameBuilder = new LtcFrameBuilder2();
             double bitRate = 80.0 * fps; int bitRateInt = (int) bitRate; mod = new LtcBmcModulator2(sampleRate, bitRateInt);
             
             double samplesPerFrame = (double) sampleRate / fps;
@@ -221,6 +221,11 @@ public class LtcDriver2 implements OutputDriver {
                     }
                     
                     boolean[] bits = frameBuilder.build(hh, mm, ss, ff);
+                    if (framesOutput < 10) {
+                        String bitStr = "";
+                        for (int bi = 0; bi < 80; bi++) bitStr += bits[bi] ? "1" : "0";
+                        System.out.println("[LTC2] FRAME: tc=" + String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff) + " bits[0-15]=" + bitStr.substring(0, 16));
+                    }
                     mod.loadFrame(bits);
                     framePrimed = true;
                     framesOutput++;
@@ -283,44 +288,60 @@ public class LtcDriver2 implements OutputDriver {
         return v != null ? String.valueOf(v) : def;
     }
     
+    // 标准 LTC 80-bit frame 格式
     static class LtcFrameBuilder2 {
-        private final int fps;
-        LtcFrameBuilder2(int fps) { this.fps = fps; }
-        
         boolean[] build(int hh, int mm, int ss, int ff) {
             boolean[] bits = new boolean[80];
-            bits[0] = false;
-            for (int i = 1; i <= 14; i++) bits[i] = true;
-            bits[15] = false;
-            bits[16] = (ff & 1) != 0;
-            bits[17] = (ff & 2) != 0;
-            bits[18] = (ff & 4) != 0;
-            bits[19] = (ff & 8) != 0;
-            bits[20] = (ss & 1) != 0;
-            bits[21] = (ss & 2) != 0;
-            bits[22] = (ss & 4) != 0;
-            bits[23] = (ss & 8) != 0;
-            bits[24] = (ss & 10) != 0;
-            bits[25] = (ss & 20) != 0;
-            bits[26] = (ss & 40) != 0;
-            bits[27] = (mm & 1) != 0;
-            bits[28] = (mm & 2) != 0;
-            bits[29] = (mm & 4) != 0;
-            bits[30] = (mm & 8) != 0;
-            bits[31] = (mm & 10) != 0;
-            bits[32] = (mm & 20) != 0;
-            bits[33] = (mm & 40) != 0;
-            bits[34] = (hh & 1) != 0;
-            bits[35] = (hh & 2) != 0;
-            bits[36] = (hh & 4) != 0;
-            bits[37] = (hh & 8) != 0;
-            bits[38] = (hh & 10) != 0;
-            bits[39] = (hh & 20) != 0;
-            for (int i = 40; i < 64; i++) bits[i] = false;
-            bits[64] = false;
-            bits[65] = bits[66] = bits[67] = false;
-            for (int i = 68; i < 79; i++) bits[i] = true;
-            bits[79] = false;
+            
+            // Frame (bits 0-15)
+            // Frame units (bits 0-3)
+            bits[0] = (ff % 10 & 1) != 0;
+            bits[1] = (ff % 10 & 2) != 0;
+            bits[2] = (ff % 10 & 4) != 0;
+            bits[3] = (ff % 10 & 8) != 0;
+            // Frame tens (bits 8-9, 2 bits for 00-02)
+            bits[8] = ((ff / 10) & 1) != 0;
+            bits[9] = ((ff / 10) & 2) != 0;
+            // Sync (bits 10-15): 001111
+            bits[10] = false;
+            bits[11] = false;
+            bits[12] = true;
+            bits[13] = true;
+            bits[14] = true;
+            bits[15] = true;
+            
+            // Seconds (bits 16-23)
+            bits[16] = (ss % 10 & 1) != 0;
+            bits[17] = (ss % 10 & 2) != 0;
+            bits[18] = (ss % 10 & 4) != 0;
+            bits[19] = (ss % 10 & 8) != 0;
+            bits[20] = ((ss / 10) & 1) != 0;
+            bits[21] = ((ss / 10) & 2) != 0;
+            bits[22] = ((ss / 10) & 4) != 0;
+            
+            // Minutes (bits 24-31)
+            bits[24] = (mm % 10 & 1) != 0;
+            bits[25] = (mm % 10 & 2) != 0;
+            bits[26] = (mm % 10 & 4) != 0;
+            bits[27] = (mm % 10 & 8) != 0;
+            bits[28] = ((mm / 10) & 1) != 0;
+            bits[29] = ((mm / 10) & 2) != 0;
+            bits[30] = ((mm / 10) & 4) != 0;
+            
+            // Hours (bits 32-39)
+            bits[32] = (hh % 10 & 1) != 0;
+            bits[33] = (hh % 10 & 2) != 0;
+            bits[34] = (hh % 10 & 4) != 0;
+            bits[35] = (hh % 10 & 8) != 0;
+            bits[36] = ((hh / 10) & 1) != 0;
+            bits[37] = ((hh / 10) & 2) != 0;
+            
+            // User bits (bits 40-63) - all zero
+            
+            // Sync word (bits 64-79): 0011111111111101
+            int[] syncWireOrder = new int[] {0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1};
+            for (int i = 0; i < 16; i++) bits[64 + i] = syncWireOrder[i] == 1;
+            
             return bits;
         }
     }
