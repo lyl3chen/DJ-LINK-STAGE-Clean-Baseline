@@ -28,6 +28,10 @@ public class LtcDriver2 implements OutputDriver {
     private volatile int frameInSecond = 0;
     private volatile String lastError = null;
     
+    // 输出统计
+    private volatile long samplesWritten = 0;
+    private volatile long framesOutput = 0;
+    
     private long localSamplePosition = 0;
     private long localFramePosition = 0;
     private long nextFrameBoundarySample = 0;
@@ -42,16 +46,63 @@ public class LtcDriver2 implements OutputDriver {
         
         cfg = config != null ? new java.util.LinkedHashMap<>(config) : new java.util.LinkedHashMap<>();
         
+        System.out.println("[LTC2] start() called with config: " + cfg);
+        
         try {
             sampleRate = intCfg("sampleRate", 48000);
             fps = intCfg("fps", 25);
             double gainDb = numCfg("gainDb", -8.0);
+            String deviceName = strCfg("deviceName", "default");
+            
             amp = Math.max(0.01, Math.min(0.95, Math.pow(10.0, gainDb / 20.0)));
             
+            System.out.println("[LTC2] sampleRate=" + sampleRate + " fps=" + fps + " device=" + deviceName + " gainDb=" + gainDb);
+            
             fmt = new AudioFormat(sampleRate, 16, 2, true, false);
-            line = AudioSystem.getSourceDataLine(fmt);
+            
+            // 尝试打开设备
+            line = null;
+            
+            // 先尝试默认设备
+            try {
+                line = AudioSystem.getSourceDataLine(fmt);
+                System.out.println("[LTC2] Got default line: " + line);
+            } catch (Exception e) {
+                System.out.println("[LTC2] Default line failed: " + e.getMessage());
+            }
+            
+            // 尝试枚举设备
+            if (line == null) {
+                try {
+                    Mixer.Info[] mixers = AudioSystem.getMixerInfo();
+                    System.out.println("[LTC2] Available mixers: " + mixers.length);
+                    for (Mixer.Info mi : mixers) {
+                        System.out.println("[LTC2]   Mixer: " + mi.getName());
+                        if (deviceName != null && (mi.getName().contains(deviceName) || mi.getName().equals(deviceName))) {
+                            try {
+                                line = AudioSystem.getSourceDataLine(fmt, mi);
+                                System.out.println("[LTC2] Found matching device: " + mi.getName());
+                                break;
+                            } catch (Exception ex) {
+                                System.out.println("[LTC2]   Failed to open: " + ex.getMessage());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    System.out.println("[LTC2] Mixer enumeration failed: " + e.getMessage());
+                }
+            }
+            
+            if (line == null) {
+                throw new Exception("No audio device could be opened");
+            }
+            
             line.open(fmt, sampleRate * 2);
             line.start();
+            System.out.println("[LTC2] line.start() called, isRunning=" + line.isRunning() + " (may still work)");
+            
+            // 即使 isRunning=false 也尝试写入，有时 Java Sound 会延迟启动
+            System.out.println("[LTC2] Line opened and started: " + line.isRunning());
             
             frameBuilder = new LtcFrameBuilder2(fps);
             mod = new LtcBmcModulator2(sampleRate, fps);
@@ -61,17 +112,19 @@ public class LtcDriver2 implements OutputDriver {
             
             running = true;
             outputState = "RUNNING";
+            samplesWritten = 0;
             
             audioThread = new Thread(this::audioLoop, "ltc2-audio");
             audioThread.setDaemon(true);
             audioThread.start();
             
-            System.out.println("[LtcDriver2] Started: sampleRate=" + sampleRate + " fps=" + fps);
+            System.out.println("[LTC2] Started successfully");
             
         } catch (Exception e) {
             lastError = e.getMessage();
             outputState = "ERROR";
-            System.out.println("[LtcDriver2] Start failed: " + e.getMessage());
+            System.out.println("[LTC2] Start failed: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
@@ -79,6 +132,7 @@ public class LtcDriver2 implements OutputDriver {
     public void stop() {
         running = false;
         outputState = "STOPPED";
+        System.out.println("[LTC2] stop() called");
         
         if (audioThread != null) {
             audioThread.interrupt();
@@ -90,7 +144,7 @@ public class LtcDriver2 implements OutputDriver {
             line = null;
         }
         
-        System.out.println("[LtcDriver2] Stopped");
+        System.out.println("[LTC2] Stopped");
     }
     
     @Override
@@ -107,8 +161,18 @@ public class LtcDriver2 implements OutputDriver {
         m.put("fps", fps);
         m.put("frame", frameInSecond);
         m.put("signalLevel", signalLevel);
+        m.put("samplesWritten", samplesWritten);
+        m.put("framesOutput", framesOutput);
         m.put("timelineSec", timeline.getTimelineSec());
         m.put("timelineState", timeline.getPlayState().name());
+        m.put("lineOpened", line != null && line.isOpen());
+        m.put("lineRunning", line != null && line.isRunning());
+        m.put("deviceName", strCfg("deviceName", "default"));
+        // Audio format details
+        if (fmt != null) {
+            m.put("audioFormat", fmt.getSampleRate() + "Hz/" + fmt.getSampleSizeInBits() + "bit/" + fmt.getChannels() + "ch/" + (fmt.isBigEndian() ? "BE" : "LE"));
+        }
+        m.put("channelMode", "stereo");
         m.put("error", lastError);
         return m;
     }
@@ -117,6 +181,8 @@ public class LtcDriver2 implements OutputDriver {
         int bufferSamples = sampleRate / 40;
         byte[] out = new byte[bufferSamples * 4];
         double samplesPerFrame = (double) sampleRate / fps;
+        
+        System.out.println("[LTC2] audioLoop started, bufferSamples=" + bufferSamples);
         
         while (running && line != null && line.isOpen()) {
             outputState = "OUTPUTTING";
@@ -137,7 +203,11 @@ public class LtcDriver2 implements OutputDriver {
                 positionPhase += 1.0;
                 long currentSamplePos = localSamplePosition + (long) positionPhase;
                 
-                if (!framePrimed || currentSamplePos >= nextFrameBoundarySample) {
+                // Check if we need to load a new frame
+                if (framePrimed && currentSamplePos < nextFrameBoundarySample) {
+                    // Stay with current frame
+                } else {
+                    // Load new frame
                     localFramePosition = (long) (timelineSec * fps);
                     frameInSecond = (int) (localFramePosition % fps);
                     
@@ -146,15 +216,25 @@ public class LtcDriver2 implements OutputDriver {
                     int ss = (int) (localFramePosition % 60);
                     int ff = frameInSecond;
                     
+                    if (framesOutput < 10 || framesOutput % 100 == 0) {
+                        System.out.println("[LTC2] LOAD FRAME: pos=" + currentSamplePos + " boundary=" + nextFrameBoundarySample + " tc=" + String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff));
+                    }
+                    
                     boolean[] bits = frameBuilder.build(hh, mm, ss, ff);
                     mod.loadFrame(bits);
                     framePrimed = true;
+                    framesOutput++;
                     
                     nextFrameBoundarySample = (long) ((localFramePosition + 1) * samplesPerFrame);
                 }
                 
                 double sample = mod.nextSample() * amp;
                 sumSq += sample * sample;
+                
+                // Log first few samples of each buffer to verify output
+                if (framesOutput <= 3 && i < 5) {
+                    System.out.println("[LTC2] sample[" + i + "]=" + sample + " (raw=" + (short)(sample * 32767) + ")");
+                }
                 
                 short s = (short) (sample * 32767.0);
                 out[i * 4] = (byte) (s & 0xff);
@@ -169,16 +249,23 @@ public class LtcDriver2 implements OutputDriver {
             signalLevel = signalLevel * 0.9 + rms * 0.1;
             
             try {
-                line.write(out, 0, out.length);
+                int written = line.write(out, 0, out.length);
+                samplesWritten += written / 4;  // 4 bytes per sample
+                
+                if (samplesWritten % 10000 == 0) {
+                    System.out.println("[LTC2] Written " + samplesWritten + " samples, level=" + signalLevel);
+                }
             } catch (Exception e) {
                 lastError = e.getMessage();
                 outputState = "ERROR";
+                System.out.println("[LTC2] Write failed: " + e.getMessage());
                 break;
             }
         }
         
         running = false;
         outputState = "STOPPED";
+        System.out.println("[LTC2] audioLoop exited");
     }
     
     private int intCfg(String k, int def) {
@@ -189,6 +276,11 @@ public class LtcDriver2 implements OutputDriver {
     private double numCfg(String k, double def) {
         Object v = cfg.get(k);
         return v instanceof Number ? ((Number) v).doubleValue() : def;
+    }
+    
+    private String strCfg(String k, String def) {
+        Object v = cfg.get(k);
+        return v != null ? String.valueOf(v) : def;
     }
     
     static class LtcFrameBuilder2 {
@@ -233,12 +325,11 @@ public class LtcDriver2 implements OutputDriver {
         }
     }
     
+    // Simple BMC test modulator - generates recognizable square wave
     static class LtcBmcModulator2 {
         private final double samplesPerBit;
-        private boolean[] bits = new boolean[80];
-        private int bitIndex = 0;
-        private double sampleInBit = 0.0;
-        private double level = 1.0;
+        private double sampleCount = 0;
+        private boolean level = true;
         
         LtcBmcModulator2(int sampleRate, int fps) {
             double bitRate = 80.0 * fps;
@@ -246,23 +337,21 @@ public class LtcDriver2 implements OutputDriver {
         }
         
         void loadFrame(boolean[] b) {
-            if (b == null || b.length != 80) return;
-            this.bits = b;
-            this.bitIndex = 0;
-            this.sampleInBit = 0.0;
-            this.level = 1.0;
+            // Reset on frame load
+            sampleCount = 0;
+            level = true;
         }
         
         double nextSample() {
-            if (bitIndex >= 80) return 0.0;
-            double out = level;
-            sampleInBit += 1.0;
-            if (sampleInBit >= samplesPerBit) {
-                sampleInBit -= samplesPerBit;
-                level = -level;
-                bitIndex++;
+            // Toggle every ~480 samples (creates ~100Hz square wave at 48kHz)
+            // This is a test signal to verify audio output is working
+            if (sampleCount >= 480) {
+                level = !level;
+                sampleCount = 0;
             }
-            return out;
+            sampleCount++;
+            
+            return level ? 0.3 : -0.3;  // 30% amplitude square wave
         }
     }
 }
