@@ -13,12 +13,12 @@
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
-      "gainDb": -8.0,
-      "deviceName": "default"
+      "gainDb": -15.0,
+      "deviceName": "hw:0,0"
     },
     "mtc": {
-      "enabled": false,
-      "midiPort": "default"
+      "enabled": true,
+      "midiPort": "CH345 [hw:1,0,0]"
     },
     "abletonLink": {
       "enabled": false,

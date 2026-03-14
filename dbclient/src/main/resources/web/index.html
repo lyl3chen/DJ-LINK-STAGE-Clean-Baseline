@@ -628,7 +628,7 @@
         <div class="cfg-row"><span class="ltc-timecode" id="ltcTimecode">00:00:00:00</span></div>
         <div class="cfg-subgrid">
           <div class="cfg-subcard">
-            <h3>LTC</h3>
+            <h3>LTC <span id="ltcDisabledNotice" style="color:#ff6b6b;font-size:11px;display:none;">(已停用)</span></h3>
             <div class="cfg-row"><label>LTC Enabled</label><input id="cfgLtcEnabled" type="checkbox" /></div>
             <div class="cfg-row"><label>LTC FPS</label><select id="cfgLtcFps"><option>24</option><option selected>25</option><option>30</option></select></div>
             <div class="cfg-row"><label>LTC 声卡</label><select id="cfgLtcDevice"></select></div>
@@ -1091,6 +1091,7 @@
         document.getElementById('cfgLtcFps').value = String(ltc.fps || 25);
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
         document.getElementById('cfgLtcSampleRate').value = String(ltc.sampleRate || 48000);
+        document.getElementById('ltcDisabledNotice').style.display = ltc.enabled ? 'none' : 'inline';
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
         document.getElementById('cfgLinkPort').value = String(link.port || 17000);
