@@ -1068,6 +1068,7 @@
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
         // Dynamic Timecode source options from online players
+        const tcInfo = runtime.timecodeSource || {};
         const tcSel = document.getElementById('cfgTimecodeSource');
         tcSel.innerHTML = '<option value="0">-- 未选择 --</option>';
         const tcPlayers = tcInfo.onlinePlayers || [];
@@ -1079,7 +1080,6 @@
             tcSel.appendChild(opt);
         }
         document.getElementById('cfgTimecodeSource').value = String((sync.timecodeSource ?? 0));
-        const tcInfo = runtime.timecodeSource || {};
         document.getElementById('timecodeSourceStatus').textContent = tcInfo.timecodeSourceValid ? '(有效)' : (sync.timecodeSource ? '(player不在线)' : '(未选择)');
         refreshAudioDeviceOptions(runtime.audioDevices || [], String(ltc.deviceName || 'default'));
         refreshMidiDeviceOptions(runtime.midiOutDevices || [], String(mtc.midiPort || 'default'));
