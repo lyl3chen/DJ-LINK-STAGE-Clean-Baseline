@@ -14,6 +14,8 @@ public class SyncOutputManager {
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
     private final TimecodeClock clock = new TimecodeClock();
+    private final TimecodeTimeline timeline = TimecodeTimeline.getInstance();
+    private final TimecodeSourceResolver sourceResolver = TimecodeSourceResolver.getInstance();
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
     private volatile double lastTimeSec = 0.0;
@@ -23,6 +25,8 @@ public class SyncOutputManager {
     private SyncOutputManager() {
         register(new LtcDriver());
         register(new MtcDriver());
+        register(new LtcDriver2());
+        register(new MtcDriver2());
         register(new AbletonLinkDriver());
         register(new TitanApiDriver());
         register(new Ma2BpmDriver());
@@ -74,11 +78,15 @@ public class SyncOutputManager {
             if (players instanceof List) {
                 for (Object o : (List<?>) players) {
                     if (o instanceof Map) {
-                        lastPlayersList.add((Map<String, Object>) o);
+                        Map<String, Object> p = (Map<String, Object>) o;
+                        lastPlayersList.add(p);
                     }
                 }
             }
         }
+        
+        // 更新 TimecodeSourceResolver
+        sourceResolver.updatePlayers(lastPlayersList);
         
         Map<String, Object> derived = buildDerivedState();
         if (playersState != null) {
@@ -193,7 +201,30 @@ public class SyncOutputManager {
                 }
             }
         }
+        
+        // 更新 TimecodeTimeline（供新驱动使用）
+        updateTimeline(derived);
+        
         broadcastState(derived);
+    }
+    
+    private void updateTimeline(Map<String, Object> derived) {
+        int playerId = 0;
+        long currentTimeMs = 0;
+        boolean playing = false;
+        boolean active = false;
+        
+        Object pid = derived.get("playerId");
+        if (pid instanceof Number) playerId = ((Number) pid).intValue();
+        
+        Object ctm = derived.get("currentTimeMs");
+        if (ctm instanceof Number) currentTimeMs = ((Number) ctm).longValue();
+        
+        playing = Boolean.TRUE.equals(derived.get("playing"));
+        String st = String.valueOf(derived.get("sourceState"));
+        active = !"OFFLINE".equals(st) && !"STOPPED".equals(st);
+        
+        timeline.updateFromSource(playerId, currentTimeMs, playing, active, String.valueOf(derived.getOrDefault("trackId", "")));
     }
 
     private void broadcastState(Map<String, Object> derived) {
