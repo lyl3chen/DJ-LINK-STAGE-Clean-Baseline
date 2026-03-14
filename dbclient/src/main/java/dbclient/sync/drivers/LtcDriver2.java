@@ -105,7 +105,7 @@ public class LtcDriver2 implements OutputDriver {
             System.out.println("[LTC2] Line opened and started: " + line.isRunning());
             
             frameBuilder = new LtcFrameBuilder2(fps);
-            mod = new LtcBmcModulator2(sampleRate, fps);
+            double bitRate = 80.0 * fps; int bitRateInt = (int) bitRate; mod = new LtcBmcModulator2(sampleRate, bitRateInt);
             
             double samplesPerFrame = (double) sampleRate / fps;
             nextFrameBoundarySample = (long) samplesPerFrame;
@@ -325,33 +325,52 @@ public class LtcDriver2 implements OutputDriver {
         }
     }
     
-    // Simple BMC test modulator - generates recognizable square wave
+    // BMC (Biphase Mark Code) modulator - 从旧实现复制，已验证有效
     static class LtcBmcModulator2 {
         private final double samplesPerBit;
-        private double sampleCount = 0;
-        private boolean level = true;
-        
-        LtcBmcModulator2(int sampleRate, int fps) {
-            double bitRate = 80.0 * fps;
-            this.samplesPerBit = (double) sampleRate / bitRate;
+        private final double halfSamples;
+        private boolean[] bits = new boolean[80];
+        private int bitIndex = 0;
+        private double sampleInBit = 0.0;
+        private double level = -1.0;
+        private boolean empty = true;
+
+        LtcBmcModulator2(int sampleRate, int bitRate) {
+            this.samplesPerBit = sampleRate / bitRate;
+            this.halfSamples = this.samplesPerBit * 0.5;
         }
-        
+
         void loadFrame(boolean[] b) {
-            // Reset on frame load
-            sampleCount = 0;
-            level = true;
+            if (b == null || b.length != 80) return;
+            this.bits = b.clone();
+            this.bitIndex = 0;
+            this.sampleInBit = 0.0;
+            this.empty = false;
         }
-        
+
         double nextSample() {
-            // Toggle every ~480 samples (creates ~100Hz square wave at 48kHz)
-            // This is a test signal to verify audio output is working
-            if (sampleCount >= 480) {
-                level = !level;
-                sampleCount = 0;
+            if (empty) return 0.0;
+
+            if (sampleInBit == 0.0) {
+                level = -level;
             }
-            sampleCount++;
-            
-            return level ? 0.3 : -0.3;  // 30% amplitude square wave
+
+            if (bits[bitIndex]) {
+                if (sampleInBit >= halfSamples && (sampleInBit - 1.0) < halfSamples) {
+                    level = -level;
+                }
+            }
+
+            double out = level;
+
+            sampleInBit += 1.0;
+            if (sampleInBit >= samplesPerBit) {
+                sampleInBit -= samplesPerBit;
+                bitIndex++;
+                if (bitIndex >= 80) bitIndex = 0;
+                if (sampleInBit < 1e-9) sampleInBit = 0.0;
+            }
+            return out;
         }
     }
 }

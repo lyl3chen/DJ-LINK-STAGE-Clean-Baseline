@@ -192,48 +192,44 @@ public class MtcDriver2 implements OutputDriver {
     
     private void sendQuarterFrame(int hh, int mm, int ss, int ff) {
         if (receiver == null) {
-            System.out.println("[MTC2] receiver is null!");
             return;
         }
         
-        int type = qfCounter & 0x0F;
-        
-        int data;
+        // 使用标准 MTC Quarter Frame (0xF1)
+        int type = qfCounter & 0x07;
+        int nibble;
         switch (type) {
-            case 0: data = 0x00 | (ff & 0x0F); break;
-            case 1: data = 0x10 | ((ff >> 4) & 0x03); break;
-            case 2: data = 0x20 | (ss & 0x0F); break;
-            case 3: data = 0x30 | ((ss >> 4) & 0x03); break;
-            case 4: data = 0x40 | (mm & 0x0F); break;
-            case 5: data = 0x50 | ((mm >> 4) & 0x03); break;
-            case 6: data = 0x60 | (hh & 0x0F); break;
-            case 7: data = 0x70 | ((hh >> 4) & 0x01) | 0x08; break;
-            default: return;
+            case 0: nibble = ff & 0x0F; break;
+            case 1: nibble = (ff >> 4) & 0x03; break;
+            case 2: nibble = ss & 0x0F; break;
+            case 3: nibble = (ss >> 4) & 0x03; break;
+            case 4: nibble = mm & 0x0F; break;
+            case 5: nibble = (mm >> 4) & 0x03; break;
+            case 6: nibble = hh & 0x0F; break;
+            default: 
+                int rateFlag = 0x01; // 25fps
+                nibble = ((hh >> 4) & 0x01) | (rateFlag << 1);
+                break;
         }
         
+        int data = ((type << 4) | (nibble & 0x0F));
+        
         try {
-            // MIDI Quarter Frame: F0 7F 7F 04 <type> <data> F7
-            byte[] qf = new byte[] { 
-                (byte)0xF0, (byte)0x7F, (byte)0x7F, (byte)0x04, 
-                (byte)type, (byte)data, (byte)0xF7 
-            };
+            // 标准 MTC Quarter Frame: 0xF1 + data
+            ShortMessage sm = new ShortMessage();
+            sm.setMessage(0xF1, data, 0);
+            receiver.send(sm, -1);
             
-            // Log first few messages to verify format
+            // Log first few messages
             if (messagesSent < 16) {
-                String hex = String.format("F0 7F 7F 04 %02X %02X F7", type, data);
-                System.out.println("[MTC2] QF[" + messagesSent + "] type=" + type + " data=" + data + " hex=" + hex + " tc=" + String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff));
+                System.out.println("[MTC2] QF[" + messagesSent + "] status=0xF1 data=0x" + Integer.toHexString(data) + " tc=" + String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff));
             }
-            
-            SysexMessage msg = new SysexMessage();
-            msg.setMessage(qf, qf.length);
-            receiver.send(msg, -1);
             
             messagesSent++;
             qfCounter = (qfCounter + 1) & 0x07;
             
         } catch (Exception e) {
             lastError = e.getMessage();
-            System.out.println("[MTC2] Send failed: " + e.getMessage());
         }
     }
     
