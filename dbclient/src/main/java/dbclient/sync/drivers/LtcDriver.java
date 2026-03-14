@@ -115,7 +115,7 @@ public class LtcDriver implements OutputDriver {
         // Player 切换检测（排除 newPlayerId = 0 的误触发）
         if (newPlayerId != currentPlayerId && currentPlayerId != 0 && newPlayerId > 0) {
             // Player 切换，触发完整状态重置
-            pendingReanchor = true;
+            // pendingReanchor = true; // TEMP DISABLED
             pendingReanchorTargetMs = newPositionMs;
             pendingReanchorReason = "player_change";
             reanchorCount++;
@@ -132,7 +132,7 @@ public class LtcDriver implements OutputDriver {
             (validRekordboxId && !newRekordboxId.equals(currentRekordboxId))) {
             if (validTrackId) currentTrackId = newTrackId;
             if (validRekordboxId) currentRekordboxId = newRekordboxId;
-            pendingReanchor = true;
+            // pendingReanchor = true; // TEMP DISABLED
             pendingReanchorTargetMs = newPositionMs;
             pendingReanchorReason = "track_change";
             reanchorCount++;
@@ -140,7 +140,7 @@ public class LtcDriver implements OutputDriver {
         } else if (!validTrackId && !validRekordboxId) {
             // 兜底条件：trackId/rekordboxId 都不可用时，用位置回跳判断
             if (newPositionMs > 0 && newPositionMs < 500 && lastPositionMs > 5000) {
-                pendingReanchor = true;
+                // pendingReanchor = true; // TEMP DISABLED
                 pendingReanchorTargetMs = newPositionMs;
                 pendingReanchorReason = "near_zero_fallback";
                 reanchorCount++;
@@ -151,7 +151,7 @@ public class LtcDriver implements OutputDriver {
         // === stop -> restart 检测 ===
         if (!wasPlaying && sourcePlaying) {
             // 从停止恢复播放，触发一次重锚
-            pendingReanchor = true;
+            // pendingReanchor = true; // TEMP DISABLED
             pendingReanchorTargetMs = newPositionMs;
             pendingReanchorReason = "restart";
             reanchorCount++;
@@ -162,7 +162,7 @@ public class LtcDriver implements OutputDriver {
         // Hot cue 检测：大幅跳变 > 2秒
         long diff = Math.abs(newPositionMs - lastPositionMs);
         if (diff > 2000 && lastPositionMs > 0) {
-            pendingReanchor = true;
+            // pendingReanchor = true; // TEMP DISABLED
             pendingReanchorTargetMs = newPositionMs;
             pendingReanchorReason = "hot_cue";
             reanchorCount++;
@@ -315,7 +315,7 @@ public class LtcDriver implements OutputDriver {
             nextBlockStartSec += bufferSamples / (double) sampleRate;
 
             double rms = Math.sqrt(sumSq / Math.max(1, bufferSamples));
-            signalLevel = signalLevel * 0.55 + rms * 0.45;
+            signalLevel = signalLevel * 0.9 + rms * 0.1; // smoother level
             try {
                 line.write(out, 0, out.length);
             } catch (Exception e) {
