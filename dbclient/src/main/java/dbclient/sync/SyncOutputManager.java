@@ -2,17 +2,32 @@ package dbclient.sync;
 
 import dbclient.config.UserSettingsStore;
 import dbclient.sync.drivers.*;
+import dbclient.sync.timecode.TimecodeCore;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Signal output scheduler (Ableton Link/Titan/MA2/Console API) with unified driver lifecycle.
+ * Signal output scheduler with unified driver lifecycle.
+ * 
+ * 驱动列表：
+ * - Ableton Link
+ * - Titan API
+ * - MA2 Telnet
+ * - Console API
+ * - LTC (通过 TimecodeCore)
+ * - MTC (通过 TimecodeCore)
  */
 public class SyncOutputManager {
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
+    
+    // 时间码核心（LTC/MTC 共用）
+    private final TimecodeCore timecodeCore;
+    
+    // 驱动管理
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
+    
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
     private volatile double lastTimeSec = 0.0;
@@ -20,11 +35,27 @@ public class SyncOutputManager {
     public static SyncOutputManager getInstance() { return INSTANCE; }
 
     private SyncOutputManager() {
-        // LTC/MTC 已移除
+        // 创建时间码核心（LTC/MTC 共用）
+        timecodeCore = new TimecodeCore();
+        
+        // 创建 LTC/MTC 驱动
+        LtcDriver ltcDriver = new LtcDriver();
+        MtcDriver mtcDriver = new MtcDriver();
+        
+        // 注册为时间码消费者
+        timecodeCore.registerConsumer(ltcDriver);
+        timecodeCore.registerConsumer(mtcDriver);
+        
+        // 注册所有驱动
+        register(ltcDriver);
+        register(mtcDriver);
         register(new AbletonLinkDriver());
         register(new TitanApiDriver());
         register(new Ma2BpmDriver());
         register(new ConsoleApiDriver());
+        
+        // 启动时间码核心
+        timecodeCore.start();
     }
 
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
@@ -39,10 +70,19 @@ public class SyncOutputManager {
             try {
                 Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
                 Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());
+                
+                // 应用时间码核心配置
+                Map<String, Object> timecodeCfg = sync.get("timecode") instanceof Map 
+                    ? (Map<String, Object>) sync.get("timecode") : Map.of();
+                if (timecodeCfg.get("sourcePlayer") instanceof Number) {
+                    timecodeCore.setSourcePlayer(((Number) timecodeCfg.get("sourcePlayer")).intValue());
+                }
+                
+                // 应用驱动配置
                 for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
-                    Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
+                    Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map 
+                        ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
                     boolean enabled = Boolean.TRUE.equals(cfg.get("enabled"));
-                    // 配置保存后重启驱动，确保修改立即生效。
                     try { e.getValue().stop(); } catch (Exception ignored) {}
                     if (enabled) {
                         try { e.getValue().start(cfg); } catch (Exception ignored) {}
@@ -79,9 +119,9 @@ public class SyncOutputManager {
             }
         }
         
-        // timecodeSourceResolver 已移除
-        
+        // 构建派生状态
         Map<String, Object> derived = buildDerivedState();
+        
         if (playersState != null) {
             Object players = playersState.get("players");
             if (players instanceof List) {
@@ -89,11 +129,13 @@ public class SyncOutputManager {
                 Map<String, Object> chosen = null;
 
                 Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
-                Map<String, Object> sync = settings.get("sync") instanceof Map ? (Map<String, Object>) settings.get("sync") : Map.of();
+                Map<String, Object> sync = settings.get("sync") instanceof Map 
+                    ? (Map<String, Object>) settings.get("sync") : Map.of();
                 String sourceMode = String.valueOf(sync.getOrDefault("sourceMode", "master"));
-                int selectedPlayer = sync.get("masterPlayer") instanceof Number ? ((Number) sync.get("masterPlayer")).intValue() : 1;
+                int selectedPlayer = sync.get("masterPlayer") instanceof Number 
+                    ? ((Number) sync.get("masterPlayer")).intValue() : 1;
 
-                // A) 手动模式：优先使用指定 player（可播放或暂停都跟随它的时间）
+                // A) 手动模式
                 if ("manual".equalsIgnoreCase(sourceMode)) {
                     for (Object o : list) {
                         if (!(o instanceof Map)) continue;
@@ -105,7 +147,7 @@ public class SyncOutputManager {
                     }
                 }
 
-                // B) 跟随 master（默认）
+                // B) 跟随 master
                 if (chosen == null) {
                     for (Object o : list) {
                         if (!(o instanceof Map)) continue;
@@ -121,7 +163,9 @@ public class SyncOutputManager {
                     for (Object o : list) {
                         if (!(o instanceof Map)) continue;
                         Map<String, Object> p = (Map<String, Object>) o;
-                        if (Boolean.TRUE.equals(p.get("playing")) && Boolean.TRUE.equals(p.get("active"))) { chosen = p; break; }
+                        if (Boolean.TRUE.equals(p.get("playing")) && Boolean.TRUE.equals(p.get("active"))) { 
+                            chosen = p; break; 
+                        }
                     }
                 }
 
@@ -147,7 +191,6 @@ public class SyncOutputManager {
                         lastTimeSec = 0.0;
                     }
 
-                    // 直接使用 lastTimeSec，不再经过 clock
                     derived.put("masterTimeSec", stoppedLike ? 0.0 : lastTimeSec);
                     if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
                     if (pitch instanceof Number) derived.put("sourcePitchPct", ((Number) pitch).doubleValue());
@@ -185,12 +228,15 @@ public class SyncOutputManager {
             }
         }
         
-        // timeline 已移除
+        // 广播状态
         broadcastState(derived);
     }
 
     private void broadcastState(Map<String, Object> derived) {
-        // timecodeSource 配置已移除，LTC/MTC 已删除
+        // 传递给时间码核心（只执行一次事件检测）
+        timecodeCore.update(derived);
+        
+        // 传递给其他驱动（LtcDriver/MtcDriver 不再重复处理播放器逻辑）
         for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
             OutputDriver d = e.getValue();
             d.update(derived);
@@ -206,21 +252,26 @@ public class SyncOutputManager {
         state.put("sourceActive", false);
         state.put("sourceState", "OFFLINE");
         state.put("semantic", new LinkedHashMap<>(lastSemantic));
+        state.put("players", lastPlayersList);
         return state;
     }
 
     public synchronized Map<String, Object> getStatus() {
         Map<String, Object> out = new LinkedHashMap<>();
+        
+        // 驱动状态
         Map<String, Object> ds = new LinkedHashMap<>();
-        for (OutputDriver d : drivers.values()) ds.put(d.name(), d.status());
+        for (OutputDriver d : drivers.values()) {
+            ds.put(d.name(), d.status());
+        }
         out.put("drivers", ds);
 
-        // timecode 相关字段已移除
-        // rawTimeSec, timecode, semantic 为残留字段，已移除
-
-        // sourceState/sourcePlayer 保留供 AbletonLinkDriver 使用
+        // 源状态
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer != null ? sourcePlayer : 0);
+
+        // 时间码核心状态（独立）
+        out.put("timecode", timecodeCore.getStatus());
 
         return out;
     }
@@ -239,14 +290,5 @@ public class SyncOutputManager {
             return ((Ma2BpmDriver) d).sendTestCommand(command);
         }
         return Map.of("ok", false, "connected", false, "sentCommand", command, "rawResponse", "", "error", "ma2Telnet driver not available");
-    }
-
-    private String toTimecode(double sec, int fps) {
-        int total = (int) Math.max(0, Math.floor(sec));
-        int hh = total / 3600;
-        int mm = (total % 3600) / 60;
-        int ss = total % 60;
-        int ff = (int) Math.floor((sec - Math.floor(sec)) * Math.max(1, fps));
-        return String.format("%02d:%02d:%02d:%02d", hh, mm, ss, ff);
     }
 }

@@ -1,4 +1,5 @@
 dbclient/web/WebServer$DjBeatGridHandler.class
+dbclient/sync/drivers/LtcBmcEncoder.class
 dbclient/sync/drivers/ConsoleApiDriver.class
 dbclient/sync/SyncOutputManager.class
 dbclient/web/WebServer$DjAiPlayersHandler.class
@@ -7,6 +8,7 @@ dbclient/websocket/EventPusher.class
 dbclient/web/WebServer$DjPlayersHandler.class
 dbclient/sync/drivers/Ma2BpmDriver.class
 dbclient/web/WebServer$DjPlayersStateHandler.class
+dbclient/sync/timecode/TimecodeCore.class
 dbclient/web/WebServer$DjSectionsHandler.class
 dbclient/websocket/JettyServer$WsEndpoint.class
 dbclient/ai/AiAgentService.class
@@ -17,10 +19,13 @@ dbclient/web/WebServer$StaticHandler.class
 dbclient/connection/DbConnection.class
 dbclient/sync/drivers/Ma2TelnetClient.class
 dbclient/core/SystemState.class
+dbclient/sync/timecode/TimecodeCore$1.class
 dbclient/web/WebServer$DjBeatHandler.class
 dbclient/sync/drivers/TitanAdapter$1.class
+dbclient/sync/timecode/TimecodeConsumer.class
 dbclient/test/TestBuilder.class
 dbclient/parser/MetadataParser$TrackMetadata.class
+dbclient/sync/timecode/PlayerEventDetector.class
 dbclient/web/WebServer$DjTriggerEventsHandler.class
 dbclient/websocket/JettyServer$1.class
 dbclient/config/UserSettingsStore$1.class
@@ -31,6 +36,9 @@ dbclient/web/WebServer.class
 dbclient/websocket/EventPusher$WsEndpoint.class
 dbclient/sync/drivers/AbletonLinkDriver.class
 dbclient/websocket/JettyServer.class
+dbclient/sync/drivers/LtcDriver.class
+dbclient/sync/drivers/LtcFrameEncoder.class
+dbclient/sync/timecode/PlayerEventDetector$PlayerState.class
 dbclient/core/DeviceManager.class
 dbclient/sync/drivers/CarabinerLinkEngine.class
 dbclient/parser/MetadataParser.class
@@ -38,6 +46,7 @@ dbclient/websocket/JettyServer$WsServlet.class
 dbclient/sync/OutputDriver.class
 dbclient/web/WebServer$DjWaveformHandler.class
 dbclient/web/WebServer$DjCuesHandler.class
+dbclient/sync/timecode/PlayerEvent.class
 dbclient/web/WebServer$DjTrackHandler.class
 dbclient/DbClient.class
 dbclient/web/WebServer$TrackHandler.class
@@ -46,5 +55,6 @@ dbclient/protocol/DbProtocol.class
 dbclient/Main.class
 dbclient/sync/drivers/TitanAdapter.class
 dbclient/sync/drivers/TitanApiDriver.class
+dbclient/sync/drivers/MtcDriver.class
 dbclient/config/UserSettingsStore.class
 dbclient/web/WebServer$LogsHandler.class
