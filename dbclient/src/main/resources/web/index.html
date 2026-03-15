@@ -658,6 +658,32 @@
         <div class="diag-card" id="ma2Diag">MA2: Idle</div>
       </div>
 
+      <!-- LTC 配置模块 -->
+      <div class="cfg-card">
+        <h3>LTC (SMPTE Timecode)</h3>
+        <div class="cfg-row"><label>Enable LTC</label><input id="cfgLtcEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
+        <div class="cfg-row"><label>Gain (dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" min="-20" max="0" /></div>
+        <div class="cfg-row"><label>Frame Rate</label><select id="cfgLtcFrameRate"><option value="25" selected>25 fps</option></select></div>
+        <div class="diag-card" id="ltcDiag">LTC: Disabled</div>
+      </div>
+
+      <!-- MTC 配置模块 -->
+      <div class="cfg-card">
+        <h3>MTC (MIDI Timecode)</h3>
+        <div class="cfg-row"><label>Enable MTC</label><input id="cfgMtcEnabled" type="checkbox" /></div>
+        <div class="cfg-row"><label>MIDI Port</label><select id="cfgMtcPort"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
+        <div class="cfg-row"><label>Frame Rate</label><select id="cfgMtcFrameRate"><option value="25" selected>25 fps</option></select></div>
+        <div class="diag-card" id="mtcDiag">MTC: Disabled</div>
+      </div>
+
+      <!-- Timecode Source Player (共用) -->
+      <div class="cfg-card">
+        <h3>Timecode Source (LTC/MTC共用)</h3>
+        <div class="cfg-row"><label>Source Player</label><select id="cfgTimecodeSourcePlayer"><option value="1" selected>Player 1</option><option value="2">Player 2</option><option value="3">Player 3</option><option value="4">Player 4</option></select></div>
+        <div class="diag-card" id="tcCoreDiag">Timecode Core: Stopped</div>
+      </div>
+
       <div class="cfg-card full"><h3>Realtime Sync Status</h3><pre id="syncStatus" style="white-space:pre-wrap;color:#9fd3ff">{}</pre></div>
     </div>
   </section>
@@ -1038,7 +1064,18 @@
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
         // timecodeSource UI 已移除
-        // LTC/MTC UI 已移除
+        // LTC/MTC 配置加载
+        const timecode = sync.timecode || {};
+        const ltc = sync.ltc || {};
+        const mtc = sync.mtc || {};
+        document.getElementById('cfgTimecodeSourcePlayer').value = String(timecode.sourcePlayer || 1);
+        document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
+        document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
+        document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
+        document.getElementById('cfgLtcFrameRate').value = String(ltc.frameRate || 25);
+        document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
+        document.getElementById('cfgMtcPort').value = String(mtc.midiPort || 'default');
+        document.getElementById('cfgMtcFrameRate').value = String(mtc.frameRate || 25);
         document.getElementById('cfgLinkEnabled').checked = !!link.enabled;
         document.getElementById('cfgLinkPort').value = String(link.port || 17000);
         document.getElementById('cfgLinkUpdateMs').value = String(link.updateIntervalMs || 20);
@@ -1075,8 +1112,21 @@
         sync: {
           sourceMode: document.getElementById('cfgSourceMode').value || 'master',
           masterPlayer: Number(document.getElementById('cfgManualPlayer').value || 1),
-          // timecodeSource 已移除
-          // LTC/MTC 配置已移除
+          // LTC/MTC 配置
+          timecode: {
+            sourcePlayer: Number(document.getElementById('cfgTimecodeSourcePlayer').value || 1)
+          },
+          ltc: {
+            enabled: document.getElementById('cfgLtcEnabled').checked,
+            deviceName: document.getElementById('cfgLtcDevice').value || 'default',
+            gainDb: Number(document.getElementById('cfgLtcGain').value || -8),
+            frameRate: Number(document.getElementById('cfgLtcFrameRate').value || 25)
+          },
+          mtc: {
+            enabled: document.getElementById('cfgMtcEnabled').checked,
+            midiPort: document.getElementById('cfgMtcPort').value || 'default',
+            frameRate: Number(document.getElementById('cfgMtcFrameRate').value || 25)
+          },
           abletonLink: {
             enabled: document.getElementById('cfgLinkEnabled').checked,
             port: Number(document.getElementById('cfgLinkPort').value || 17000),
@@ -1218,6 +1268,40 @@
             ma2Diag.classList.remove('error');
             ma2Diag.textContent = `MA2: ${ma2.connected ? 'Connected' : 'Idle'} | BPM=${ma2.lastSentBpm || '-'} | CMD=${ma2.lastCommand || '-'} | ACK=${ma2.lastAck || '-'}`;
           }
+        }
+
+        // LTC 状态显示
+        const ltc = (((j || {}).drivers || {}).ltc) || {};
+        const ltcDiag = document.getElementById('ltcDiag');
+        if (ltcDiag) {
+          const ltcEnabled = ltc.enabled ? 'Enabled' : 'Disabled';
+          const ltcRunning = ltc.running ? 'Running' : 'Stopped';
+          const ltcFrame = ltc.currentFrame || 0;
+          const ltcGain = ltc.gainDb !== undefined ? ltc.gainDb : -8;
+          ltcDiag.textContent = `LTC: ${ltcEnabled} | ${ltcRunning} | Frame=${ltcFrame} | Gain=${ltcGain}dB`;
+        }
+
+        // MTC 状态显示
+        const mtc = (((j || {}).drivers || {}).mtc) || {};
+        const mtcDiag = document.getElementById('mtcDiag');
+        if (mtcDiag) {
+          const mtcEnabled = mtc.enabled ? 'Enabled' : 'Disabled';
+          const mtcRunning = mtc.running ? 'Running' : 'Stopped';
+          const mtcFrame = mtc.currentFrame || 0;
+          const mtcQf = mtc.qfIndex !== undefined ? mtc.qfIndex : 0;
+          mtcDiag.textContent = `MTC: ${mtcEnabled} | ${mtcRunning} | Frame=${mtcFrame} | QF=${mtcQf}`;
+        }
+
+        // Timecode Core 状态显示
+        const tcCore = j.timecode || {};
+        const tcCoreDiag = document.getElementById('tcCoreDiag');
+        if (tcCoreDiag) {
+          const tcSource = tcCore.sourcePlayer || 1;
+          const tcState = tcCore.state || 'STOPPED';
+          const tcFrame = tcCore.currentFrame || 0;
+          const tcRunning = tcCore.running ? 'Running' : 'Stopped';
+          const tcConsumers = tcCore.consumerCount || 0;
+          tcCoreDiag.textContent = `Timecode Core: Source=P${tcSource} | ${tcState} | Frame=${tcFrame} | ${tcRunning} | Consumers=${tcConsumers}`;
         }
 
       } catch (_) {}
