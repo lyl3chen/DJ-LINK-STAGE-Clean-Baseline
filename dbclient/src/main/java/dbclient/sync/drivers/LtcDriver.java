@@ -71,11 +71,15 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer {
         
         if (!enabled) return;
         
+        // 枚举并打印所有可用音频设备
+        System.out.println("[LTC] Enumerating audio devices for LTC output...");
+        AudioDeviceEnumerator.enumerateOutputDevices();
+        
         // 打开音频设备
         try {
             openAudioDevice();
         } catch (Exception e) {
-            System.err.println("[LTC] Failed to open audio device: " + e.getMessage());
+            System.err.println("[LTC] Failed to open audio device '" + deviceName + "': " + e.getMessage());
             return;
         }
         

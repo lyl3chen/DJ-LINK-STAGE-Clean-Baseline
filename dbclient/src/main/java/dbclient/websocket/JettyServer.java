@@ -3,6 +3,8 @@ package dbclient.websocket;
 import dbclient.ai.AiAgentService;
 import dbclient.config.UserSettingsStore;
 import dbclient.sync.SyncOutputManager;
+import dbclient.sync.drivers.AudioDeviceEnumerator;
+import dbclient.sync.drivers.MidiDeviceEnumerator;
 import com.google.gson.Gson;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -156,6 +159,36 @@ public class JettyServer {
                             response.getWriter().print("no artwork");
                             return;
                         }
+                    } else if (path.equals("/api/devices/audio")) {
+                        // 音频设备枚举
+                        List<AudioDeviceEnumerator.AudioDevice> devices = AudioDeviceEnumerator.enumerateOutputDevices();
+                        List<Map<String, Object>> deviceList = new ArrayList<>();
+                        for (AudioDeviceEnumerator.AudioDevice d : devices) {
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("id", d.id);
+                            m.put("name", d.name);
+                            m.put("description", d.description);
+                            m.put("virtual", d.isVirtual);
+                            deviceList.add(m);
+                        }
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("devices", deviceList)));
+                        return;
+                    } else if (path.equals("/api/devices/midi")) {
+                        // MIDI 端口枚举
+                        List<MidiDeviceEnumerator.MidiPort> ports = MidiDeviceEnumerator.enumerateOutputPorts();
+                        List<Map<String, Object>> portList = new ArrayList<>();
+                        for (MidiDeviceEnumerator.MidiPort p : ports) {
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("id", p.id);
+                            m.put("name", p.name);
+                            m.put("description", p.description);
+                            m.put("virtual", p.isVirtual);
+                            portList.add(m);
+                        }
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ports", portList)));
+                        return;
                     } else {
                         serveStatic(path, response);
                         return;

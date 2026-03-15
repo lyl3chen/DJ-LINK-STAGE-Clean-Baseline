@@ -10,6 +10,7 @@ dbclient/sync/drivers/Ma2BpmDriver.class
 dbclient/web/WebServer$DjPlayersStateHandler.class
 dbclient/sync/timecode/TimecodeCore.class
 dbclient/web/WebServer$DjSectionsHandler.class
+dbclient/sync/drivers/AudioDeviceEnumerator$AudioDevice.class
 dbclient/websocket/JettyServer$WsEndpoint.class
 dbclient/ai/AiAgentService.class
 dbclient/web/WebServer$DjPhraseHandler.class
@@ -27,6 +28,7 @@ dbclient/test/TestBuilder.class
 dbclient/parser/MetadataParser$TrackMetadata.class
 dbclient/sync/timecode/PlayerEventDetector.class
 dbclient/web/WebServer$DjTriggerEventsHandler.class
+dbclient/sync/drivers/MidiDeviceEnumerator.class
 dbclient/websocket/JettyServer$1.class
 dbclient/config/UserSettingsStore$1.class
 dbclient/sync/drivers/TitanAdapter$HandleInfo.class
@@ -47,6 +49,8 @@ dbclient/sync/OutputDriver.class
 dbclient/web/WebServer$DjWaveformHandler.class
 dbclient/web/WebServer$DjCuesHandler.class
 dbclient/sync/timecode/PlayerEvent.class
+dbclient/sync/drivers/MidiDeviceEnumerator$MidiPort.class
+dbclient/sync/drivers/AudioDeviceEnumerator.class
 dbclient/web/WebServer$DjTrackHandler.class
 dbclient/DbClient.class
 dbclient/web/WebServer$TrackHandler.class

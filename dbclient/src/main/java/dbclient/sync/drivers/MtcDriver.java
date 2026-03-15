@@ -61,11 +61,15 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer {
         
         if (!enabled) return;
         
+        // 枚举并打印所有可用 MIDI 端口
+        System.out.println("[MTC] Enumerating MIDI ports for MTC output...");
+        MidiDeviceEnumerator.enumerateOutputPorts();
+        
         // 打开 MIDI 设备
         try {
             openMidiDevice();
         } catch (Exception e) {
-            System.err.println("[MTC] Failed to open MIDI device: " + e.getMessage());
+            System.err.println("[MTC] Failed to open MIDI port '" + midiPort + "': " + e.getMessage());
             return;
         }
         
