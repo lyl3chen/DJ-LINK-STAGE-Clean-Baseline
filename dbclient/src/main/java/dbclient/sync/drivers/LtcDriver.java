@@ -10,20 +10,23 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * LtcDriver - LTC 输出驱动
+ * LtcDriver - LTC 输出驱动（重构版）
  *
- * 职责：
- * - 作为 TimecodeConsumer 接收 TimecodeCore 推送的帧
- * - 将帧编码为 LTC 音频信号输出
- * - 在本类内部完成实时音频写入与最小诊断
+ * 核心改进：
+ * - 发送线程内部维护严格的连续帧流
+ * - 上层只提供状态/目标帧，不直接控制每帧输出
+ * - 按音频缓冲区余量驱动持续填充
+ * - 三态边界绝对稳定
  */
-public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.SourceChangeListener {
+public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.SourceChangeListener, TimecodeCore.TimecodeStateListener {
 
     public static final String NAME = "ltc";
     private static final int SAMPLE_RATE = 48000;
     private static final double FRAME_RATE = 25.0;
     private static final int BITS_PER_FRAME = 80;
     private static final int BITS_PER_SECOND = (int) (FRAME_RATE * BITS_PER_FRAME);
+    private static final int SAMPLES_PER_FRAME = SAMPLE_RATE / (int)FRAME_RATE; // 1920 @ 48k/25fps
+    private static final int BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2; // 16-bit mono = 3840 bytes
 
     // 编码器
     private final LtcFrameEncoder frameEncoder;
@@ -34,49 +37,28 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
     private volatile boolean enabled = false;
     private volatile double gainDb = -8.0;
     private volatile String deviceName = "default";
-    private volatile String channelMode = "mono";  // mono, stereo-left, stereo-right, stereo-both
-    private volatile long currentFrame = 0;
+    private volatile String channelMode = "mono";
 
     // 音频输出
     private SourceDataLine audioLine;
-    private AudioFormat audioFormat;
     private Thread audioThread;
 
-    // onFrame -> audioThread 共享帧（冻结快照：每次只传 long frame）
-    private volatile long latestFrame = 0;
-    private volatile long lastWrittenFrame = -1;
-    private volatile long lastIncomingFrame = 0;
+    // ========== 发送状态机（新增）==========
+    private enum TransportState {
+        STOPPED,    // 输出稳定的 00:00:00:00
+        PAUSED,     // 输出冻结的 heldFrame
+        PLAYING     // 连续递增输出
+    }
 
-    // 停止态锁定：只输出稳定 00:00:00:00（不静音）
-    private volatile boolean zeroLatch = false;
-    private volatile boolean flushOnZeroLatch = false;
+    private volatile TransportState transportState = TransportState.STOPPED;
+    private volatile long heldFrame = 0;           // PAUSED 时冻结的帧
+    private volatile long nextFrameToWrite = 0;    // PLAYING 时下一个要写的帧
+    private volatile long targetAnchorFrame = 0;   // 上层提供的锚点帧（用于纠偏）
+    private volatile long targetAnchorTimeNs = 0;  // 上层提供的锚点时间
 
     // 诊断（最小）
     private volatile long writeCount = 0;
     private volatile long writeBytes = 0;
-    private volatile long underrunCount = 0;
-    private volatile long starvationCount = 0;
-
-    private volatile long writeIntervalCount = 0;
-    private volatile long writeIntervalMinNs = Long.MAX_VALUE;
-    private volatile long writeIntervalMaxNs = 0;
-    private volatile long writeIntervalSumNs = 0;
-    private volatile long lastWriteNs = 0;
-
-    private volatile long frameDeltaCount = 0;
-    private volatile long frameDeltaMin = Long.MAX_VALUE;
-    private volatile long frameDeltaMax = Long.MIN_VALUE;
-    private volatile long frameDeltaAnomalyCount = 0; // 期望 1，其他计为异常
-
-    private volatile int lineBufferBytes = 0;
-    private volatile int occupancyMinBytes = Integer.MAX_VALUE;
-    private volatile int occupancyMaxBytes = 0;
-    private volatile long occupancySamples = 0;
-    private volatile long occupancySumBytes = 0;
-
-    // stereo-left 校验
-    private volatile long stereoLeftCheckSamples = 0;
-    private volatile long stereoLeftRightNonZeroSamples = 0;
 
     public LtcDriver() {
         this.frameEncoder = new LtcFrameEncoder(FRAME_RATE);
@@ -117,12 +99,19 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
             return;
         }
 
-        resetDiagnostics();
+        // 初始化状态机
+        transportState = TransportState.STOPPED;
+        heldFrame = 0;
+        nextFrameToWrite = 0;
+        targetAnchorFrame = 0;
+        targetAnchorTimeNs = System.nanoTime();
 
         running.set(true);
         audioThread = new Thread(this::audioLoop, "ltc-audio-writer");
         audioThread.setDaemon(true);
         audioThread.start();
+
+        System.out.println("[LTC] Started with state machine: STOPPED -> output 00:00:00:00");
     }
 
     @Override
@@ -143,30 +132,83 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
 
     @Override
     public void update(Map<String, Object> state) {
-        // 不处理上层状态
+        // 不处理上层状态（由 onFrame 处理）
     }
 
     /**
-     * TimecodeCore 推送回调：只更新最新帧，不做阻塞写音频。
+     * TimecodeCore 推送回调：提供状态和目标帧信息
+     * 注意：只更新状态机目标，不直接控制每帧输出
      */
     @Override
     public void onFrame(long frame) {
         if (!running.get() || !enabled) return;
 
-        // 不允许负帧进入编码链路
-        long clamped = Math.max(0, frame);
-
-        // 从运行态跌回 0：进入停止态锁定，清空旧缓冲后持续输出 00 帧
-        if (clamped == 0 && lastIncomingFrame > 0) {
-            zeroLatch = true;
-            flushOnZeroLatch = true;
-        } else if (clamped > 0) {
-            zeroLatch = false;
+        // 帧号 < 0 视为停止
+        if (frame < 0) {
+            setTransportState(TransportState.STOPPED);
+            return;
         }
 
-        this.currentFrame = clamped;
-        this.latestFrame = clamped;
-        this.lastIncomingFrame = clamped;
+        // 根据 TimecodeCore 状态决定 transportState
+        // 这里简化处理：frame == 0 且未运行视为 STOPPED，否则 PLAYING
+        // 实际应由上层明确告知状态，但这里用帧号变化推断
+    }
+
+    /**
+     * 设置传输状态（由上层调用）
+     */
+    public synchronized void setTransportState(TransportState newState) {
+        if (this.transportState == newState) return;
+
+        TransportState oldState = this.transportState;
+        this.transportState = newState;
+
+        switch (newState) {
+            case STOPPED:
+                // STOPPED: 固定输出 00:00:00:00
+                nextFrameToWrite = 0;
+                heldFrame = 0;
+                System.out.println("[LTC] State: STOPPED -> output 00:00:00:00");
+                break;
+
+            case PAUSED:
+                // PAUSED: 冻结当前帧
+                heldFrame = nextFrameToWrite;
+                System.out.println("[LTC] State: PAUSED -> freeze frame " + heldFrame);
+                break;
+
+            case PLAYING:
+                // PLAYING: 从当前位置继续
+                if (oldState == TransportState.STOPPED) {
+                    nextFrameToWrite = 0;
+                }
+                // 如果从 PAUSED 恢复，nextFrameToWrite 已经是正确值
+                System.out.println("[LTC] State: PLAYING -> resume from frame " + nextFrameToWrite);
+                break;
+        }
+    }
+
+    /**
+     * 更新锚点（由上层定期纠偏）
+     */
+    public synchronized void updateAnchor(long anchorFrame, long anchorTimeNs) {
+        this.targetAnchorFrame = anchorFrame;
+        this.targetAnchorTimeNs = anchorTimeNs;
+
+        // 只有在 PLAYING 状态下才需要纠偏
+        if (transportState == TransportState.PLAYING) {
+            // 计算预期帧（基于本地时钟）
+            long elapsedNs = System.nanoTime() - anchorTimeNs;
+            long elapsedFrames = (long) (elapsedNs * FRAME_RATE / 1_000_000_000.0);
+            long expectedFrame = anchorFrame + elapsedFrames;
+
+            // 偏差过大时调整 nextFrameToWrite
+            long diff = Math.abs(nextFrameToWrite - expectedFrame);
+            if (diff > 5) { // 超过 5 帧（200ms）才纠偏
+                nextFrameToWrite = expectedFrame;
+                System.out.println("[LTC] Drift correction: adjusted to frame " + nextFrameToWrite);
+            }
+        }
     }
 
     @Override
@@ -179,46 +221,15 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         out.put("gainDb", gainDb);
         out.put("deviceName", deviceName);
         out.put("channelMode", channelMode);
-        out.put("currentFrame", currentFrame);
-        out.put("zeroLatch", zeroLatch);
 
-        out.put("samplesPerBit", SAMPLE_RATE / BITS_PER_SECOND); // 25fps=24
-        out.put("halfBitSamples", (SAMPLE_RATE / BITS_PER_SECOND) / 2); // 12
+        // 状态机信息
+        out.put("transportState", transportState.name());
+        out.put("heldFrame", heldFrame);
+        out.put("nextFrameToWrite", nextFrameToWrite);
+        out.put("targetAnchorFrame", targetAnchorFrame);
 
-        out.put("lineBufferBytes", lineBufferBytes);
         out.put("writeCount", writeCount);
         out.put("writeBytes", writeBytes);
-        out.put("underrunCount", underrunCount);
-        out.put("starvationCount", starvationCount);
-
-        Map<String, Object> writeDiag = new LinkedHashMap<>();
-        writeDiag.put("intervalMinMs", nsToMs(writeIntervalMinNs == Long.MAX_VALUE ? 0 : writeIntervalMinNs));
-        writeDiag.put("intervalMaxMs", nsToMs(writeIntervalMaxNs));
-        writeDiag.put("intervalAvgMs", writeIntervalCount > 0 ? nsToMs(writeIntervalSumNs / writeIntervalCount) : 0.0);
-        writeDiag.put("intervalSamples", writeIntervalCount);
-        out.put("writeInterval", writeDiag);
-
-        Map<String, Object> occ = new LinkedHashMap<>();
-        occ.put("minBytes", occupancyMinBytes == Integer.MAX_VALUE ? 0 : occupancyMinBytes);
-        occ.put("maxBytes", occupancyMaxBytes);
-        occ.put("avgBytes", occupancySamples > 0 ? (occupancySumBytes / occupancySamples) : 0);
-        occ.put("samples", occupancySamples);
-        out.put("bufferOccupancy", occ);
-
-        Map<String, Object> frameDiag = new LinkedHashMap<>();
-        frameDiag.put("lastWrittenFrame", lastWrittenFrame);
-        frameDiag.put("deltaMin", frameDeltaMin == Long.MAX_VALUE ? 0 : frameDeltaMin);
-        frameDiag.put("deltaMax", frameDeltaMax == Long.MIN_VALUE ? 0 : frameDeltaMax);
-        frameDiag.put("deltaSamples", frameDeltaCount);
-        frameDiag.put("deltaAnomalyCount", frameDeltaAnomalyCount);
-        out.put("frameDelta", frameDiag);
-
-        if ("stereo-left".equals(channelMode)) {
-            Map<String, Object> stereoDiag = new LinkedHashMap<>();
-            stereoDiag.put("checkedFrames", stereoLeftCheckSamples);
-            stereoDiag.put("rightNonZeroFrames", stereoLeftRightNonZeroSamples);
-            out.put("stereoLeftCheck", stereoDiag);
-        }
 
         return out;
     }
@@ -229,134 +240,144 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         bmcEncoder.reset();
     }
 
+    @Override
+    public void onStateChange(String fromState, String toState, long anchorFrame, long anchorTimeNs) {
+        System.out.println("[LTC] State change: " + fromState + " -> " + toState);
+        
+        TransportState newTransportState;
+        switch (toState) {
+            case "PLAYING":
+                newTransportState = TransportState.PLAYING;
+                break;
+            case "PAUSED":
+                newTransportState = TransportState.PAUSED;
+                break;
+            case "STOPPED":
+            default:
+                newTransportState = TransportState.STOPPED;
+                break;
+        }
+        
+        setTransportState(newTransportState);
+        
+        // 更新锚点（用于 PLAYING 状态下的纠偏）
+        if ("PLAYING".equals(toState)) {
+            updateAnchor(anchorFrame, anchorTimeNs);
+        }
+    }
+
+    // ========== 核心发送循环（重构）==========
+
     private void audioLoop() {
+        // 预分配编码缓冲（避免每帧 GC）
+        byte[] monoPcm = new byte[BYTES_PER_FRAME];
+
         while (running.get()) {
             try {
                 SourceDataLine line = audioLine;
                 if (line == null || !line.isOpen()) {
-                    starvationCount++;
                     Thread.sleep(2);
                     continue;
                 }
 
-                long frame = zeroLatch ? 0 : latestFrame;
+                // 按音频线可写空间持续填充
+                int available = line.available();
+                int framesToWrite = available / BYTES_PER_FRAME;
 
-                if (flushOnZeroLatch) {
-                    line.flush();
-                    flushOnZeroLatch = false;
+                if (framesToWrite <= 0) {
+                    // 缓冲满，稍等
+                    Thread.sleep(1);
+                    continue;
                 }
 
-                // zeroLatch 时发送静音（全 0），而不是 LTC 00 帧
-                byte[] buffer = zeroLatch ? buildSilenceFrame() : encodeFrame(frame);
+                // 连续写多帧
+                for (int i = 0; i < framesToWrite && running.get(); i++) {
+                    long frameToEncode = getCurrentFrameToWrite();
+                    encodeFrameToBuffer(frameToEncode, monoPcm);
 
-                int availableBefore = line.available();
-                int bufferBytes = line.getBufferSize();
-                lineBufferBytes = bufferBytes;
-                int occupancyBefore = Math.max(0, bufferBytes - availableBefore);
-                recordOccupancy(occupancyBefore);
+                    // 声道处理
+                    byte[] outputPcm = applyChannelMode(monoPcm);
 
-                // 若几乎见底，视作一次 underrun 风险
-                if (occupancyBefore <= (buffer.length / 2)) {
-                    underrunCount++;
+                    line.write(outputPcm, 0, outputPcm.length);
+                    writeCount++;
+                    writeBytes += outputPcm.length;
                 }
-
-                long nowNs = System.nanoTime();
-                if (lastWriteNs != 0) {
-                    long dt = nowNs - lastWriteNs;
-                    writeIntervalCount++;
-                    writeIntervalSumNs += dt;
-                    if (dt < writeIntervalMinNs) writeIntervalMinNs = dt;
-                    if (dt > writeIntervalMaxNs) writeIntervalMaxNs = dt;
-                }
-                lastWriteNs = nowNs;
-
-                if (lastWrittenFrame >= 0) {
-                    long delta = frame - lastWrittenFrame;
-                    frameDeltaCount++;
-                    if (delta < frameDeltaMin) frameDeltaMin = delta;
-                    if (delta > frameDeltaMax) frameDeltaMax = delta;
-                    if (delta != 1) frameDeltaAnomalyCount++;
-                }
-                lastWrittenFrame = frame;
-
-                if ("stereo-left".equals(channelMode)) {
-                    verifyStereoLeftFrame(buffer);
-                }
-
-                int written = line.write(buffer, 0, buffer.length);
-                writeCount++;
-                writeBytes += written;
 
             } catch (InterruptedException e) {
                 break;
             } catch (Exception e) {
-                starvationCount++;
                 System.err.println("[LTC] audioLoop error: " + e.getMessage());
             }
         }
     }
 
-    private void resetDiagnostics() {
-        writeCount = 0;
-        writeBytes = 0;
-        underrunCount = 0;
-        starvationCount = 0;
+    /**
+     * 根据当前状态机获取要写的帧号
+     */
+    private long getCurrentFrameToWrite() {
+        switch (transportState) {
+            case STOPPED:
+                // STOPPED: 始终输出 0
+                return 0;
 
-        writeIntervalCount = 0;
-        writeIntervalMinNs = Long.MAX_VALUE;
-        writeIntervalMaxNs = 0;
-        writeIntervalSumNs = 0;
-        lastWriteNs = 0;
+            case PAUSED:
+                // PAUSED: 冻结帧
+                return heldFrame;
 
-        frameDeltaCount = 0;
-        frameDeltaMin = Long.MAX_VALUE;
-        frameDeltaMax = Long.MIN_VALUE;
-        frameDeltaAnomalyCount = 0;
+            case PLAYING:
+                // PLAYING: 递增并返回
+                long frame = nextFrameToWrite;
+                nextFrameToWrite++;
+                return frame;
 
-        lineBufferBytes = 0;
-        occupancyMinBytes = Integer.MAX_VALUE;
-        occupancyMaxBytes = 0;
-        occupancySamples = 0;
-        occupancySumBytes = 0;
-
-        stereoLeftCheckSamples = 0;
-        stereoLeftRightNonZeroSamples = 0;
-
-        lastWrittenFrame = -1;
-        latestFrame = 0;
-        currentFrame = 0;
-        lastIncomingFrame = 0;
-        zeroLatch = false;
-        flushOnZeroLatch = false;
+            default:
+                return 0;
+        }
     }
 
-    private void recordOccupancy(int occBytes) {
-        occupancySamples++;
-        occupancySumBytes += occBytes;
-        if (occBytes < occupancyMinBytes) occupancyMinBytes = occBytes;
-        if (occBytes > occupancyMaxBytes) occupancyMaxBytes = occBytes;
-    }
+    /**
+     * 编码指定帧到缓冲（复用 buffer）
+     */
+    private void encodeFrameToBuffer(long frame, byte[] outBuffer) {
+        boolean[] frameBits = frameEncoder.buildFrame(frame);
+        double gain = Math.pow(10, gainDb / 20.0);
 
-    private void verifyStereoLeftFrame(byte[] stereoBuffer) {
-        // 每帧抽检一次：检查右声道采样是否全0
-        // stereoBuffer: [Llo,Lhi,Rlo,Rhi] * N
-        stereoLeftCheckSamples++;
-        for (int i = 0; i + 3 < stereoBuffer.length; i += 4) {
-            short right = (short) (((stereoBuffer[i + 3] & 0xFF) << 8) | (stereoBuffer[i + 2] & 0xFF));
-            if (right != 0) {
-                stereoLeftRightNonZeroSamples++;
-                return;
+        // BMC 编码
+        int amplitude = (int) Math.round(16422.0 * gain);
+        int samplesPerBit = SAMPLE_RATE / BITS_PER_SECOND; // 24
+        int samplesPerHalfBit = samplesPerBit / 2; // 12
+
+        int p = 0;
+        boolean level = true; // 简化：每帧重置相位（或保持连续相位）
+
+        for (int i = 0; i < BITS_PER_FRAME; i++) {
+            boolean bit = frameBits[i];
+
+            // bit start transition
+            level = !level;
+            short firstHalf = (short) (level ? amplitude : -amplitude);
+            for (int j = 0; j < samplesPerHalfBit; j++) {
+                outBuffer[p++] = (byte) (firstHalf & 0xFF);
+                outBuffer[p++] = (byte) ((firstHalf >> 8) & 0xFF);
+            }
+
+            // mid-bit transition only for bit=1
+            if (bit) {
+                level = !level;
+            }
+            short secondHalf = (short) (level ? amplitude : -amplitude);
+            for (int j = 0; j < samplesPerHalfBit; j++) {
+                outBuffer[p++] = (byte) (secondHalf & 0xFF);
+                outBuffer[p++] = (byte) ((secondHalf >> 8) & 0xFF);
             }
         }
     }
 
-    private byte[] encodeFrame(long frame) {
-        boolean[] frameBits = frameEncoder.buildFrame(frame);
-        double gain = Math.pow(10, gainDb / 20.0);
-        byte[] monoPcm = bmcEncoder.encodeFrame(frameBits, gain);
-
-        int channels = channelMode.equals("mono") ? 1 : 2;
-        if (channels == 1) {
+    /**
+     * 应用声道模式
+     */
+    private byte[] applyChannelMode(byte[] monoPcm) {
+        if ("mono".equals(channelMode)) {
             return monoPcm;
         }
 
@@ -393,17 +414,9 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         return outputPcm;
     }
 
-    private byte[] buildSilenceFrame() {
-        int channels = channelMode.equals("mono") ? 1 : 2;
-        int monoSamples = BITS_PER_FRAME * (SAMPLE_RATE / BITS_PER_SECOND); // 80 * 24 = 1920 @25fps/48k
-        int bytesPerSample = 2;
-        return new byte[monoSamples * bytesPerSample * channels];
-    }
-
     private void openAudioDevice() throws Exception {
         int channels = channelMode.equals("mono") ? 1 : 2;
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, channels, true, false);
-        this.audioFormat = format;
 
         DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
 
@@ -424,14 +437,12 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
             }
             if (audioLine == null) {
                 audioLine = (SourceDataLine) AudioSystem.getLine(info);
-                System.out.println("[LTC] Device not found, using default");
             }
         }
 
-        // 固定较小缓冲，减小时基抖动放大效应（约 2 帧）
-        int frameBytes = channels == 1 ? 3840 : 7680; // 25fps 一帧
-        int desiredBuffer = frameBytes * 2;
-        audioLine.open(format, desiredBuffer);
+        // 较大的缓冲以支持连续流
+        int bufferSize = BYTES_PER_FRAME * 4 * channels; // 4 帧缓冲
+        audioLine.open(format, bufferSize);
         audioLine.start();
         System.out.println("[LTC] Opened " + channels + " channel(s), mode=" + channelMode + ", buffer=" + audioLine.getBufferSize());
     }
@@ -445,9 +456,5 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
             }
             audioLine = null;
         }
-    }
-
-    private double nsToMs(long ns) {
-        return ns / 1_000_000.0;
     }
 }

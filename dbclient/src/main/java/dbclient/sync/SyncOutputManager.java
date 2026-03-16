@@ -42,8 +42,9 @@ public class SyncOutputManager {
         LtcDriver ltcDriver = new LtcDriver();
         MtcDriver mtcDriver = new MtcDriver();
         
-        // 注册为时间码消费者
+        // 注册为时间码消费者和状态监听器
         timecodeCore.registerConsumer(ltcDriver);
+        timecodeCore.addStateListener(ltcDriver);
         timecodeCore.registerConsumer(mtcDriver);
         
         // 注册所有驱动

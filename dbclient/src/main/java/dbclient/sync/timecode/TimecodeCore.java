@@ -255,6 +255,7 @@ public class TimecodeCore implements Runnable {
 
     private void handleEvent(PlayerEvent event, PlayerEventDetector.PlayerState ps) {
         long newFrame = (long) (ps.timeSec * FRAME_RATE);
+        String oldState = currentState;
 
         switch (event) {
             case PLAY_STARTED:
@@ -284,6 +285,7 @@ public class TimecodeCore implements Runnable {
             case DRIFT_TOO_LARGE:
                 // 重锚到当前时间
                 if ("PLAYING".equals(currentState) && ps.playing) {
+                    currentState = "PLAYING";
                     anchorFrame = newFrame;
                     anchorTimeNs = System.nanoTime();
                 } else if ("PAUSED".equals(currentState)) {
@@ -292,9 +294,39 @@ public class TimecodeCore implements Runnable {
                         anchorFrame = newFrame;
                     }
                 } else {
+                    currentState = "STOPPED";
                     anchorFrame = 0;
                 }
                 break;
         }
+
+        // 通知驱动状态变化
+        if (!currentState.equals(oldState)) {
+            notifyStateChange(oldState, currentState);
+        }
+    }
+
+    private void notifyStateChange(String from, String to) {
+        for (TimecodeStateListener listener : stateListeners) {
+            try {
+                listener.onStateChange(from, to, anchorFrame, anchorTimeNs);
+            } catch (Exception e) {
+                System.err.println("[TimecodeCore] State listener error: " + e.getMessage());
+            }
+        }
+    }
+
+    public interface TimecodeStateListener {
+        void onStateChange(String fromState, String toState, long anchorFrame, long anchorTimeNs);
+    }
+
+    private final List<TimecodeStateListener> stateListeners = new CopyOnWriteArrayList<>();
+
+    public void addStateListener(TimecodeStateListener listener) {
+        if (listener != null) stateListeners.add(listener);
+    }
+
+    public void removeStateListener(TimecodeStateListener listener) {
+        stateListeners.remove(listener);
     }
 }

@@ -13,6 +13,7 @@ dbclient/web/WebServer$DjSectionsHandler.class
 dbclient/sync/drivers/AudioDeviceEnumerator$AudioDevice.class
 dbclient/websocket/JettyServer$WsEndpoint.class
 dbclient/ai/AiAgentService.class
+dbclient/sync/timecode/TimecodeCore$TimecodeStateListener.class
 dbclient/web/WebServer$DjPhraseHandler.class
 dbclient/websocket/EventPusher$WsServlet.class
 dbclient/web/WebServer$DjDevicesHandler.class
@@ -34,10 +35,12 @@ dbclient/config/UserSettingsStore$1.class
 dbclient/sync/drivers/TitanAdapter$HandleInfo.class
 dbclient/web/WebServer$StatusHandler.class
 dbclient/packet/PacketBuilder.class
+dbclient/sync/drivers/LtcDriver$TransportState.class
 dbclient/web/WebServer.class
 dbclient/websocket/EventPusher$WsEndpoint.class
 dbclient/sync/drivers/AbletonLinkDriver.class
 dbclient/websocket/JettyServer.class
+dbclient/sync/drivers/LtcDriver$1.class
 dbclient/sync/drivers/LtcDriver.class
 dbclient/sync/drivers/LtcFrameEncoder.class
 dbclient/sync/timecode/PlayerEventDetector$PlayerState.class
