@@ -1,37 +1,37 @@
 # NEXT_TASK.md - 下一步任务
 
-## 当前任务状态
+## 当前状态
 
-**LTC/MTC + timecodeSource 清理完成 (2026-03-15 06:20)**
+**版本**: `12b4640`  
+**日期**: 2026-03-16  
+**主要功能**: LTC/MTC 可用，手动测试正常
 
-### 已完成
+## 已确认问题（待后续处理）
 
-1. ✅ LTC/MTC 驱动文件已删除（LtcDriver, LtcDriver2, MtcDriver, MtcDriver2）
-2. ✅ TimecodeSourceResolver.java 已删除
-3. ✅ TimecodeClock.java 已删除
-4. ✅ TimecodeTimeline.java 已删除
-5. ✅ SyncOutputManager 注册和引用已清理
-6. ✅ UserSettingsStore 配置已清理
-7. ✅ WebUI (HTML/CSS/JS) 已清理
-8. ✅ JettyServer timecodeSource 逻辑已清理
-9. ✅ 编译成功
-10. ✅ API 确认无 LTC/MTC/timecodeSource 残留
+### 1. LTC 信号强度波浪形起伏 ⏸️
+- **归因**: 项目本机音频输出链路（硬件/驱动/ALSA/PulseAudio）
+- **状态**: 暂停修改代码
+- **后续**: 单独排查本机音频系统，或在其他机器验证
 
-### 当前任务
+### 2. MTC 视觉跳帧 ⏸️
+- **状态**: 待后续详细测试
+- **方法**: 对比 LTC/MTC 同步性，检查 Quarter Frame 发送间隔
 
-**等待用户指示**
+## 可能的下一步选项
 
-- ❌ 不要开始重做 LTC/MTC（用户明确要求先不做）
-- ✅ 保持当前干净基线状态
-- ⚠️ 可能需要提交清理结果到 GitHub
+- [ ] **B. 提交到 GitHub** - 将当前可用版本推送到仓库
+- [ ] **C. 详细测试 MTC** - 检查 MTC 发送间隔稳定性
+- [ ] **D. 其他机器验证** - 确认 LTC 波浪形问题是否特定于本机
+- [ ] **E. 排查本机音频** - 检查 ALSA/PulseAudio 配置
+- [ ] **F. 继续其他功能** - 转向其他模块开发
 
-### 修改范围
+## 今日已完成
 
-- 只读操作或用户明确指示的任务
-- 不修改任何核心模块代码
+- [x] LtcDriver 重构（状态机 + 连续帧流）
+- [x] TimecodeCore 状态通知机制
+- [x] 手动测试功能修复
+- [x] 项目记忆文件更新
 
 ---
 
-**任务创建时间**: 2026-03-15 05:33 GMT+8
-**最后更新**: 2026-03-15 06:20 GMT+8
-**项目根目录**: `/home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage`
+**最后更新**: 2026-03-16 23:26 GMT+8
