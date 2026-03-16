@@ -34,7 +34,7 @@ public class PlayerEventDetector {
     public PlayerEvent detect(PlayerState state, long expectedFrame, String trackId) {
         if (state == null) return PlayerEvent.NONE;
         
-        String currentState = normalizeState(state.state, state.playing);
+        String currentState = normalizeState(state.state, state.playing, state.timeSec);
         long currentFrame = (long) (state.timeSec * TimecodeCore.FRAME_RATE);
         
         // 1. 状态变化检测
@@ -81,11 +81,20 @@ public class PlayerEventDetector {
     
     /**
      * 标准化状态
+     * 根据 rawState、playing 标志和 timeSec 判断实际状态
+     * 关键逻辑：state=null + playing=false + timeSec>0.05 → PAUSED（不是 STOPPED）
      */
-    private String normalizeState(String rawState, boolean playing) {
+    private String normalizeState(String rawState, boolean playing, double timeSec) {
         if (rawState == null || rawState.isEmpty()) {
-            // 当 state 字段缺失时，根据 playing 标志判断
-            return playing ? "PLAYING" : "STOPPED";
+            // 当 state 字段缺失时，综合 playing 标志和 timeSec 判断
+            if (playing) {
+                return "PLAYING";
+            } else if (timeSec > 0.05) {
+                // timeSec > 0.05 表示有有效时间，应该是 PAUSED 而不是 STOPPED
+                return "PAUSED";
+            } else {
+                return "STOPPED";
+            }
         }
         
         switch (rawState.toUpperCase()) {
