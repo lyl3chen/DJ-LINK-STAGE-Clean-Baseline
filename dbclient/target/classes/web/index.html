@@ -1159,14 +1159,15 @@
     }
 
     async function saveIoConfig() {
-      const selectedPlayer = Number(document.getElementById('cfgTimecodeSourcePlayer').value || 1);
+      const masterPlayer = Number(document.getElementById('cfgManualPlayer').value || 1);
+      const tcSourcePlayer = Number(document.getElementById('cfgTimecodeSourcePlayer').value || 1);
       const patch = {
         sync: {
           sourceMode: document.getElementById('cfgSourceMode').value || 'master',
-          masterPlayer: selectedPlayer,
-          // LTC/MTC 配置 - timecode.sourcePlayer 与 masterPlayer 保持一致
+          masterPlayer: masterPlayer,
+          // LTC/MTC 配置 - timecode.sourcePlayer 独立配置
           timecode: {
-            sourcePlayer: selectedPlayer
+            sourcePlayer: tcSourcePlayer
           },
           ltc: {
             enabled: document.getElementById('cfgLtcEnabled').checked,

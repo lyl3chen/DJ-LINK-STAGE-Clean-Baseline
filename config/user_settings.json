@@ -5,7 +5,7 @@
   },
   "sync": {
     "enabled": true,
-    "sourceMode": "master",
+    "sourceMode": "manual",
     "timecodeSource": 2.0,
     "masterPlayer": 2.0,
     "ltc": {
