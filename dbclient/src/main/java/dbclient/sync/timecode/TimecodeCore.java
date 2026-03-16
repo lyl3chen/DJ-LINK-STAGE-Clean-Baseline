@@ -240,7 +240,8 @@ public class TimecodeCore implements Runnable {
             Object num = player.get("number");
             if (num instanceof Number && ((Number) num).intValue() == playerNum) {
                 PlayerEventDetector.PlayerState ps = new PlayerEventDetector.PlayerState();
-                ps.state = String.valueOf(player.get("state") != null ? player.get("state") : "OFFLINE");
+                Object stateObj = player.get("state");
+                ps.state = (stateObj != null) ? String.valueOf(stateObj) : null;
                 ps.playing = Boolean.TRUE.equals(player.get("playing"));
                 ps.timeSec = player.get("currentTimeMs") instanceof Number
                     ? ((Number) player.get("currentTimeMs")).doubleValue() / 1000.0
