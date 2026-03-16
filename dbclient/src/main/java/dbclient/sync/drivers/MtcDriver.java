@@ -170,9 +170,10 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer {
     }
     
     private void openMidiDevice() throws Exception {
+        MidiDevice.Info[] infos = MidiSystem.getMidiDeviceInfo();
+        
         if ("default".equals(midiPort)) {
             // 使用默认 MIDI 输出
-            MidiDevice.Info[] infos = MidiSystem.getMidiDeviceInfo();
             for (MidiDevice.Info info : infos) {
                 MidiDevice device = MidiSystem.getMidiDevice(info);
                 if (device.getMaxReceivers() != 0) {
@@ -180,14 +181,28 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer {
                     break;
                 }
             }
+        } else {
+            // 按名称查找指定设备
+            for (MidiDevice.Info info : infos) {
+                String name = info.getName();
+                if (name.contains(midiPort) || midiPort.contains(name)) {
+                    MidiDevice device = MidiSystem.getMidiDevice(info);
+                    if (device.getMaxReceivers() != 0) {
+                        midiDevice = device;
+                        System.out.println("[MTC] Found MIDI device: " + name);
+                        break;
+                    }
+                }
+            }
         }
         
         if (midiDevice == null) {
-            throw new Exception("No MIDI output device available");
+            throw new Exception("No MIDI output device available for: " + midiPort);
         }
         
         midiDevice.open();
         midiReceiver = midiDevice.getReceiver();
+        System.out.println("[MTC] MIDI device opened successfully");
     }
     
     private void closeMidiDevice() {
