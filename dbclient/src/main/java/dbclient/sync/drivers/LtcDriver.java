@@ -45,6 +45,11 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
     // onFrame -> audioThread 共享帧（冻结快照：每次只传 long frame）
     private volatile long latestFrame = 0;
     private volatile long lastWrittenFrame = -1;
+    private volatile long lastIncomingFrame = 0;
+
+    // 停止态锁定：只输出稳定 00:00:00:00（不静音）
+    private volatile boolean zeroLatch = false;
+    private volatile boolean flushOnZeroLatch = false;
 
     // 诊断（最小）
     private volatile long writeCount = 0;
@@ -147,8 +152,21 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
     @Override
     public void onFrame(long frame) {
         if (!running.get() || !enabled) return;
-        this.currentFrame = frame;
-        this.latestFrame = frame;
+
+        // 不允许负帧进入编码链路
+        long clamped = Math.max(0, frame);
+
+        // 从运行态跌回 0：进入停止态锁定，清空旧缓冲后持续输出 00 帧
+        if (clamped == 0 && lastIncomingFrame > 0) {
+            zeroLatch = true;
+            flushOnZeroLatch = true;
+        } else if (clamped > 0) {
+            zeroLatch = false;
+        }
+
+        this.currentFrame = clamped;
+        this.latestFrame = clamped;
+        this.lastIncomingFrame = clamped;
     }
 
     @Override
@@ -162,6 +180,7 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         out.put("deviceName", deviceName);
         out.put("channelMode", channelMode);
         out.put("currentFrame", currentFrame);
+        out.put("zeroLatch", zeroLatch);
 
         out.put("samplesPerBit", SAMPLE_RATE / BITS_PER_SECOND); // 25fps=24
         out.put("halfBitSamples", (SAMPLE_RATE / BITS_PER_SECOND) / 2); // 12
@@ -220,7 +239,13 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
                     continue;
                 }
 
-                long frame = latestFrame;
+                long frame = zeroLatch ? 0 : latestFrame;
+
+                if (flushOnZeroLatch) {
+                    line.flush();
+                    flushOnZeroLatch = false;
+                }
+
                 byte[] buffer = encodeFrame(frame);
 
                 int availableBefore = line.available();
@@ -299,6 +324,9 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         lastWrittenFrame = -1;
         latestFrame = 0;
         currentFrame = 0;
+        lastIncomingFrame = 0;
+        zeroLatch = false;
+        flushOnZeroLatch = false;
     }
 
     private void recordOccupancy(int occBytes) {
