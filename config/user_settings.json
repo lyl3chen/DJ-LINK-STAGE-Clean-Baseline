@@ -7,19 +7,19 @@
     "enabled": true,
     "sourceMode": "manual",
     "timecodeSource": 2.0,
-    "masterPlayer": 1.0,
+    "masterPlayer": 2.0,
     "ltc": {
       "enabled": true,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
       "gainDb": -8.0,
-      "deviceName": "default",
+      "deviceName": "default [default]",
       "frameRate": 25.0
     },
     "mtc": {
-      "enabled": false,
-      "midiPort": "default",
+      "enabled": true,
+      "midiPort": "CH345 [hw:1,0,0]",
       "frameRate": 25.0
     },
     "abletonLink": {
