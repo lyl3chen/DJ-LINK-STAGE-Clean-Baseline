@@ -69,10 +69,6 @@ public class LtcFrameEncoder {
         int hourUnits = hh % 10;
         int hourTens = hh / 10;
         
-        // 调试日志 - 每帧都打印
-        System.out.printf("[LTC-FRAME] frame=%d -> %02d:%02d:%02d:%02d (f=%d.%d s=%d.%d m=%d.%d h=%d.%d)%n", 
-            frame, hh, mm, ss, ff, 
-            frameUnits, frameTens, secUnits, secTens, minUnits, minTens, hourUnits, hourTens);
         
         boolean[] bits = new boolean[80];
         int idx = 0;
@@ -140,15 +136,6 @@ public class LtcFrameEncoder {
         
         System.arraycopy(syncWord, 0, bits, 64, 16);
         
-        // 调试: 每 25 帧打印完整的 80-bit 帧
-        if (frame % 25 == 0) {
-            StringBuilder sb = new StringBuilder("[LTC-FRAME] frame=" + frame + " bits: ");
-            for (int i = 0; i < 80; i++) {
-                sb.append(bits[i] ? '1' : '0');
-                if ((i + 1) % 8 == 0 && i < 79) sb.append(' ');
-            }
-            System.out.println(sb.toString());
-        }
         
         return bits;
     }

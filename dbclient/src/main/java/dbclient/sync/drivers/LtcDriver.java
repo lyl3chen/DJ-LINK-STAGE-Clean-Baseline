@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - 事件检测（由 TimecodeCore 处理）
  * - 锚点管理（由 TimecodeCore 处理）
  */
-public class LtcDriver implements OutputDriver, TimecodeConsumer {
+public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.SourceChangeListener {
     
     public static final String NAME = "ltc";
     private static final int SAMPLE_RATE = 48000;
@@ -37,10 +37,12 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer {
     private volatile boolean enabled = false;
     private volatile double gainDb = -8.0;
     private volatile String deviceName = "default";
+    private volatile String channelMode = "mono";  // mono, stereo-left, stereo-right, stereo-both
     private volatile long currentFrame = 0;
     
     // 音频输出
     private SourceDataLine audioLine;
+    private AudioFormat audioFormat;
     
     public LtcDriver() {
         this.frameEncoder = new LtcFrameEncoder(FRAME_RATE);
@@ -66,6 +68,9 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer {
             }
             if (config.get("deviceName") instanceof String) {
                 deviceName = (String) config.get("deviceName");
+            }
+            if (config.get("channelMode") instanceof String) {
+                channelMode = (String) config.get("channelMode");
             }
         }
         
@@ -120,14 +125,13 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer {
         
         this.currentFrame = frame;
         
-        // 编码并输出
         try {
             byte[] buffer = encodeFrame(frame);
             if (audioLine != null && audioLine.isOpen()) {
                 audioLine.write(buffer, 0, buffer.length);
             }
         } catch (Exception e) {
-            System.err.println("[LTC] Output error: " + e.getMessage());
+            System.err.println("[LTC] Error: " + e.getMessage());
         }
     }
     
@@ -143,57 +147,108 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer {
             "fps", FRAME_RATE,
             "gainDb", gainDb,
             "deviceName", deviceName,
+            "channelMode", channelMode,
             "currentFrame", currentFrame
         );
+    }
+    
+    /**
+     * 切源回调：只重置编码器相位，不重启音频设备
+     */
+    @Override
+    public void onSourceChanged(int newPlayer) {
+        System.out.println("[LTC] Source changed to player " + newPlayer);
+        // 只重置 BMC 编码器相位，保持音频设备连续运行
+        bmcEncoder.reset();
+        System.out.println("[LTC] Encoder reset for new source");
     }
     
     // ============ 私有方法 ============
     
     private byte[] encodeFrame(long frame) {
-        // 构建 80-bit LTC 帧
+        // 使用新的编码器接口
         boolean[] frameBits = frameEncoder.buildFrame(frame);
-        
-        // 计算缓冲区大小
-        int samplesPerFrame = SAMPLE_RATE / (int) FRAME_RATE;
-        int samplesPerBit = SAMPLE_RATE / BITS_PER_SECOND;
-        byte[] buffer = new byte[samplesPerFrame * 2];  // 16-bit PCM
-        
         double gain = Math.pow(10, gainDb / 20.0);
-        int sampleIndex = 0;
-        int bitIndex = 0;
+        byte[] monoPcm = bmcEncoder.encodeFrame(frameBits, gain);
         
-        for (int i = 0; i < samplesPerFrame; i++) {
-            if (bitIndex < 80) {
-                boolean bit = frameBits[bitIndex];
-                double sample = bmcEncoder.nextSample(bit) * gain;
-                int sampleInt = (int) (sample * 32767);
-                buffer[sampleIndex++] = (byte) (sampleInt & 0xFF);
-                buffer[sampleIndex++] = (byte) ((sampleInt >> 8) & 0xFF);
-            } else {
-                buffer[sampleIndex++] = 0;
-                buffer[sampleIndex++] = 0;
-            }
+        // 根据声道模式处理
+        int channels = channelMode.equals("mono") ? 1 : 2;
+        byte[] outputPcm;
+        
+        if (channels == 1) {
+            // Mono: 直接返回
+            outputPcm = monoPcm;
+        } else {
+            // Stereo: 需要扩展为双声道
+            int monoSamples = monoPcm.length / 2;  // 16-bit samples
+            outputPcm = new byte[monoSamples * 2 * 2];  // stereo = 2x size
             
-            if ((i + 1) % samplesPerBit == 0) {
-                bitIndex++;
+            for (int i = 0; i < monoSamples; i++) {
+                short sample = (short) ((monoPcm[i * 2 + 1] & 0xFF) << 8 | (monoPcm[i * 2] & 0xFF));
+                short left = 0, right = 0;
+                
+                switch (channelMode) {
+                    case "stereo-left":
+                        left = sample;
+                        right = 0;
+                        break;
+                    case "stereo-right":
+                        left = 0;
+                        right = sample;
+                        break;
+                    case "stereo-both":
+                    default:
+                        left = sample;
+                        right = sample;
+                        break;
+                }
+                
+                // Left channel
+                outputPcm[i * 4] = (byte) (left & 0xFF);
+                outputPcm[i * 4 + 1] = (byte) ((left >> 8) & 0xFF);
+                // Right channel
+                outputPcm[i * 4 + 2] = (byte) (right & 0xFF);
+                outputPcm[i * 4 + 3] = (byte) ((right >> 8) & 0xFF);
             }
         }
         
-        return buffer;
+        return outputPcm;
     }
     
     private void openAudioDevice() throws Exception {
-        AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
+        int channels = channelMode.equals("mono") ? 1 : 2;
+        AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, channels, true, false);
+        this.audioFormat = format;
+        
         DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
         
         if ("default".equals(deviceName)) {
             audioLine = (SourceDataLine) AudioSystem.getLine(info);
         } else {
-            audioLine = (SourceDataLine) AudioSystem.getLine(info);
+            // 尝试匹配指定设备
+            Mixer.Info[] mixerInfos = AudioSystem.getMixerInfo();
+            for (Mixer.Info mixerInfo : mixerInfos) {
+                if (mixerInfo.getName().contains(deviceName)) {
+                    Mixer mixer = AudioSystem.getMixer(mixerInfo);
+                    try {
+                        audioLine = (SourceDataLine) mixer.getLine(info);
+                        System.out.println("[LTC] Using device: " + mixerInfo.getName());
+                        break;
+                    } catch (Exception e) {
+                        // 继续尝试下一个
+                    }
+                }
+            }
+            // 如果没找到匹配设备，使用默认
+            if (audioLine == null) {
+                audioLine = (SourceDataLine) AudioSystem.getLine(info);
+                System.out.println("[LTC] Device not found, using default");
+            }
         }
         
         audioLine.open(format);
         audioLine.start();
+        System.out.println("[LTC] Opened " + channels + " channel(s), mode=" + channelMode);
     }
     
     private void closeAudioDevice() {

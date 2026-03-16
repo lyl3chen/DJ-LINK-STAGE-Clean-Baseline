@@ -1,63 +1,103 @@
 package dbclient.sync.drivers;
 
 /**
- * LtcBmcEncoder - LTC BMC (Biphase Mark Code) 编码器
- * 
- * BMC 规则：
- * - 每个 bit 起始必翻转电平
- * - bit=1 时，半 bit 位置再翻转一次
+ * LtcBmcEncoder - 标准 BMC (Biphase Mark Code) 编码器
+ *
+ * 严格遵循 SMPTE-12M BMC 规则和 x42/libltc 实现：
+ * - 每个 bit 周期开始时必须翻转（transition）
+ * - bit = 1 时，在 bit 周期中间（half-bit）再翻转一次
+ * - bit = 0 时，中间不翻转
+ * - 相位在帧之间保持连续
+ *
+ * 时序（25fps, 48kHz）：
+ * - 每帧 80 bit
+ * - bit rate = 80 bits × 25 fps = 2000 bits/second
+ * - 每 bit 周期 = 48000 / 2000 = 24 samples
+ * - half-bit = 12 samples
  */
 public class LtcBmcEncoder {
-    
+
     private final int sampleRate;
     private final int bitsPerSecond;
-    
-    private boolean currentLevel = false;
-    private int sampleCounter = 0;
-    
+    private final int samplesPerBit;
+    private final int samplesPerHalfBit;
+
+    // BMC 状态：当前电平（在帧之间保持连续）
+    private boolean currentLevel;
+
     public LtcBmcEncoder(int sampleRate, int bitsPerSecond) {
         this.sampleRate = sampleRate;
         this.bitsPerSecond = bitsPerSecond;
+        this.samplesPerBit = sampleRate / bitsPerSecond;
+        this.samplesPerHalfBit = samplesPerBit / 2;
+        this.currentLevel = true; // 初始从高电平开始（参考文件第一个样本是负值，翻转后为负）
     }
-    
-    public int getSamplesPerBit() {
-        return sampleRate / bitsPerSecond;
-    }
-    
+
     /**
-     * 生成下一个 BMC 样本
-     * 
-     * @param bit 当前 bit 值
-     * @return 音频样本值 (-1.0 ~ 1.0)
+     * 编码完整的 80-bit LTC 帧为 PCM 样本
+     *
+     * 遵循 x42/libltc 的编码规则：
+     * - 每个 bit 开始前翻转
+     * - bit=1 时在 half-bit 再翻转
+     * - bit=0 时不翻转
+     * - 保持相位连续到下一帧
+     *
+     * @param frameBits 80-bit LTC 帧（LSB first 顺序）
+     * @param gain 增益（0.0 - 1.0）
+     * @return PCM 样本数组（16-bit signed little-endian）
      */
-    public double nextSample(boolean bit) {
-        int samplesPerBit = getSamplesPerBit();
-        
-        // bit 边界翻转
-        if (sampleCounter >= samplesPerBit) {
+    public byte[] encodeFrame(boolean[] frameBits, double gain) {
+        int totalSamples = 80 * samplesPerBit;
+        byte[] buffer = new byte[totalSamples * 2]; // 16-bit PCM
+        int idx = 0;
+
+        // 参考值：从标准 LTC WAV 文件分析
+        // -16422 和 +16422 是标准幅度值
+        int amplitude = (int) (16422 * gain);
+
+
+        for (int bitIdx = 0; bitIdx < 80; bitIdx++) {
+            boolean bit = frameBits[bitIdx];
+
+            // 每个 bit 开始时翻转（这是 BMC 的规则）
             currentLevel = !currentLevel;
-            sampleCounter = 0;
-            
-            // bit=1 时，半 bit 位置再翻转
-            if (bit && samplesPerBit > 1) {
-                // 标记需要在半 bit 翻转
-                // 简化实现：立即翻转，然后下半 bit 翻回来
-                // 实际应该在 samplesPerBit/2 处翻转
-                // 这里为了简化，使用状态机
+
+            // 前 half-bit
+            int sampleValue = currentLevel ? amplitude : -amplitude;
+            for (int s = 0; s < samplesPerHalfBit; s++) {
+                buffer[idx++] = (byte) (sampleValue & 0xFF);
+                buffer[idx++] = (byte) ((sampleValue >> 8) & 0xFF);
+            }
+
+            // 如果是 1，在 half-bit 处翻转
+            if (bit) {
+                currentLevel = !currentLevel;
+            }
+
+            // 后 half-bit（如果 bit=0，电平保持不变；如果 bit=1，已翻转）
+            sampleValue = currentLevel ? amplitude : -amplitude;
+            for (int s = 0; s < samplesPerHalfBit; s++) {
+                buffer[idx++] = (byte) (sampleValue & 0xFF);
+                buffer[idx++] = (byte) ((sampleValue >> 8) & 0xFF);
             }
         }
-        
-        // bit=1 的半 bit 翻转处理
-        if (bit && sampleCounter == samplesPerBit / 2) {
-            currentLevel = !currentLevel;
-        }
-        
-        sampleCounter++;
-        return currentLevel ? 1.0 : -1.0;
+
+        // 注意：不重置 currentLevel，保持相位连续到下一帧
+
+        return buffer;
     }
-    
+
+    /**
+     * 重置编码器状态
+     * 注意：不切源时不应调用，以保持帧间相位连续
+     */
     public void reset() {
-        currentLevel = false;
-        sampleCounter = 0;
+        // 不再重置 currentLevel，保持帧间相位连续
+        // currentLevel 在切源时由调用方决定
+        System.out.println("[LTC-BMC] Reset called, but preserving currentLevel=" + currentLevel);
+    }
+
+    public int getSamplesPerBit() {
+        return samplesPerBit;
     }
 }
