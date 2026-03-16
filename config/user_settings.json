@@ -32,7 +32,7 @@
     },
     "titanApi": {
       "versionMode": "auto",
-      "enabled": true,
+      "enabled": false,
       "rateLimitMs": 500.0,
       "ip": "192.168.100.127",
       "masterIndices": [
@@ -55,7 +55,7 @@
       "onlyWhenPlaying": true
     },
     "timecode": {
-      "sourcePlayer": 2.0
+      "sourcePlayer": 1.0
     }
   },
   "ai": {

@@ -82,7 +82,10 @@ public class TimecodeCore implements Runnable {
 
     public void setManualTestMode(boolean enabled) {
         if (manualTestMode == enabled) return;
+
+        String oldState = currentState;
         manualTestMode = enabled;
+
         if (enabled) {
             currentState = "PLAYING";
             anchorFrame = 0;
@@ -90,6 +93,11 @@ public class TimecodeCore implements Runnable {
         } else {
             currentState = "STOPPED";
             anchorFrame = 0;
+        }
+
+        // 通知状态变化
+        if (!currentState.equals(oldState)) {
+            notifyStateChange(oldState, currentState);
         }
     }
 
