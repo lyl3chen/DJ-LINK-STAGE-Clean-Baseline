@@ -1,26 +1,25 @@
 package dbclient.input;
 
+import dbclient.media.library.LocalLibraryService;
+import dbclient.media.model.AnalysisResult;
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
-import dbclient.media.player.BasicLocalPlaybackEngine;
 import dbclient.media.player.PlaybackEngine;
+
+import java.util.Optional;
 
 /**
  * 本地播放器输入源适配器
- * 接入 BasicLocalPlaybackEngine，不再是纯 stub
+ * 接入 PlaybackEngine 和 LocalLibraryService
  */
 public class LocalSourceInput implements SourceInput {
 
     private final PlaybackEngine playbackEngine;
-    private volatile TrackInfo currentTrack;
+    private final LocalLibraryService libraryService;
 
-    public LocalSourceInput() {
-        this.playbackEngine = new BasicLocalPlaybackEngine();
-    }
-
-    // 用于测试的构造函数（允许注入 mock engine）
-    public LocalSourceInput(PlaybackEngine engine) {
-        this.playbackEngine = engine;
+    public LocalSourceInput(PlaybackEngine playbackEngine, LocalLibraryService libraryService) {
+        this.playbackEngine = playbackEngine;
+        this.libraryService = libraryService;
     }
 
     @Override
@@ -63,16 +62,22 @@ public class LocalSourceInput implements SourceInput {
 
     @Override
     public double getSourceBpm() {
-        // 第一版：从 PlaybackStatus 获取 effectiveBpm
-        // 如果分析器还没实现，effectiveBpm 可能是默认值
+        // 策略：优先从 PlaybackStatus 获取，其次从曲库分析结果获取
         PlaybackStatus status = playbackEngine.getStatus();
-        if (status == null) {
-            return 0.0;
+        if (status != null && status.getEffectiveBpm() > 0) {
+            return status.getEffectiveBpm();
         }
 
-        // 如果有 effectiveBpm 就用，否则返回 0 表示未知
-        double bpm = status.getEffectiveBpm();
-        return bpm > 0 ? bpm : 0.0;
+        // 从曲库分析结果获取
+        String trackId = getCurrentTrackId();
+        if (trackId != null && libraryService != null) {
+            Optional<AnalysisResult> analysis = libraryService.getAnalysis(trackId);
+            if (analysis.isPresent() && analysis.get().getBpm() != null) {
+                return analysis.get().getBpm();
+            }
+        }
+
+        return 0.0; // unknown
     }
 
     @Override
@@ -91,8 +96,22 @@ public class LocalSourceInput implements SourceInput {
         if (track != null) {
             return track;
         }
-        // 备用：返回缓存的 currentTrack
-        return currentTrack;
+
+        // 从曲库查询
+        String trackId = getCurrentTrackId();
+        if (trackId != null && libraryService != null) {
+            return libraryService.getTrack(trackId).orElse(null);
+        }
+
+        return null;
+    }
+
+    private String getCurrentTrackId() {
+        PlaybackStatus status = playbackEngine.getStatus();
+        if (status == null) {
+            return null;
+        }
+        return status.getCurrentTrackId();
     }
 
     @Override
@@ -100,10 +119,9 @@ public class LocalSourceInput implements SourceInput {
         return 1; // 本地播放器固定为 1
     }
 
-    // ====== 播放控制方法（供上层调用）======
+    // ====== 播放控制方法 ======
 
     public void load(TrackInfo track) {
-        this.currentTrack = track;
         playbackEngine.load(track);
     }
 
@@ -127,17 +145,15 @@ public class LocalSourceInput implements SourceInput {
         return playbackEngine.getStatus();
     }
 
-    /**
-     * 关闭播放器，释放资源
-     */
     public void close() {
         playbackEngine.close();
     }
 
-    /**
-     * 获取底层 PlaybackEngine（用于测试或高级操作）
-     */
     public PlaybackEngine getPlaybackEngine() {
         return playbackEngine;
+    }
+
+    public LocalLibraryService getLibraryService() {
+        return libraryService;
     }
 }

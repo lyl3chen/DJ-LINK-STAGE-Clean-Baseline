@@ -14,6 +14,7 @@ dbclient/web/WebServer$DjSectionsHandler.class
 dbclient/sync/drivers/AudioDeviceEnumerator$AudioDevice.class
 dbclient/media/model/PlaybackStatus.class
 dbclient/websocket/JettyServer$WsEndpoint.class
+dbclient/media/analysis/BasicAudioAnalyzer.class
 dbclient/media/analysis/AudioAnalyzer.class
 dbclient/ai/AiAgentService.class
 dbclient/sync/timecode/TimecodeCore$TimecodeStateListener.class
@@ -47,6 +48,7 @@ dbclient/web/WebServer.class
 dbclient/media/model/TrackInfo$Builder.class
 dbclient/media/model/AnalysisResult.class
 dbclient/websocket/EventPusher$WsEndpoint.class
+dbclient/media/library/LocalLibraryService.class
 dbclient/sync/drivers/AbletonLinkDriver.class
 dbclient/media/model/AnalysisStatus.class
 dbclient/websocket/JettyServer.class
@@ -63,6 +65,7 @@ dbclient/sync/OutputDriver.class
 dbclient/web/WebServer$DjWaveformHandler.class
 dbclient/web/WebServer$DjCuesHandler.class
 dbclient/sync/timecode/PlayerEvent.class
+dbclient/media/library/InMemoryTrackRepository.class
 dbclient/sync/drivers/MidiDeviceEnumerator$MidiPort.class
 dbclient/sync/drivers/AudioDeviceEnumerator.class
 dbclient/web/WebServer$DjTrackHandler.class

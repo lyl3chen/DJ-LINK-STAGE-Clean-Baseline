@@ -174,7 +174,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             .state(currentState)
             .positionMs(currentPositionMs)
             .durationMs(currentTrack != null ? currentTrack.getDurationMs() : 0)
-            .effectiveBpm(currentTrack != null ? currentTrack.getDurationMs() / 1000.0 : 0) // 简化：无 BPM 分析
+            .effectiveBpm(0.0) // BPM 未知时返回 0.0，由上层处理 unknown 策略
             .pitch(1.0)
             .currentTrackId(currentTrack != null ? currentTrack.getTrackId() : null)
             .build();
