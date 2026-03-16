@@ -1,45 +1,84 @@
 # DECISIONS.md - 关键技术决策记录
 
-## 2026-03-15 关键决策
+## 2026-03-15 决策（已执行）
 
 ### LTC/MTC 彻底下线清理
 
-**决策**: 彻底下线并清理 LTC/MTC 相关代码，不再修补
-
-**原因**:
-1. 长期修改未能收敛
-2. 代码污染严重
-3. 新旧模块并存过久
-4. 临时补丁、调试逻辑、过渡实现、历史残留过多
-5. 当前大模型能力不足以在现有基础上可靠收敛
+**状态**: ✅ 已完成清理并重建
 
 **执行操作**:
-1. 删除 LtcDriver.java
-2. 删除 MtcDriver.java
-3. 清理 SyncOutputManager 中的 LTC/MTC 注册入口
-4. 清理 WebUI 中的 LTC/MTC 配置卡片和状态显示
-5. 创建 TIMECODE_REBUILD_REQUIREMENTS.md 记录后续实现规格
-
-**保留模块**:
-- AbletonLinkDriver
-- ConsoleApiDriver
-- Titan API
-- MA2 Telnet
+1. ✅ 删除旧 LtcDriver.java / MtcDriver.java
+2. ✅ 清理 SyncOutputManager 旧入口
+3. ✅ 清理 WebUI 旧配置
 
 ---
 
-## 后续重新实现原则
+## 2026-03-16 决策（当前状态）
 
-**必须遵循** (记录在 TIMECODE_REBUILD_REQUIREMENTS.md):
+### LTC/MTC 重建完成
 
-1. 使用本地单调时钟 (monotonic clock) 作为时间推进基础
-2. 不允许 wall-clock 式反复重贴
-3. 只允许在明确事件发生时重锚
-4. LTC 与 MTC 共用同一套时间源核心
-5. 输出层只负责编码与发送，不负责决定时间推进
-6. 必须明确区分暂停/停止/播放状态
+**状态**: ✅ 已实现并验证
+
+**实现规格**:
+
+1. **独立架构设计**
+   - TimecodeCore 完全独立于 SyncOutputManager
+   - 两者有各自的 sourcePlayer 配置
+   - API 区分: `sourcePlayer` (外层) vs `tcSourcePlayer` (timecode 内)
+
+2. **时间推进机制**
+   - 使用本地单调时钟 (System.nanoTime)
+   - 25fps 独立线程均匀输出
+   - 事件驱动重锚（非实时贴合 CDJ）
+
+3. **重锚策略**
+   - 明确事件触发: PLAY_STARTED, RESUMED, PAUSED, STOPPED, TIME_JUMPED, TRACK_CHANGED, DRIFT_TOO_LARGE
+   - 跳变阈值: 10帧 (0.4s)
+   - 漂移阈值: 125帧 (5s)
+
+4. **停止态策略**
+   - LTC: 发送静音帧（全0样本），不发送 00:00:00:00
+   - MTC: Quarter Frame 序列暂停
+
+5. **共享核心**
+   - LTC 和 MTC 共用 TimecodeCore
+   - 确保两者时间完全一致
+
+6. **编码实现**
+   - LTC: BCD LSB-first, sync word 0x3FFD, BMC 调制
+   - MTC: Quarter Frame F1 xx 格式
+   - 严格对照 x42/libltc 线序
+
+7. **手动测试模式**
+   - 脱离 CDJ 播放源
+   - 固定从 00:00:00:00 线性推进
+   - 用于独立测试时间码输出
 
 ---
 
-**文档版本**: 1.1
-**最后更新**: 2026-03-15 04:30 GMT+8
+## 关键文件
+
+| 文件 | 职责 |
+|------|------|
+| `TimecodeCore.java` | 时间码核心（状态管理、重锚逻辑、时钟推进） |
+| `PlayerEventDetector.java` | 播放器事件检测 |
+| `LtcDriver.java` | LTC 音频输出驱动 |
+| `LtcFrameEncoder.java` | 80-bit LTC 帧编码 |
+| `LtcBmcEncoder.java` | BMC 调制编码 |
+| `MtcDriver.java` | MTC MIDI 输出驱动 |
+| `AudioDeviceEnumerator.java` | 音频设备枚举 |
+| `MidiDeviceEnumerator.java` | MIDI 端口枚举 |
+
+---
+
+## API 变更记录
+
+### 2026-03-16
+- `timecode.sourcePlayer` → `timecode.tcSourcePlayer`（避免与外层 sourcePlayer 混淆）
+- 添加 `timecode.manualTestMode` 字段
+- 添加 LTC 诊断字段: `writeInterval`, `bufferOccupancy`, `underrunCount`, `frameDelta`
+
+---
+
+**文档版本**: 2.0
+**最后更新**: 2026-03-16 GMT+8

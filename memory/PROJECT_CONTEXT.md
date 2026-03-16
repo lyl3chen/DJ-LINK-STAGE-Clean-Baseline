@@ -5,7 +5,7 @@
 **项目名称**: DJ LINK STAGE  
 **项目定位**: 面向演出场景的播放状态中枢、同步输出平台与事件触发平台  
 **GitHub 仓库**: https://github.com/lyl3chen/DJ-LINK-STAGE-Clean  
-**当前 Commit**: 43867ca  
+**当前 Commit**: `2f3041e`  
 **项目根目录**: /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/
 
 ## 项目架构
@@ -18,10 +18,6 @@
 4. **事件触发核心** - 离散事件检测与触发
 5. **输出适配层** - 外部系统输出
 6. **表现与控制层** - WebUI / API
-
-### 详细架构说明
-
-参见文档：`PROJECT_ARCHITECTURE.md`
 
 ## 核心模块
 
@@ -44,29 +40,111 @@
 
 ### 当前输出模块
 
-- AbletonLinkDriver - Ableton Link 同步
-- TitanApiDriver - Titan API 同步
-- Ma2TelnetClient - MA2 Telnet 同步
-- ConsoleApiDriver - Console API 同步
+- **LtcDriver** - LTC (SMPTE Timecode) 音频输出
+- **MtcDriver** - MTC (MIDI Timecode) MIDI 输出
+- **AbletonLinkDriver** - Ableton Link 同步
+- **TitanApiDriver** - Titan API 同步
+- **Ma2BpmDriver** - MA2 Telnet 同步
+- **ConsoleApiDriver** - Console API 同步
 
-### 表现与控制层
+---
 
-- WebServer / JettyServer
-- EventPusher
-- WebUI
+## 时间码模块 (TimecodeCore)
 
-## 时间码模块
+### 架构设计
 
-### 当前状态
+```
+┌─────────────────────────────────────────────────────────┐
+│              SyncOutputManager                          │
+│  ├─ sourcePlayer / sourceState ──► 显示/其他驱动         │
+│  │                                                   │
+│  └─ TimecodeCore ─────────────────► LTC/MTC 驱动       │
+│       ├─ 独立 sourcePlayer (tcSourcePlayer)           │
+│       ├─ 事件驱动的重锚逻辑                            │
+│       └─ 本地单调时钟推进                               │
+└─────────────────────────────────────────────────────────┘
+```
 
-LTC / MTC 已从仓库中完全清除，准备从 0 重建。
+### 关键设计原则
 
-### 重建原则
+1. **完全独立**: TimecodeCore 与 SyncOutputManager 的播放器选择完全独立
+2. **事件驱动重锚**: 只在明确事件发生时重置时间锚点
+3. **本地时钟推进**: 使用单调时钟 (nanoTime) 线性推进，不实时贴合 CDJ
+4. **共享核心**: LTC 和 MTC 共用同一个 TimecodeCore，确保时间一致
 
-- LTC 与 MTC 必须共用同一时间源核心
-- 输出层只负责编码和发送
-- 不得各自维护独立时间推进逻辑
-- 必须使用本地单调时钟或等价稳定时基
+### API 状态字段
+
+```json
+{
+  "sourceState": "PLAYING",      // SyncOutputManager 状态
+  "sourcePlayer": 1,              // SyncOutputManager 选择的播放器
+  "timecode": {
+    "tcSourcePlayer": 2,          // TimecodeCore 选择的播放器（独立）
+    "state": "PLAYING",           // TimecodeCore 状态
+    "currentFrame": 2500,         // 当前帧号
+    "anchorFrame": 2400,          // 锚点帧
+    "manualTestMode": false       // 手动测试模式
+  }
+}
+```
+
+### 重锚触发条件
+
+| 事件 | 阈值/条件 | 行为 |
+|------|----------|------|
+| PLAY_STARTED | STOPPED → PLAYING | 重置锚点到当前时间 |
+| RESUMED | PAUSED → PLAYING | 重置锚点到当前时间 |
+| PAUSED | PLAYING → PAUSED | 冻结在当前帧 |
+| STOPPED | 任何 → STOPPED | 重置为 0 |
+| TIME_JUMPED | 跳变 > 10帧 (0.4s) | 重置锚点 |
+| TRACK_CHANGED | 切歌 | 重置锚点 |
+| DRIFT_TOO_LARGE | 累积漂移 > 125帧 (5s) | 重置锚点 |
+
+### 停止态策略
+
+- **LTC**: `zeroLatch` 触发后发送静音（全0样本），而不是 00:00:00:00 帧
+- **MTC**: 跟随 TimecodeCore 状态，停止时 Quarter Frame 序列暂停
+
+### 配置项
+
+```json
+{
+  "sync": {
+    "masterPlayer": 1,              // SyncOutputManager 播放器
+    "timecode": {
+      "sourcePlayer": 2             // TimecodeCore 播放器（独立）
+    },
+    "ltc": {
+      "enabled": true,
+      "deviceName": "PCH [plughw:0,0]",
+      "gainDb": -14,
+      "frameRate": 25,
+      "channelMode": "mono"           // mono / stereo-left / stereo-right / stereo-both
+    },
+    "mtc": {
+      "enabled": true,
+      "midiPort": "CH345 [hw:1,0,0]",
+      "frameRate": 25
+    }
+  }
+}
+```
+
+### 编码器实现
+
+- **LtcFrameEncoder**: 80-bit LTC 帧编码（BCD LSB-first，sync word 0x3FFD）
+- **LtcBmcEncoder**: BMC 调制（连续相位，bit=1 中点翻转）
+- **MtcDriver**: Quarter Frame MIDI 消息（F1 xx）
+
+### 诊断字段
+
+LTC 驱动提供实时输出链路诊断：
+- `writeInterval` - 写入间隔统计（min/max/avg ms）
+- `bufferOccupancy` - 音频缓冲占用（min/max/avg bytes）
+- `underrunCount` - 缓冲饥饿次数
+- `frameDelta` - 帧推进差异统计
+
+---
 
 ## 未来规划
 
@@ -85,4 +163,4 @@ LTC / MTC 已从仓库中完全清除，准备从 0 重建。
 
 ---
 
-**最后更新**: 2026-03-15 GMT+8
+**最后更新**: 2026-03-16 GMT+8
