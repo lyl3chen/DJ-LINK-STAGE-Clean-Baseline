@@ -1011,27 +1011,27 @@
       (devices || []).forEach((d, i) => {
         const name = (d && d.name) ? String(d.name) : '';
         if (!name) return;
-        // 显示格式: 设备名称 - 型号/描述
-        const label = (d && d.label) ? String(d.label) : name;
-        const desc = (d && d.desc) ? String(d.desc) : '';
-        const vendor = (d && d.vendor) ? String(d.vendor).split('/')[0] : ''; // 取厂商名第一部分
-        const mixerName = (d && d.mixerName) ? String(d.mixerName) : '';
         
-        // 提取型号信息
+        // 从 description 中提取型号信息
+        // 格式: "Direct Audio Device: HDA Intel PCH, ALC887-VD Digital, ..."
+        const description = (d && d.description) ? String(d.description) : '';
         let model = '';
-        if (mixerName && mixerName.includes('[')) {
-          model = mixerName.split('[')[0].trim();
-        } else if (desc) {
-          // 从描述中提取设备型号
-          const match = desc.match(/:\s*([^,]+)/);
-          if (match) model = match[1].trim();
+        
+        if (description) {
+          // 提取 "Direct Audio Device:" 后的内容
+          const match = description.match(/:\s*([^,]+),\s*([^,]+)/);
+          if (match) {
+            // match[1] = 厂商 (HDA Intel PCH)
+            // match[2] = 型号 (ALC887-VD Digital)
+            model = match[2].trim();
+          }
         }
         
         const o = document.createElement('option');
         o.value = name;
-        // 格式: 名称 - 型号/描述
-        o.textContent = model ? `${label} - ${model}` : label;
-        o.title = desc || mixerName; // 鼠标悬停显示完整信息
+        // 格式: 设备名称 - 型号
+        o.textContent = model ? `${name} - ${model}` : name;
+        o.title = description; // 鼠标悬停显示完整信息
         sel.appendChild(o);
       });
       // 如果没有设备，添加一个提示
