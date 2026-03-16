@@ -266,7 +266,10 @@ public class TimecodeCore implements Runnable {
 
             case PAUSED:
                 currentState = "PAUSED";
-                anchorFrame = newFrame;  // 冻结在此帧
+                // 只有当 newFrame > 0 时才冻结，避免 CDJ 暂停时 timeMs 为 null 导致 frame=0
+                if (newFrame > 0) {
+                    anchorFrame = newFrame;
+                }
                 break;
 
             case STOPPED:
@@ -282,7 +285,10 @@ public class TimecodeCore implements Runnable {
                     anchorFrame = newFrame;
                     anchorTimeNs = System.nanoTime();
                 } else if ("PAUSED".equals(currentState)) {
-                    anchorFrame = newFrame;
+                    // PAUSED 状态下只有 newFrame > 0 才更新，避免 timeMs 为 null 导致 frame=0
+                    if (newFrame > 0) {
+                        anchorFrame = newFrame;
+                    }
                 } else {
                     anchorFrame = 0;
                 }
