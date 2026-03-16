@@ -1008,25 +1008,39 @@
       const sel = document.getElementById('cfgLtcDevice');
       if (!sel) return;
       sel.innerHTML = '';
-      const def = document.createElement('option');
-      def.value = 'default';
-      def.textContent = '0. 系统默认输出 (default)';
-      sel.appendChild(def);
       (devices || []).forEach((d, i) => {
         const name = (d && d.name) ? String(d.name) : '';
-        const label = (d && d.label) ? String(d.label) : name;
         if (!name) return;
-        const hw = (d && d.hwId) ? String(d.hwId) : '';
-        const card = (d && d.card != null) ? Number(d.card) : null;
-        const dev = (d && d.device != null) ? Number(d.device) : null;
-        const code = hw || name;
-        const index = Number(d && d.index) || (i + 1);
-        const extra = (card != null && dev != null) ? ` card${card}/dev${dev}` : '';
+        // 显示格式: 设备名称 - 型号/描述
+        const label = (d && d.label) ? String(d.label) : name;
+        const desc = (d && d.desc) ? String(d.desc) : '';
+        const vendor = (d && d.vendor) ? String(d.vendor).split('/')[0] : ''; // 取厂商名第一部分
+        const mixerName = (d && d.mixerName) ? String(d.mixerName) : '';
+        
+        // 提取型号信息
+        let model = '';
+        if (mixerName && mixerName.includes('[')) {
+          model = mixerName.split('[')[0].trim();
+        } else if (desc) {
+          // 从描述中提取设备型号
+          const match = desc.match(/:\s*([^,]+)/);
+          if (match) model = match[1].trim();
+        }
+        
         const o = document.createElement('option');
         o.value = name;
-        o.textContent = `${index}. ${label}${extra} (${code})`;
+        // 格式: 名称 - 型号/描述
+        o.textContent = model ? `${label} - ${model}` : label;
+        o.title = desc || mixerName; // 鼠标悬停显示完整信息
         sel.appendChild(o);
       });
+      // 如果没有设备，添加一个提示
+      if (sel.innerHTML === '') {
+        const o = document.createElement('option');
+        o.value = 'default';
+        o.textContent = '未找到音频设备';
+        sel.appendChild(o);
+      }
       sel.value = selected || 'default';
       if (sel.value !== (selected || 'default')) sel.value = 'default';
     }
@@ -1035,19 +1049,34 @@
       const sel = document.getElementById('cfgMtcPort');
       if (!sel) return;
       sel.innerHTML = '';
-      const def = document.createElement('option');
-      def.value = 'default';
-      def.textContent = '0. 系统默认 MIDI 输出';
-      sel.appendChild(def);
       (devices || []).forEach((d, i) => {
         const name = (d && d.name) ? String(d.name) : '';
         if (!name) return;
-        const index = Number(d && d.index) || (i + 1);
+        const desc = (d && d.description) ? String(d.description) : '';
+        const vendor = (d && d.vendor) ? String(d.vendor) : '';
+        
+        // 提取型号信息
+        let model = '';
+        if (desc) {
+          // 从描述中提取型号
+          const match = desc.match(/^([^\/]+)/);
+          if (match) model = match[1].trim();
+        }
+        
         const o = document.createElement('option');
         o.value = name;
-        o.textContent = `${index}. ${name}`;
+        // 格式: 名称 - 型号
+        o.textContent = model ? `${name} - ${model}` : name;
+        o.title = desc; // 鼠标悬停显示完整信息
         sel.appendChild(o);
       });
+      // 如果没有设备，添加一个提示
+      if (sel.innerHTML === '') {
+        const o = document.createElement('option');
+        o.value = 'default';
+        o.textContent = '未找到 MIDI 设备';
+        sel.appendChild(o);
+      }
       sel.value = selected || 'default';
       if (sel.value !== (selected || 'default')) sel.value = 'default';
     }
