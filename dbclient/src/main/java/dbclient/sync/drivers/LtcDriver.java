@@ -246,7 +246,8 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
                     flushOnZeroLatch = false;
                 }
 
-                byte[] buffer = encodeFrame(frame);
+                // zeroLatch 时发送静音（全 0），而不是 LTC 00 帧
+                byte[] buffer = zeroLatch ? buildSilenceFrame() : encodeFrame(frame);
 
                 int availableBefore = line.available();
                 int bufferBytes = line.getBufferSize();
@@ -390,6 +391,13 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.S
         }
 
         return outputPcm;
+    }
+
+    private byte[] buildSilenceFrame() {
+        int channels = channelMode.equals("mono") ? 1 : 2;
+        int monoSamples = BITS_PER_FRAME * (SAMPLE_RATE / BITS_PER_SECOND); // 80 * 24 = 1920 @25fps/48k
+        int bytesPerSample = 2;
+        return new byte[monoSamples * bytesPerSample * channels];
     }
 
     private void openAudioDevice() throws Exception {
