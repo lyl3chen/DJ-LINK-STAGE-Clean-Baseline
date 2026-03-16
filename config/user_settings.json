@@ -7,7 +7,7 @@
     "enabled": true,
     "sourceMode": "manual",
     "timecodeSource": 2.0,
-    "masterPlayer": 2.0,
+    "masterPlayer": 1.0,
     "ltc": {
       "enabled": true,
       "fps": 25.0,

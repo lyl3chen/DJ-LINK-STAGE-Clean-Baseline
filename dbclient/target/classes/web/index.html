@@ -1098,7 +1098,7 @@
         const timecode = sync.timecode || {};
         const ltc = sync.ltc || {};
         const mtc = sync.mtc || {};
-        document.getElementById('cfgTimecodeSourcePlayer').value = String(timecode.sourcePlayer || 1);
+        document.getElementById('cfgTimecodeSourcePlayer').value = String(timecode.tcSourcePlayer || 1);
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);

@@ -215,7 +215,7 @@ public class TimecodeCore implements Runnable {
      */
     public Map<String, Object> getStatus() {
         return Map.of(
-            "sourcePlayer", sourcePlayer,
+            "tcSourcePlayer", sourcePlayer,
             "state", currentState,
             "anchorFrame", anchorFrame,
             "currentFrame", getCurrentFrame(),
