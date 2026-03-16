@@ -74,9 +74,15 @@ public class SyncOutputManager {
                 // 应用时间码核心配置
                 Map<String, Object> timecodeCfg = sync.get("timecode") instanceof Map 
                     ? (Map<String, Object>) sync.get("timecode") : Map.of();
+                
+                // 优先使用 timecode.sourcePlayer，其次使用 sync.masterPlayer
+                int sourcePlayer = 1;
                 if (timecodeCfg.get("sourcePlayer") instanceof Number) {
-                    timecodeCore.setSourcePlayer(((Number) timecodeCfg.get("sourcePlayer")).intValue());
+                    sourcePlayer = ((Number) timecodeCfg.get("sourcePlayer")).intValue();
+                } else if (sync.get("masterPlayer") instanceof Number) {
+                    sourcePlayer = ((Number) sync.get("masterPlayer")).intValue();
                 }
+                timecodeCore.setSourcePlayer(sourcePlayer);
                 
                 // 应用驱动配置
                 for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {

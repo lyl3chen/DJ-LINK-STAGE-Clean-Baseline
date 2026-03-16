@@ -32,11 +32,12 @@
     },
     "titanApi": {
       "versionMode": "auto",
-      "enabled": false,
+      "enabled": true,
       "rateLimitMs": 500.0,
-      "ip": "127.0.0.1",
+      "ip": "192.168.100.127",
       "masterIndices": [
-        0.0
+        0.0,
+        1.0
       ]
     },
     "ma2Telnet": {
@@ -54,7 +55,7 @@
       "onlyWhenPlaying": true
     },
     "timecode": {
-      "sourcePlayer": 2.0
+      "sourcePlayer": 1.0
     }
   },
   "ai": {

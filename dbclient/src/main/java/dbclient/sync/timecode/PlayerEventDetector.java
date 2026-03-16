@@ -83,7 +83,10 @@ public class PlayerEventDetector {
      * 标准化状态
      */
     private String normalizeState(String rawState, boolean playing) {
-        if (rawState == null) return "STOPPED";
+        if (rawState == null || rawState.isEmpty()) {
+            // 当 state 字段缺失时，根据 playing 标志判断
+            return playing ? "PLAYING" : "STOPPED";
+        }
         
         switch (rawState.toUpperCase()) {
             case "PLAYING":
