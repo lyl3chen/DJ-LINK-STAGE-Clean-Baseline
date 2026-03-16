@@ -265,10 +265,12 @@ public class TimecodeCore implements Runnable {
                 break;
 
             case PAUSED:
-                currentState = "PAUSED";
-                // 只有当 newFrame > 0 时才冻结，避免 CDJ 暂停时 timeMs 为 null 导致 frame=0
-                if (newFrame > 0) {
-                    anchorFrame = newFrame;
+                // 只有首次进入 PAUSED 才冻结，避免边界抖动反复更新
+                if (!"PAUSED".equals(currentState)) {
+                    currentState = "PAUSED";
+                    if (newFrame > 0) {
+                        anchorFrame = newFrame;
+                    }
                 }
                 break;
 
