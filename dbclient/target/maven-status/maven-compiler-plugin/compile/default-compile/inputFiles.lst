@@ -2,6 +2,7 @@
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/connection/DbConnection.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/timecode/PlayerEventDetector.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/DbClient.java
+/home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/MidiDeviceEnumerator.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/Ma2TelnetClient.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/OutputDriver.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/Main.java
@@ -17,6 +18,7 @@
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/LtcDriver.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/config/UserSettingsStore.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/AbletonLinkDriver.java
+/home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/AudioDeviceEnumerator.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/ai/AiAgentService.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/protocol/DbProtocol.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/packet/PacketBuilder.java

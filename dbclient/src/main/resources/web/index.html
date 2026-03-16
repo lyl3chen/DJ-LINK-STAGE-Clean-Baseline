@@ -665,7 +665,6 @@
         <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
         <div class="cfg-row"><label>Gain (dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" min="-20" max="0" /></div>
         <div class="cfg-row"><label>Frame Rate</label><select id="cfgLtcFrameRate"><option value="25" selected>25 fps</option></select></div>
-        <div class="cfg-row"><label>手动测试</label><button id="ltcManualTestBtn" class="scan-btn">开启测试</button></div>
         <div class="diag-card" id="ltcDiag">LTC: Disabled</div>
       </div>
 
@@ -682,6 +681,7 @@
       <div class="cfg-card">
         <h3>Timecode Source (LTC/MTC共用)</h3>
         <div class="cfg-row"><label>Source Player</label><select id="cfgTimecodeSourcePlayer"><option value="1" selected>Player 1</option><option value="2">Player 2</option><option value="3">Player 3</option><option value="4">Player 4</option></select></div>
+        <div class="cfg-row"><label>手动测试</label><button id="tcManualTestBtn" class="scan-btn">开启测试</button></div>
         <div class="diag-card" id="tcCoreDiag">Timecode Core: Stopped</div>
       </div>
 
@@ -1105,7 +1105,28 @@
 
         document.getElementById('aiApiKey').value = (userSettings.ai && userSettings.ai.api_key) || '';
         document.getElementById('aiRules').textContent = JSON.stringify(userSettings.aiRules || [], null, 2);
+
+        // 加载可用设备列表
+        await loadAvailableDevices();
       } catch (_) {}
+    }
+
+    async function loadAvailableDevices() {
+      try {
+        // 获取音频设备列表
+        const audioR = await fetch('/api/devices/audio');
+        const audioData = await audioR.json();
+        const currentAudio = document.getElementById('cfgLtcDevice')?.value || 'default';
+        refreshAudioDeviceOptions(audioData.devices || [], currentAudio);
+
+        // 获取 MIDI 端口列表
+        const midiR = await fetch('/api/devices/midi');
+        const midiData = await midiR.json();
+        const currentMidi = document.getElementById('cfgMtcPort')?.value || 'default';
+        refreshMidiDeviceOptions(midiData.ports || [], currentMidi);
+      } catch (e) {
+        console.error('Failed to load devices:', e);
+      }
     }
 
     async function saveIoConfig() {
@@ -1197,9 +1218,9 @@
       } catch (e) {}
     }
 
-    async function toggleLtcManualTest() {
+    async function toggleTcManualTest() {
       try {
-        const btn = document.getElementById('ltcManualTestBtn');
+        const btn = document.getElementById('tcManualTestBtn');
         const willEnable = (btn?.textContent || '').includes('开启');
         const r = await fetch('/api/timecode/manual-test', {
           method: 'POST',
@@ -1224,7 +1245,7 @@
 
         // LTC/MTC 状态显示已移除
         const tc = j.timecode || {};
-        const testBtn = document.getElementById('ltcManualTestBtn');
+        const testBtn = document.getElementById('tcManualTestBtn');
         if (testBtn) {
           const isOn = tc.manualTestMode;
           testBtn.textContent = isOn ? '关闭测试' : '开启测试';
@@ -1685,10 +1706,11 @@
     }
 
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
-    document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
+    document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadAvailableDevices());
+    document.getElementById('cfgMtcPort')?.addEventListener('mousedown', () => loadAvailableDevices());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
     document.getElementById('ma2SendTestBtn')?.addEventListener('click', sendMa2Test);
-    document.getElementById('ltcManualTestBtn')?.addEventListener('click', toggleLtcManualTest);
+    document.getElementById('tcManualTestBtn')?.addEventListener('click', toggleTcManualTest);
     document.getElementById('cfgMa2Pass')?.addEventListener('input', () => { ma2PassDirty = true; });
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);
