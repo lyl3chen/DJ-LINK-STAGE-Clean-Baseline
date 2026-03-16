@@ -10,17 +10,22 @@ import java.io.IOException;
 
 /**
  * 基础音频分析器实现
- * 使用 Java Sound API 读取音频，简单 BPM 估算
  * 
- * 当前能力：
- * - 读取音频文件获取 durationMs
- * - 简单 BPM 估算（基于音频长度和节拍计数）
- * - 明确表达 success/failed/unknown
+ * 当前实现：
+ * - 使用 Java Sound API（javax.sound.sampled）读取音频文件
+ * - 可获取基础音频信息：durationMs、sampleRate、channels
+ * - BPM 分析：未实现，返回 null（unknown）
  * 
  * 限制：
- * - 第一版 BPM 分析较粗糙，可能不准确
- * - 仅支持 WAV/AIFF/AU（Java Sound 原生支持）
- * - waveform / beat grid 未实现（beatGridAvailable = false）
+ * - 仅支持 WAV/AIFF/AU（Java Sound API 原生支持）
+ * - MP3 需要额外解码器（如 JLayer），当前不支持
+ * - BPM 分析未实现，返回 null
+ * - waveform / beat grid 未实现
+ * 
+ * 后续扩展：
+ * - 可接入 TarsosDSP 实现真实 BPM 检测
+ * - 可接入 JLayer 支持 MP3 格式
+ * - 可生成波形预览和节拍网格
  */
 public class BasicAudioAnalyzer implements AudioAnalyzer {
 
@@ -55,18 +60,17 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
 
             stream.close();
 
-            // BPM 分析：第一版简化处理
-            // 实际 BPM 分析需要 onset 检测、节拍跟踪等复杂算法
-            // 这里先用简单启发式或返回 unknown
-            Integer bpm = estimateBpm(file, format, durationMs);
+            // BPM 分析：当前版本未实现，返回 null（unknown）
+            // 后续可接入 TarsosDSP OnsetHandler 实现真实 BPM 检测
+            Integer bpm = null; // unknown
 
             return AnalysisResult.builder()
                 .success(true)
                 .analysisStatus(AnalysisStatus.COMPLETED)
-                .bpm(bpm) // 可能为 null（unknown）
+                .bpm(bpm) // null 表示 unknown
                 .durationMs(durationMs)
-                .waveformCachePath(null) // 第一版不生成波形
-                .beatGridAvailable(false) // 第一版不生成 beat grid
+                .waveformCachePath(null) // 未实现
+                .beatGridAvailable(false) // 未实现
                 .analyzedAt(System.currentTimeMillis())
                 .build();
 
@@ -74,7 +78,7 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
             return AnalysisResult.builder()
                 .success(false)
                 .analysisStatus(AnalysisStatus.FAILED)
-                .errorMessage("Unsupported audio format: " + e.getMessage())
+                .errorMessage("Unsupported audio format. Only WAV/AIFF/AU supported. " + e.getMessage())
                 .build();
         } catch (Exception e) {
             return AnalysisResult.builder()
@@ -85,31 +89,16 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
         }
     }
 
-    /**
-     * 简单 BPM 估算
-     * 第一版：基于文件名启发式或返回 null（unknown）
-     * 后续可接入 TarsosDSP 的 OnsetHandler 进行真实 BPM 检测
-     */
-    private Integer estimateBpm(File file, AudioFormat format, long durationMs) {
-        // 第一版策略：不猜测，返回 null 表示 unknown
-        // 避免返回错误 BPM
-        return null;
-
-        // 后续可替换为：
-        // - TarsosDSP OnsetHandler 检测 onset
-        // - 计算 onset 间隔的中位数/众数
-        // - 转换为 BPM
-    }
-
     @Override
     public String getAnalyzerName() {
-        return "BasicAudioAnalyzer (Java Sound API)";
+        return "BasicAudioAnalyzer (Java Sound API only, BPM not implemented)";
     }
 
     @Override
     public boolean supportsFormat(String fileExtension) {
         if (fileExtension == null) return false;
         String ext = fileExtension.toLowerCase();
+        // 仅支持 Java Sound API 原生格式
         return ext.equals("wav") || ext.equals("aiff") || ext.equals("au");
     }
 }

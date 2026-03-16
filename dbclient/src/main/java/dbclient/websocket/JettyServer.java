@@ -2,6 +2,10 @@ package dbclient.websocket;
 
 import dbclient.ai.AiAgentService;
 import dbclient.config.UserSettingsStore;
+import dbclient.input.LocalSourceInput;
+import dbclient.media.library.LocalLibraryService;
+import dbclient.media.model.TrackInfo;
+import dbclient.media.player.BasicLocalPlaybackEngine;
 import dbclient.sync.SyncOutputManager;
 import dbclient.sync.drivers.AudioDeviceEnumerator;
 import dbclient.sync.drivers.MidiDeviceEnumerator;
@@ -48,6 +52,13 @@ public class JettyServer {
     private static Object playersStateCache;
     private static final SyncOutputManager syncOutputManager = SyncOutputManager.getInstance();
     private static final UserSettingsStore settingsStore = UserSettingsStore.getInstance();
+    
+    // Local player test service (isolated from main DJ Link flow)
+    private static final LocalLibraryService localLibraryService = new LocalLibraryService();
+    private static final LocalSourceInput localSourceInput = new LocalSourceInput(
+        new BasicLocalPlaybackEngine(), 
+        localLibraryService
+    );
     private static final AiAgentService aiAgentService = AiAgentService.getInstance();
     
     public static void start(int port) throws Exception {
@@ -256,6 +267,84 @@ public class JettyServer {
                         )));
                         return;
                     }
+                    // ====== Local Player Test APIs (isolated from main flow) ======
+                    if (path.equals("/api/local/import")) {
+                        String filePath = String.valueOf(payload.getOrDefault("filePath", ""));
+                        if (filePath.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "filePath is required")));
+                            return;
+                        }
+                        // Check format support
+                        String lower = filePath.toLowerCase();
+                        if (!lower.endsWith(".wav") && !lower.endsWith(".aiff") && !lower.endsWith(".au")) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, 
+                                "error", "Unsupported format. Only WAV/AIFF/AU supported. MP3 requires additional decoder.")));
+                            return;
+                        }
+                        TrackInfo track = localLibraryService.importFile(filePath);
+                        if (track == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Import failed")));
+                            return;
+                        }
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "track", track)));
+                        return;
+                    }
+                    if (path.equals("/api/local/tracks")) {
+                        var tracks = localLibraryService.getAllTracks();
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
+                        return;
+                    }
+                    if (path.equals("/api/local/load")) {
+                        String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
+                        if (trackId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        var trackOpt = localLibraryService.getTrack(trackId);
+                        if (trackOpt.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
+                            return;
+                        }
+                        localSourceInput.load(trackOpt.get());
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track loaded")));
+                        return;
+                    }
+                    if (path.equals("/api/local/play")) {
+                        localSourceInput.play();
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Playing")));
+                        return;
+                    }
+                    if (path.equals("/api/local/pause")) {
+                        localSourceInput.pause();
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Paused")));
+                        return;
+                    }
+                    if (path.equals("/api/local/stop")) {
+                        localSourceInput.stop();
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Stopped")));
+                        return;
+                    }
+                    if (path.equals("/api/local/seek")) {
+                        Object posObj = payload.get("positionMs");
+                        long positionMs = posObj instanceof Number ? ((Number) posObj).longValue() : 0;
+                        localSourceInput.seek(positionMs);
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "positionMs", positionMs)));
+                        return;
+                    }
+                    if (path.equals("/api/local/status")) {
+                        var status = localSourceInput.getPlaybackStatus();
+                        var track = localSourceInput.getCurrentTrack();
+                        double bpm = localSourceInput.getSourceBpm();
+                        response.getWriter().print(gson.toJson(Map.of(
+                            "ok", true,
+                            "status", status,
+                            "currentTrack", track,
+                            "sourceBpm", bpm,
+                            "sourceType", localSourceInput.getType()
+                        )));
+                        return;
+                    }
+                    // ====== End Local Player Test APIs ======
                     response.setStatus(404);
                     response.getWriter().print(gson.toJson(Map.of("error", "unknown endpoint")));
                 } catch (Exception e) {
