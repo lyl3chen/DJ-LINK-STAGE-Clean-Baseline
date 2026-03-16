@@ -1,103 +1,91 @@
 package dbclient.sync.drivers;
 
 /**
- * LtcBmcEncoder - 标准 BMC (Biphase Mark Code) 编码器
+ * LTC BMC 编码器（连续相位）。
  *
- * 严格遵循 SMPTE-12M BMC 规则和 x42/libltc 实现：
- * - 每个 bit 周期开始时必须翻转（transition）
- * - bit = 1 时，在 bit 周期中间（half-bit）再翻转一次
- * - bit = 0 时，中间不翻转
- * - 相位在帧之间保持连续
- *
- * 时序（25fps, 48kHz）：
- * - 每帧 80 bit
- * - bit rate = 80 bits × 25 fps = 2000 bits/second
- * - 每 bit 周期 = 48000 / 2000 = 24 samples
- * - half-bit = 12 samples
+ * 规则：
+ * - 每个 bit 起始必翻转
+ * - bit=1 在 half-bit 处再翻转
+ * - bit=0 half-bit 不翻转
  */
 public class LtcBmcEncoder {
 
-    private final int sampleRate;
-    private final int bitsPerSecond;
+    private static final int FRAME_BITS = 80;
+
     private final int samplesPerBit;
     private final int samplesPerHalfBit;
 
-    // BMC 状态：当前电平（在帧之间保持连续）
-    private boolean currentLevel;
+    // 连续相位状态（帧间保持）
+    private boolean currentLevel = true;
 
     public LtcBmcEncoder(int sampleRate, int bitsPerSecond) {
-        this.sampleRate = sampleRate;
-        this.bitsPerSecond = bitsPerSecond;
+        if (sampleRate <= 0 || bitsPerSecond <= 0) {
+            throw new IllegalArgumentException("invalid sampleRate/bitsPerSecond");
+        }
+        if (sampleRate % bitsPerSecond != 0) {
+            throw new IllegalArgumentException(
+                "sampleRate must be divisible by bitsPerSecond for exact LTC timing: "
+                    + sampleRate + "/" + bitsPerSecond);
+        }
+
         this.samplesPerBit = sampleRate / bitsPerSecond;
-        this.samplesPerHalfBit = samplesPerBit / 2;
-        this.currentLevel = true; // 初始从高电平开始（参考文件第一个样本是负值，翻转后为负）
+        if ((this.samplesPerBit % 2) != 0) {
+            throw new IllegalArgumentException("samplesPerBit must be even for exact half-bit: " + this.samplesPerBit);
+        }
+        this.samplesPerHalfBit = this.samplesPerBit / 2;
     }
 
-    /**
-     * 编码完整的 80-bit LTC 帧为 PCM 样本
-     *
-     * 遵循 x42/libltc 的编码规则：
-     * - 每个 bit 开始前翻转
-     * - bit=1 时在 half-bit 再翻转
-     * - bit=0 时不翻转
-     * - 保持相位连续到下一帧
-     *
-     * @param frameBits 80-bit LTC 帧（LSB first 顺序）
-     * @param gain 增益（0.0 - 1.0）
-     * @return PCM 样本数组（16-bit signed little-endian）
-     */
     public byte[] encodeFrame(boolean[] frameBits, double gain) {
-        int totalSamples = 80 * samplesPerBit;
-        byte[] buffer = new byte[totalSamples * 2]; // 16-bit PCM
-        int idx = 0;
+        if (frameBits == null || frameBits.length != FRAME_BITS) {
+            throw new IllegalArgumentException("frameBits length must be 80");
+        }
 
-        // 参考值：从标准 LTC WAV 文件分析
-        // -16422 和 +16422 是标准幅度值
-        int amplitude = (int) (16422 * gain);
+        if (gain < 0) gain = 0;
+        int amplitude = (int) Math.round(16422.0 * gain);
 
+        int totalSamples = FRAME_BITS * samplesPerBit;
+        byte[] pcm = new byte[totalSamples * 2];
+        int p = 0;
 
-        for (int bitIdx = 0; bitIdx < 80; bitIdx++) {
-            boolean bit = frameBits[bitIdx];
+        for (int i = 0; i < FRAME_BITS; i++) {
+            boolean bit = frameBits[i];
 
-            // 每个 bit 开始时翻转（这是 BMC 的规则）
+            // bit start transition
             currentLevel = !currentLevel;
+            short firstHalf = (short) (currentLevel ? amplitude : -amplitude);
+            p = writeConstantSamples(pcm, p, firstHalf, samplesPerHalfBit);
 
-            // 前 half-bit
-            int sampleValue = currentLevel ? amplitude : -amplitude;
-            for (int s = 0; s < samplesPerHalfBit; s++) {
-                buffer[idx++] = (byte) (sampleValue & 0xFF);
-                buffer[idx++] = (byte) ((sampleValue >> 8) & 0xFF);
-            }
-
-            // 如果是 1，在 half-bit 处翻转
+            // mid-bit transition only for bit=1
             if (bit) {
                 currentLevel = !currentLevel;
             }
-
-            // 后 half-bit（如果 bit=0，电平保持不变；如果 bit=1，已翻转）
-            sampleValue = currentLevel ? amplitude : -amplitude;
-            for (int s = 0; s < samplesPerHalfBit; s++) {
-                buffer[idx++] = (byte) (sampleValue & 0xFF);
-                buffer[idx++] = (byte) ((sampleValue >> 8) & 0xFF);
-            }
+            short secondHalf = (short) (currentLevel ? amplitude : -amplitude);
+            p = writeConstantSamples(pcm, p, secondHalf, samplesPerHalfBit);
         }
 
-        // 注意：不重置 currentLevel，保持相位连续到下一帧
-
-        return buffer;
+        return pcm;
     }
 
-    /**
-     * 重置编码器状态
-     * 注意：不切源时不应调用，以保持帧间相位连续
-     */
     public void reset() {
-        // 不再重置 currentLevel，保持帧间相位连续
-        // currentLevel 在切源时由调用方决定
-        System.out.println("[LTC-BMC] Reset called, but preserving currentLevel=" + currentLevel);
+        // 保持连续相位，不强制回到固定电平
     }
 
     public int getSamplesPerBit() {
         return samplesPerBit;
+    }
+
+    public int getSamplesPerHalfBit() {
+        return samplesPerHalfBit;
+    }
+
+    private int writeConstantSamples(byte[] out, int offset, short value, int count) {
+        byte lo = (byte) (value & 0xFF);
+        byte hi = (byte) ((value >> 8) & 0xFF);
+        int p = offset;
+        for (int i = 0; i < count; i++) {
+            out[p++] = lo;
+            out[p++] = hi;
+        }
+        return p;
     }
 }

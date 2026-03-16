@@ -1,164 +1,97 @@
 package dbclient.sync.drivers;
 
 /**
- * LtcFrameEncoder - 标准 SMPTE LTC 帧编码器
- * 
- * 严格遵循 SMPTE-12M 标准：
- * - 80 bit 固定帧结构
- * - BCD 编码时间码（按 LTC 线序：LSB first）
- * - 标准 sync word (0x3FFD，按 LTC 线序写入)
- * - 所有时间字段按 LTC bit 线序输出
+ * LTC 80-bit 帧编码器（按 x42/libltc 常用 25fps non-drop 线序）
+ *
+ * 线序规则：
+ * - frame[] 下标即线路发送顺序（bit0 -> bit79）
+ * - BCD 字段按 LSB-first 写入到各自 bit 槽位
+ * - Sync Word 固定 0x3FFD 的线路位序：0011111111111101
  */
 public class LtcFrameEncoder {
-    
-    private final double frameRate;
-    
+
+    private static final int FRAME_BITS = 80;
+    private static final String SYNC_WORD_BITS = "0011111111111101"; // bits[64..79]
+
+    private final int fps;
+
     public LtcFrameEncoder(double frameRate) {
-        this.frameRate = frameRate;
+        this.fps = (int) Math.round(frameRate);
+        if (this.fps <= 0) throw new IllegalArgumentException("invalid frame rate: " + frameRate);
     }
-    
+
     /**
-     * 将时间码编码为 80-bit LTC 帧
-     * 
-     * SMPTE LTC 帧结构（bits 0-79，LSB first 传输）：
-     * - Bits 0-3: Frame Units BCD
-     * - Bits 4-7: User Bits 0-3
-     * - Bits 8-9: Frame Tens BCD
-     * - Bit 10: Drop Frame Flag
-     * - Bit 11: Color Frame Flag
-     * - Bits 12-15: User Bits 4-7
-     * - Bits 16-19: Seconds Units BCD
-     * - Bits 20-23: User Bits 8-11
-     * - Bits 24-26: Seconds Tens BCD
-     * - Bit 27: Binary Group Flag 0
-     * - Bits 28-31: User Bits 12-15
-     * - Bits 32-35: Minutes Units BCD
-     * - Bits 36-39: User Bits 16-19
-     * - Bits 40-42: Minutes Tens BCD
-     * - Bit 43: Binary Group Flag 1
-     * - Bits 44-47: User Bits 20-23
-     * - Bits 48-51: Hours Units BCD
-     * - Bits 52-55: User Bits 24-27
-     * - Bits 56-57: Hours Tens BCD
-     * - Bit 58: Reserved
-     * - Bit 59: Binary Group Flag 2
-     * - Bits 60-63: User Bits 28-31
-     * - Bits 64-79: Sync Word (0x3FFD)
-     * 
-     * @param frame 总帧号
-     * @return 80-bit 布尔数组，索引 0-79 对应 bits 0-79（LSB first）
+     * 由总帧号构建 LTC 帧（00:00:00:00 起）。
      */
-    public boolean[] buildFrame(long frame) {
-        if (frame < 0) frame = 0;
-        
-        // 转换为 hh:mm:ss:ff
-        long totalFrames = frame;
-        int ff = (int) (totalFrames % (int) frameRate);
-        long totalSeconds = totalFrames / (int) frameRate;
+    public boolean[] buildFrame(long absoluteFrame) {
+        if (absoluteFrame < 0) absoluteFrame = 0;
+
+        int ff = (int) (absoluteFrame % fps);
+        long totalSeconds = absoluteFrame / fps;
         int ss = (int) (totalSeconds % 60);
         int mm = (int) ((totalSeconds / 60) % 60);
         int hh = (int) ((totalSeconds / 3600) % 24);
-        
-        // BCD 拆分
-        int frameUnits = ff % 10;
-        int frameTens = ff / 10;
-        int secUnits = ss % 10;
-        int secTens = ss / 10;
-        int minUnits = mm % 10;
-        int minTens = mm / 10;
-        int hourUnits = hh % 10;
-        int hourTens = hh / 10;
-        
-        
-        boolean[] bits = new boolean[80];
-        int idx = 0;
-        
-        // Bits 0-3: Frame Units (BCD, LSB first)
-        writeBcdLsbFirst(bits, idx, frameUnits, 4); idx += 4;
-        // Bits 4-7: User Bits 0-3
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 8-9: Frame Tens (BCD, LSB first)
-        writeBcdLsbFirst(bits, idx, frameTens, 2); idx += 2;
-        // Bit 10: Drop Frame Flag (0 for 25fps)
-        bits[idx++] = false;
-        // Bit 11: Color Frame Flag (0)
-        bits[idx++] = false;
-        // Bits 12-15: User Bits 4-7
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 16-19: Seconds Units (BCD, LSB first)
-        writeBcdLsbFirst(bits, idx, secUnits, 4); idx += 4;
-        // Bits 20-23: User Bits 8-11
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 24-26: Seconds Tens (BCD, 3 bits, LSB first)
-        writeBcdLsbFirst(bits, idx, secTens, 3); idx += 3;
-        // Bit 27: Binary Group Flag 0 (0)
-        bits[idx++] = false;
-        // Bits 28-31: User Bits 12-15
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 32-35: Minutes Units (BCD, LSB first)
-        writeBcdLsbFirst(bits, idx, minUnits, 4); idx += 4;
-        // Bits 36-39: User Bits 16-19
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 40-42: Minutes Tens (BCD, 3 bits, LSB first)
-        writeBcdLsbFirst(bits, idx, minTens, 3); idx += 3;
-        // Bit 43: Binary Group Flag 1 (0)
-        bits[idx++] = false;
-        // Bits 44-47: User Bits 20-23
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 48-51: Hours Units (BCD, LSB first)
-        writeBcdLsbFirst(bits, idx, hourUnits, 4); idx += 4;
-        // Bits 52-55: User Bits 24-27
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 56-57: Hours Tens (BCD, 2 bits, LSB first)
-        writeBcdLsbFirst(bits, idx, hourTens, 2); idx += 2;
-        // Bit 58: Reserved / Clock Flag (0)
-        bits[idx++] = false;
-        // Bit 59: Binary Group Flag 2 (0)
-        bits[idx++] = false;
-        // Bits 60-63: User Bits 28-31
-        writeZeros(bits, idx, 4); idx += 4;
-        
-        // Bits 64-79: Sync Word
-        // 参考文件显示 sync word 按 MSB first 传输
-        // 0x3FFD = 00111111 11111101 (MSB first)
-        // bits[64] = 0 (MSB), bits[79] = 1 (LSB)
-        boolean[] syncWord = {
-            false, false, true, true, true, true, true, true,   // 0x3F (MSB first)
-            true, true, true, true, true, true, false, true      // 0xFD (MSB first)
-        };
-        
-        System.arraycopy(syncWord, 0, bits, 64, 16);
-        
-        
+
+        return buildFrame(hh, mm, ss, ff, false, false, false, false);
+    }
+
+    /**
+     * 由冻结快照时间码构建 LTC 帧。
+     */
+    public boolean[] buildFrame(int hh, int mm, int ss, int ff,
+                                boolean dropFrame,
+                                boolean colorFrame,
+                                boolean bgf0,
+                                boolean bgf1) {
+        validate(hh, 0, 23, "hh");
+        validate(mm, 0, 59, "mm");
+        validate(ss, 0, 59, "ss");
+        validate(ff, 0, fps - 1, "ff");
+
+        boolean[] bits = new boolean[FRAME_BITS];
+
+        // time fields
+        putBcdLsb(bits, 0, ff % 10, 4);      // frame units
+        putBcdLsb(bits, 8, ff / 10, 2);      // frame tens
+
+        bits[10] = dropFrame;                // DF
+        bits[11] = colorFrame;               // CF
+
+        putBcdLsb(bits, 16, ss % 10, 4);     // sec units
+        putBcdLsb(bits, 24, ss / 10, 3);     // sec tens
+
+        bits[27] = bgf0;                     // BGF0
+
+        putBcdLsb(bits, 32, mm % 10, 4);     // min units
+        putBcdLsb(bits, 40, mm / 10, 3);     // min tens
+
+        bits[43] = bgf1;                     // BGF1
+
+        putBcdLsb(bits, 48, hh % 10, 4);     // hour units
+        putBcdLsb(bits, 56, hh / 10, 2);     // hour tens
+
+        bits[58] = false;                    // reserved / BGF2 in some variants
+        bits[59] = false;                    // BGF2 / reserved (25fps non-drop 下默认 0)
+
+        // user bits (4-7,12-15,20-23,28-31,36-39,44-47,52-55,60-63) 默认为 0
+
+        // sync word bits[64..79]
+        for (int i = 0; i < 16; i++) {
+            bits[64 + i] = SYNC_WORD_BITS.charAt(i) == '1';
+        }
+
         return bits;
     }
-    
-    /**
-     * 写入 BCD 值（LTC 线序：LSB first）
-     * @param bits 目标数组
-     * @param start 起始位置
-     * @param value BCD 值
-     * @param bitCount 位数
-     */
-    private void writeBcdLsbFirst(boolean[] bits, int start, int value, int bitCount) {
-        for (int i = 0; i < bitCount; i++) {
-            bits[start + i] = (value & (1 << i)) != 0;
+
+    private void putBcdLsb(boolean[] bits, int start, int value, int width) {
+        for (int i = 0; i < width; i++) {
+            bits[start + i] = ((value >> i) & 1) != 0;
         }
     }
-    
-    /**
-     * 写入零
-     */
-    private void writeZeros(boolean[] bits, int start, int count) {
-        for (int i = 0; i < count; i++) {
-            bits[start + i] = false;
+
+    private void validate(int value, int min, int max, String name) {
+        if (value < min || value > max) {
+            throw new IllegalArgumentException(name + " out of range: " + value);
         }
     }
 }
