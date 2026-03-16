@@ -1254,12 +1254,12 @@
           testBtn.style.color = '#fff';
         }
 
-        const globalTc = tcSourceSelected ? (j.timecode || '00:00:00:00') : '00:00:00:00';
+        const globalTc = j.timecode || '00:00:00:00';
 
         const dashboardStatus = document.getElementById('dashboardStatus');
         if (dashboardStatus) {
-          const srcState = tcSourceSelected ? String(j.sourceState || 'OFFLINE') : 'NO_SOURCE';
-          const srcPlayer = tcSourceSelected ? (j.sourcePlayer == null ? '-' : j.sourcePlayer) : '-';
+          const srcState = String(j.sourceState || 'OFFLINE');
+          const srcPlayer = j.sourcePlayer == null ? '-' : j.sourcePlayer;
           dashboardStatus.textContent = `Source: P${srcPlayer} ${srcState} | SMPTE Timecode: ${globalTc} | Scan: ${scanning ? 'ON' : 'OFF'} | Metadata Warmup Cache: ${metadataWarmupCacheSize} | Last Lookup: ${metadataLastLookup}`;
         }
 

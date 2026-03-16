@@ -55,7 +55,7 @@
       "onlyWhenPlaying": true
     },
     "timecode": {
-      "sourcePlayer": 2.0
+      "sourcePlayer": 1.0
     }
   },
   "ai": {
