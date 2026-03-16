@@ -74,6 +74,7 @@ dbclient/input/DjLinkSourceInput.class
 dbclient/Main.class
 dbclient/sync/drivers/TitanAdapter.class
 dbclient/sync/drivers/TitanApiDriver.class
+dbclient/media/player/BasicLocalPlaybackEngine.class
 dbclient/input/SourceInputManager.class
 dbclient/sync/drivers/MtcDriver.class
 dbclient/config/UserSettingsStore.class

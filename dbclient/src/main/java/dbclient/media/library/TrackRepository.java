@@ -1,7 +1,8 @@
 package dbclient.media.library;
 
-import dbclient.media.model.TrackInfo;
+import dbclient.media.model.AnalysisResult;
 import dbclient.media.model.AnalysisStatus;
+import dbclient.media.model.TrackInfo;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,13 +42,6 @@ public interface TrackRepository {
     List<TrackInfo> findByAnalysisStatus(AnalysisStatus status);
 
     /**
-     * 查询未分析的曲目
-     */
-    default List<TrackInfo> findUnanalyzed() {
-        return findByAnalysisStatus(AnalysisStatus.PENDING);
-    }
-
-    /**
      * 删除曲目
      *
      * @param trackId 曲目 ID
@@ -69,10 +63,18 @@ public interface TrackRepository {
     boolean exists(String trackId);
 
     /**
-     * 更新曲目分析状态
+     * 保存分析结果
      *
      * @param trackId 曲目 ID
-     * @param status 新状态
+     * @param result 分析结果
      */
-    void updateAnalysisStatus(String trackId, AnalysisStatus status);
+    void saveAnalysis(String trackId, AnalysisResult result);
+
+    /**
+     * 获取分析结果
+     *
+     * @param trackId 曲目 ID
+     * @return 分析结果（Optional）
+     */
+    Optional<AnalysisResult> getAnalysis(String trackId);
 }

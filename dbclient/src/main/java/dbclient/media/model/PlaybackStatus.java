@@ -2,7 +2,7 @@ package dbclient.media.model;
 
 /**
  * 播放状态 DTO
- * 不依赖任何开源库类型
+ * 只表达当前播放状态，不包含曲目静态信息
  */
 public class PlaybackStatus {
     public enum State {
@@ -11,9 +11,10 @@ public class PlaybackStatus {
 
     private State state;
     private long positionMs;
+    private long durationMs;
     private double effectiveBpm;
-    private String trackId;
     private double pitch;
+    private String currentTrackId;
 
     public PlaybackStatus() {}
 
@@ -34,18 +35,23 @@ public class PlaybackStatus {
             return this;
         }
 
+        public Builder durationMs(long durationMs) {
+            status.durationMs = durationMs;
+            return this;
+        }
+
         public Builder effectiveBpm(double effectiveBpm) {
             status.effectiveBpm = effectiveBpm;
             return this;
         }
 
-        public Builder trackId(String trackId) {
-            status.trackId = trackId;
+        public Builder pitch(double pitch) {
+            status.pitch = pitch;
             return this;
         }
 
-        public Builder pitch(double pitch) {
-            status.pitch = pitch;
+        public Builder currentTrackId(String currentTrackId) {
+            status.currentTrackId = currentTrackId;
             return this;
         }
 
@@ -61,22 +67,30 @@ public class PlaybackStatus {
     public long getPositionMs() { return positionMs; }
     public void setPositionMs(long positionMs) { this.positionMs = positionMs; }
 
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
+
     public double getEffectiveBpm() { return effectiveBpm; }
     public void setEffectiveBpm(double effectiveBpm) { this.effectiveBpm = effectiveBpm; }
 
-    public String getTrackId() { return trackId; }
-    public void setTrackId(String trackId) { this.trackId = trackId; }
-
     public double getPitch() { return pitch; }
     public void setPitch(double pitch) { this.pitch = pitch; }
+
+    public String getCurrentTrackId() { return currentTrackId; }
+    public void setCurrentTrackId(String currentTrackId) { this.currentTrackId = currentTrackId; }
+
+    // Convenience methods
+    public boolean isPlaying() { return state == State.PLAYING; }
+    public boolean isPaused() { return state == State.PAUSED; }
+    public boolean isStopped() { return state == State.STOPPED; }
 
     @Override
     public String toString() {
         return "PlaybackStatus{" +
                 "state=" + state +
                 ", positionMs=" + positionMs +
+                ", durationMs=" + durationMs +
                 ", effectiveBpm=" + effectiveBpm +
-                ", trackId='" + trackId + '\'' +
                 '}';
     }
 }

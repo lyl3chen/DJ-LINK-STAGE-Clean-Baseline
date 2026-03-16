@@ -1,8 +1,8 @@
 package dbclient.media.model;
 
 /**
- * 曲目信息 DTO
- * 不依赖任何开源库类型
+ * 曲目静态信息 DTO
+ * 只包含曲目本身的元数据，不包含分析状态或播放状态
  */
 public class TrackInfo {
     private String trackId;
@@ -11,17 +11,11 @@ public class TrackInfo {
     private String artist;
     private String album;
     private long durationMs;
-    private Integer bpm;
-    private String key;
-    private AnalysisStatus analysisStatus;
-    private String waveformCachePath;
-    private String beatGridPath;
-    private long addedAt;
-    private long lastPlayedAt;
+    private int sampleRate;
+    private int channels;
 
     public TrackInfo() {}
 
-    // Builder pattern
     public static Builder builder() {
         return new Builder();
     }
@@ -59,38 +53,13 @@ public class TrackInfo {
             return this;
         }
 
-        public Builder bpm(Integer bpm) {
-            track.bpm = bpm;
+        public Builder sampleRate(int sampleRate) {
+            track.sampleRate = sampleRate;
             return this;
         }
 
-        public Builder key(String key) {
-            track.key = key;
-            return this;
-        }
-
-        public Builder analysisStatus(AnalysisStatus analysisStatus) {
-            track.analysisStatus = analysisStatus;
-            return this;
-        }
-
-        public Builder waveformCachePath(String waveformCachePath) {
-            track.waveformCachePath = waveformCachePath;
-            return this;
-        }
-
-        public Builder beatGridPath(String beatGridPath) {
-            track.beatGridPath = beatGridPath;
-            return this;
-        }
-
-        public Builder addedAt(long addedAt) {
-            track.addedAt = addedAt;
-            return this;
-        }
-
-        public Builder lastPlayedAt(long lastPlayedAt) {
-            track.lastPlayedAt = lastPlayedAt;
+        public Builder channels(int channels) {
+            track.channels = channels;
             return this;
         }
 
@@ -118,26 +87,11 @@ public class TrackInfo {
     public long getDurationMs() { return durationMs; }
     public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
 
-    public Integer getBpm() { return bpm; }
-    public void setBpm(Integer bpm) { this.bpm = bpm; }
+    public int getSampleRate() { return sampleRate; }
+    public void setSampleRate(int sampleRate) { this.sampleRate = sampleRate; }
 
-    public String getKey() { return key; }
-    public void setKey(String key) { this.key = key; }
-
-    public AnalysisStatus getAnalysisStatus() { return analysisStatus; }
-    public void setAnalysisStatus(AnalysisStatus analysisStatus) { this.analysisStatus = analysisStatus; }
-
-    public String getWaveformCachePath() { return waveformCachePath; }
-    public void setWaveformCachePath(String waveformCachePath) { this.waveformCachePath = waveformCachePath; }
-
-    public String getBeatGridPath() { return beatGridPath; }
-    public void setBeatGridPath(String beatGridPath) { this.beatGridPath = beatGridPath; }
-
-    public long getAddedAt() { return addedAt; }
-    public void setAddedAt(long addedAt) { this.addedAt = addedAt; }
-
-    public long getLastPlayedAt() { return lastPlayedAt; }
-    public void setLastPlayedAt(long lastPlayedAt) { this.lastPlayedAt = lastPlayedAt; }
+    public int getChannels() { return channels; }
+    public void setChannels(int channels) { this.channels = channels; }
 
     @Override
     public String toString() {
@@ -146,8 +100,6 @@ public class TrackInfo {
                 ", title='" + title + '\'' +
                 ", artist='" + artist + '\'' +
                 ", durationMs=" + durationMs +
-                ", bpm=" + bpm +
-                ", analysisStatus=" + analysisStatus +
                 '}';
     }
 }

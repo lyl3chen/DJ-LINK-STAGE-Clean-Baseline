@@ -1,26 +1,26 @@
 package dbclient.media.player;
 
-import java.io.IOException;
+import dbclient.media.model.PlaybackStatus;
+import dbclient.media.model.TrackInfo;
 
 /**
  * 播放引擎接口
  * 允许替换不同播放引擎实现（Java Sound、JLayer、JavaFX Media 等）
- * 接口只使用标准 JDK 类型，不暴露开源库类型
+ * 接口只使用标准 JDK 类型和我们的 DTO，不暴露开源库类型
  */
 public interface PlaybackEngine {
 
     /**
-     * 打开音频文件
+     * 加载曲目
      *
-     * @param filePath 文件绝对路径
-     * @throws IOException 打开失败时抛出
+     * @param track 曲目信息
      */
-    void open(String filePath) throws IOException;
+    void load(TrackInfo track);
 
     /**
      * 开始播放
      */
-    void start();
+    void play();
 
     /**
      * 暂停播放
@@ -40,33 +40,18 @@ public interface PlaybackEngine {
     void seek(long positionMs);
 
     /**
-     * 设置播放速度（变速不变调）
+     * 获取当前播放状态
      *
-     * @param speed 速度倍数，1.0 = 正常速度
+     * @return PlaybackStatus（我们的 DTO）
      */
-    void setPlaybackSpeed(double speed);
+    PlaybackStatus getStatus();
 
     /**
-     * 获取当前播放位置（毫秒）
+     * 获取当前加载的曲目
      *
-     * @return 当前位置（毫秒）
+     * @return 曲目信息，未加载时返回 null
      */
-    long getPositionMs();
-
-    /**
-     * 是否正在播放
-     */
-    boolean isPlaying();
-
-    /**
-     * 是否已暂停
-     */
-    boolean isPaused();
-
-    /**
-     * 获取当前播放速度
-     */
-    double getPlaybackSpeed();
+    TrackInfo getCurrentTrack();
 
     /**
      * 关闭播放器，释放资源

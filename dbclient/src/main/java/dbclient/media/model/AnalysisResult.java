@@ -2,14 +2,16 @@ package dbclient.media.model;
 
 /**
  * 分析结果 DTO
- * 不依赖任何开源库类型
+ * 包含分析状态和分析相关字段
  */
 public class AnalysisResult {
     private boolean success;
+    private AnalysisStatus analysisStatus;
     private Integer bpm;
-    private double durationSec;
+    private long durationMs;
     private String waveformCachePath;
-    private String beatGridPath;
+    private boolean beatGridAvailable;
+    private long analyzedAt;
     private String errorMessage;
 
     public AnalysisResult() {}
@@ -26,13 +28,18 @@ public class AnalysisResult {
             return this;
         }
 
+        public Builder analysisStatus(AnalysisStatus status) {
+            result.analysisStatus = status;
+            return this;
+        }
+
         public Builder bpm(Integer bpm) {
             result.bpm = bpm;
             return this;
         }
 
-        public Builder durationSec(double durationSec) {
-            result.durationSec = durationSec;
+        public Builder durationMs(long durationMs) {
+            result.durationMs = durationMs;
             return this;
         }
 
@@ -41,8 +48,13 @@ public class AnalysisResult {
             return this;
         }
 
-        public Builder beatGridPath(String beatGridPath) {
-            result.beatGridPath = beatGridPath;
+        public Builder beatGridAvailable(boolean available) {
+            result.beatGridAvailable = available;
+            return this;
+        }
+
+        public Builder analyzedAt(long analyzedAt) {
+            result.analyzedAt = analyzedAt;
             return this;
         }
 
@@ -60,17 +72,23 @@ public class AnalysisResult {
     public boolean isSuccess() { return success; }
     public void setSuccess(boolean success) { this.success = success; }
 
+    public AnalysisStatus getAnalysisStatus() { return analysisStatus; }
+    public void setAnalysisStatus(AnalysisStatus analysisStatus) { this.analysisStatus = analysisStatus; }
+
     public Integer getBpm() { return bpm; }
     public void setBpm(Integer bpm) { this.bpm = bpm; }
 
-    public double getDurationSec() { return durationSec; }
-    public void setDurationSec(double durationSec) { this.durationSec = durationSec; }
+    public long getDurationMs() { return durationMs; }
+    public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
 
     public String getWaveformCachePath() { return waveformCachePath; }
     public void setWaveformCachePath(String waveformCachePath) { this.waveformCachePath = waveformCachePath; }
 
-    public String getBeatGridPath() { return beatGridPath; }
-    public void setBeatGridPath(String beatGridPath) { this.beatGridPath = beatGridPath; }
+    public boolean isBeatGridAvailable() { return beatGridAvailable; }
+    public void setBeatGridAvailable(boolean beatGridAvailable) { this.beatGridAvailable = beatGridAvailable; }
+
+    public long getAnalyzedAt() { return analyzedAt; }
+    public void setAnalyzedAt(long analyzedAt) { this.analyzedAt = analyzedAt; }
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
@@ -79,8 +97,9 @@ public class AnalysisResult {
     public String toString() {
         return "AnalysisResult{" +
                 "success=" + success +
+                ", analysisStatus=" + analysisStatus +
                 ", bpm=" + bpm +
-                ", durationSec=" + durationSec +
+                ", durationMs=" + durationMs +
                 ", errorMessage='" + errorMessage + '\'' +
                 '}';
     }
