@@ -677,10 +677,9 @@
         <div class="diag-card" id="mtcDiag">MTC: Disabled</div>
       </div>
 
-      <!-- Timecode Source Player (共用) -->
+      <!-- Timecode 手动测试 (源选择统一使用 Sync Source) -->
       <div class="cfg-card">
-        <h3>Timecode Source (LTC/MTC共用)</h3>
-        <div class="cfg-row"><label>Source Player</label><select id="cfgTimecodeSourcePlayer"><option value="1" selected>Player 1</option><option value="2">Player 2</option><option value="3">Player 3</option><option value="4">Player 4</option></select></div>
+        <h3>Timecode Test (LTC/MTC)</h3>
         <div class="cfg-row"><label>手动测试</label><button id="tcManualTestBtn" class="scan-btn">开启测试</button></div>
         <div class="diag-card" id="tcCoreDiag">Timecode Core: Stopped</div>
       </div>
@@ -1093,12 +1092,10 @@
         const runtime = userSettings._runtime || {};
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
-        // timecodeSource UI 已移除
-        // LTC/MTC 配置加载
+        // LTC/MTC 配置加载 - sourcePlayer 已统一使用 sync.masterPlayer
         const timecode = sync.timecode || {};
         const ltc = sync.ltc || {};
         const mtc = sync.mtc || {};
-        document.getElementById('cfgTimecodeSourcePlayer').value = String(timecode.tcSourcePlayer || 1);
         document.getElementById('cfgLtcEnabled').checked = !!ltc.enabled;
         document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
@@ -1160,15 +1157,11 @@
 
     async function saveIoConfig() {
       const masterPlayer = Number(document.getElementById('cfgManualPlayer').value || 1);
-      const tcSourcePlayer = Number(document.getElementById('cfgTimecodeSourcePlayer').value || 1);
       const patch = {
         sync: {
           sourceMode: document.getElementById('cfgSourceMode').value || 'master',
           masterPlayer: masterPlayer,
-          // LTC/MTC 配置 - timecode.sourcePlayer 独立配置
-          timecode: {
-            sourcePlayer: tcSourcePlayer
-          },
+          // LTC/MTC sourcePlayer 已统一使用 masterPlayer，不再独立配置
           ltc: {
             enabled: document.getElementById('cfgLtcEnabled').checked,
             deviceName: document.getElementById('cfgLtcDevice').value || 'default',

@@ -72,12 +72,7 @@ public class SyncOutputManager {
                 Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
                 Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());
                 
-                // 应用时间码核心配置（独立运行，不与 masterPlayer 同步）
-                Map<String, Object> timecodeCfg = sync.get("timecode") instanceof Map 
-                    ? (Map<String, Object>) sync.get("timecode") : Map.of();
-                if (timecodeCfg.get("sourcePlayer") instanceof Number) {
-                    timecodeCore.setSourcePlayer(((Number) timecodeCfg.get("sourcePlayer")).intValue());
-                }
+                // sourcePlayer 已统一到 sync.masterPlayer，TimecodeCore 从 SyncOutputManager 获取
                 
                 // 应用驱动配置
                 for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {

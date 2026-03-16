@@ -108,13 +108,18 @@ public class TimecodeCore implements Runnable {
     /**
      * 接收播放器状态，用于事件检测和重锚判断
      * 注意：此方法只更新状态，不作为输出节奏
+     * sourcePlayer 从 state 中读取（由 SyncOutputManager 统一提供）
      */
     public void update(Map<String, Object> state) {
         if (state == null) return;
         if (manualTestMode) return;
 
+        // 从 SyncOutputManager 获取当前 sourcePlayer
+        int currentSourcePlayer = state.get("sourcePlayer") instanceof Number 
+            ? ((Number) state.get("sourcePlayer")).intValue() : this.sourcePlayer;
+
         // 提取选定播放器的状态
-        PlayerEventDetector.PlayerState ps = extractPlayerState(state, sourcePlayer);
+        PlayerEventDetector.PlayerState ps = extractPlayerState(state, currentSourcePlayer);
         if (ps == null) return;
 
         // 计算当前预期帧（本地线性推进）

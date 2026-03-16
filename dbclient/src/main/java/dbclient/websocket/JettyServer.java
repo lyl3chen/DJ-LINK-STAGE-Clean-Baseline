@@ -4,6 +4,7 @@ import dbclient.ai.AiAgentService;
 import dbclient.config.UserSettingsStore;
 import dbclient.input.LocalSourceInput;
 import dbclient.media.library.LocalLibraryService;
+import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
 import dbclient.media.player.BasicLocalPlaybackEngine;
 import dbclient.sync.SyncOutputManager;
@@ -33,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -290,7 +292,7 @@ public class JettyServer {
                         return;
                     }
                     if (path.equals("/api/local/tracks")) {
-                        var tracks = localLibraryService.getAllTracks();
+                        List<TrackInfo> tracks = localLibraryService.getAllTracks();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
                         return;
                     }
@@ -300,7 +302,7 @@ public class JettyServer {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
                             return;
                         }
-                        var trackOpt = localLibraryService.getTrack(trackId);
+                        Optional<TrackInfo> trackOpt = localLibraryService.getTrack(trackId);
                         if (trackOpt.isEmpty()) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
                             return;
@@ -332,8 +334,8 @@ public class JettyServer {
                         return;
                     }
                     if (path.equals("/api/local/status")) {
-                        var status = localSourceInput.getPlaybackStatus();
-                        var track = localSourceInput.getCurrentTrack();
+                        PlaybackStatus status = localSourceInput.getPlaybackStatus();
+                        TrackInfo track = localSourceInput.getCurrentTrack();
                         double bpm = localSourceInput.getSourceBpm();
                         response.getWriter().print(gson.toJson(Map.of(
                             "ok", true,
