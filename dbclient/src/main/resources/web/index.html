@@ -665,6 +665,7 @@
         <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
         <div class="cfg-row"><label>Gain (dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" min="-20" max="0" /></div>
         <div class="cfg-row"><label>Frame Rate</label><select id="cfgLtcFrameRate"><option value="25" selected>25 fps</option></select></div>
+        <div class="cfg-row"><label>Manual Test</label><button id="ltcManualTestBtn" class="scan-btn">Start LTC Test</button></div>
         <div class="diag-card" id="ltcDiag">LTC: Disabled</div>
       </div>
 
@@ -1196,6 +1197,23 @@
       } catch (e) {}
     }
 
+    async function toggleLtcManualTest() {
+      try {
+        const btn = document.getElementById('ltcManualTestBtn');
+        const willEnable = (btn?.textContent || '').includes('Start');
+        const r = await fetch('/api/timecode/manual-test', {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({ enabled: willEnable })
+        });
+        const j = await r.json();
+        if (btn) {
+          const on = !!j.manualTestMode;
+          btn.textContent = on ? 'Stop LTC Test' : 'Start LTC Test';
+        }
+      } catch (e) {}
+    }
+
     async function refreshSyncState() {
       try {
         const r = await fetch('/api/sync/state');
@@ -1203,6 +1221,9 @@
         document.getElementById('syncStatus').textContent = JSON.stringify(j, null, 2);
 
         // LTC/MTC 状态显示已移除
+        const tc = j.timecode || {};
+        const testBtn = document.getElementById('ltcManualTestBtn');
+        if (testBtn) testBtn.textContent = tc.manualTestMode ? 'Stop LTC Test' : 'Start LTC Test';
 
         const globalTc = tcSourceSelected ? (j.timecode || '00:00:00:00') : '00:00:00:00';
 
@@ -1660,6 +1681,7 @@
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadSettings());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
     document.getElementById('ma2SendTestBtn')?.addEventListener('click', sendMa2Test);
+    document.getElementById('ltcManualTestBtn')?.addEventListener('click', toggleLtcManualTest);
     document.getElementById('cfgMa2Pass')?.addEventListener('input', () => { ma2PassDirty = true; });
     document.getElementById('aiGenerateBtn')?.addEventListener('click', generateAiRule);
     document.getElementById('scanToggleBtn')?.addEventListener('click', toggleScan);

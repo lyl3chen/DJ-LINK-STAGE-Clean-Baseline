@@ -291,4 +291,12 @@ public class SyncOutputManager {
         }
         return Map.of("ok", false, "connected", false, "sentCommand", command, "rawResponse", "", "error", "ma2Telnet driver not available");
     }
+
+    public synchronized void setTimecodeManualTestMode(boolean enabled) {
+        timecodeCore.setManualTestMode(enabled);
+    }
+
+    public synchronized boolean isTimecodeManualTestMode() {
+        return timecodeCore.isManualTestMode();
+    }
 }

@@ -245,6 +245,15 @@ public class JettyServer {
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
+                    if (path.equals("/api/timecode/manual-test")) {
+                        boolean enabled = Boolean.TRUE.equals(payload.get("enabled"));
+                        syncOutputManager.setTimecodeManualTestMode(enabled);
+                        response.getWriter().print(gson.toJson(Map.of(
+                            "ok", true,
+                            "manualTestMode", syncOutputManager.isTimecodeManualTestMode()
+                        )));
+                        return;
+                    }
                     response.setStatus(404);
                     response.getWriter().print(gson.toJson(Map.of("error", "unknown endpoint")));
                 } catch (Exception e) {
