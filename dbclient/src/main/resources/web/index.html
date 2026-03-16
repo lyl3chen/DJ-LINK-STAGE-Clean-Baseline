@@ -665,7 +665,7 @@
         <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
         <div class="cfg-row"><label>Gain (dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" min="-20" max="0" /></div>
         <div class="cfg-row"><label>Frame Rate</label><select id="cfgLtcFrameRate"><option value="25" selected>25 fps</option></select></div>
-        <div class="cfg-row"><label>Manual Test</label><button id="ltcManualTestBtn" class="scan-btn">Start LTC Test</button></div>
+        <div class="cfg-row"><label>手动测试</label><button id="ltcManualTestBtn" class="scan-btn">开启测试</button></div>
         <div class="diag-card" id="ltcDiag">LTC: Disabled</div>
       </div>
 
@@ -1200,7 +1200,7 @@
     async function toggleLtcManualTest() {
       try {
         const btn = document.getElementById('ltcManualTestBtn');
-        const willEnable = (btn?.textContent || '').includes('Start');
+        const willEnable = (btn?.textContent || '').includes('开启');
         const r = await fetch('/api/timecode/manual-test', {
           method: 'POST',
           headers: { 'Content-Type':'application/json' },
@@ -1208,8 +1208,10 @@
         });
         const j = await r.json();
         if (btn) {
-          const on = !!j.manualTestMode;
-          btn.textContent = on ? 'Stop LTC Test' : 'Start LTC Test';
+          const isOn = !!j.manualTestMode;
+          btn.textContent = isOn ? '关闭测试' : '开启测试';
+          btn.style.background = isOn ? '#28a745' : '#444';
+          btn.style.color = '#fff';
         }
       } catch (e) {}
     }
@@ -1223,7 +1225,12 @@
         // LTC/MTC 状态显示已移除
         const tc = j.timecode || {};
         const testBtn = document.getElementById('ltcManualTestBtn');
-        if (testBtn) testBtn.textContent = tc.manualTestMode ? 'Stop LTC Test' : 'Start LTC Test';
+        if (testBtn) {
+          const isOn = tc.manualTestMode;
+          testBtn.textContent = isOn ? '关闭测试' : '开启测试';
+          testBtn.style.background = isOn ? '#28a745' : '#444';
+          testBtn.style.color = '#fff';
+        }
 
         const globalTc = tcSourceSelected ? (j.timecode || '00:00:00:00') : '00:00:00:00';
 

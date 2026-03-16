@@ -248,9 +248,11 @@ public class JettyServer {
                     if (path.equals("/api/timecode/manual-test")) {
                         boolean enabled = Boolean.TRUE.equals(payload.get("enabled"));
                         syncOutputManager.setTimecodeManualTestMode(enabled);
+                        String msg = enabled ? "手动测试模式已开启" : "手动测试模式已关闭";
                         response.getWriter().print(gson.toJson(Map.of(
                             "ok", true,
-                            "manualTestMode", syncOutputManager.isTimecodeManualTestMode()
+                            "manualTestMode", syncOutputManager.isTimecodeManualTestMode(),
+                            "message", msg
                         )));
                         return;
                     }
