@@ -269,6 +269,16 @@ public class JettyServer {
                         )));
                         return;
                     }
+                    if (path.equals("/api/source/switch")) {
+                        String sourceType = String.valueOf(payload.getOrDefault("sourceType", ""));
+                        boolean success = syncOutputManager.switchSource(sourceType);
+                        response.getWriter().print(gson.toJson(Map.of(
+                            "ok", success,
+                            "sourceType", syncOutputManager.getActiveSourceType(),
+                            "message", success ? "已切换到: " + sourceType : "切换失败"
+                        )));
+                        return;
+                    }
                     // ====== Local Player Test APIs (isolated from main flow) ======
                     if (path.equals("/api/local/import")) {
                         String filePath = String.valueOf(payload.getOrDefault("filePath", ""));

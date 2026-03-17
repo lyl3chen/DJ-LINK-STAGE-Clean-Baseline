@@ -1,6 +1,12 @@
 package dbclient.sync;
 
 import dbclient.config.UserSettingsStore;
+import dbclient.input.*;
+import dbclient.media.library.InMemoryTrackRepository;
+import dbclient.media.library.LocalLibraryService;
+import dbclient.media.player.BasicLocalPlaybackEngine;
+import dbclient.media.library.LocalLibraryService;
+import dbclient.media.player.BasicLocalPlaybackEngine;
 import dbclient.sync.drivers.*;
 import dbclient.sync.timecode.TimecodeCore;
 
@@ -9,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Signal output scheduler with unified driver lifecycle.
- * 
+ *
  * 驱动列表：
  * - Ableton Link
  * - Titan API
@@ -20,34 +26,55 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class SyncOutputManager {
     private static final SyncOutputManager INSTANCE = new SyncOutputManager();
-    
+
     // 时间码核心（LTC/MTC 共用）
     private final TimecodeCore timecodeCore;
-    
+
+    // 输入源管理器（CDJ + Local Player）
+    private final SourceInputManager sourceInputManager;
+
     // 驱动管理
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
-    
+
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
     private volatile double lastTimeSec = 0.0;
+    private volatile String activeSourceType = "djlink"; // "djlink" or "local"
 
     public static SyncOutputManager getInstance() { return INSTANCE; }
 
     private SyncOutputManager() {
         // 创建时间码核心（LTC/MTC 共用）
         timecodeCore = new TimecodeCore();
-        
+
+        // 创建输入源管理器
+        sourceInputManager = new SourceInputManager();
+
+        // 注册 CDJ 输入源
+        DjLinkSourceInput djLinkSource = new DjLinkSourceInput();
+        sourceInputManager.registerSource("djlink", djLinkSource);
+
+        // 注册本地播放器输入源
+        BasicLocalPlaybackEngine localEngine = new BasicLocalPlaybackEngine();
+        InMemoryTrackRepository trackRepo = new InMemoryTrackRepository();
+        LocalLibraryService libraryService = new LocalLibraryService(trackRepo, null);
+        LocalSourceInput localSource = new LocalSourceInput(localEngine, libraryService);
+        sourceInputManager.registerSource("local", localSource);
+
+        // 默认使用 CDJ
+        sourceInputManager.switchToSource("djlink");
+
         // 创建 LTC/MTC 驱动
         LtcDriver ltcDriver = new LtcDriver();
         MtcDriver mtcDriver = new MtcDriver();
-        
+
         // 注册为时间码消费者和状态监听器
         timecodeCore.registerConsumer(ltcDriver);
         timecodeCore.addStateListener(ltcDriver);
         timecodeCore.registerConsumer(mtcDriver);
         timecodeCore.addStateListener(mtcDriver);
-        
+
         // 注册所有驱动
         register(ltcDriver);
         register(mtcDriver);
@@ -55,9 +82,25 @@ public class SyncOutputManager {
         register(new TitanApiDriver());
         register(new Ma2BpmDriver());
         register(new ConsoleApiDriver());
-        
+
         // 启动时间码核心
         timecodeCore.start();
+
+        // 启动本地播放器状态推送定时器（100ms）
+        startLocalPlayerTimer();
+    }
+
+    private java.util.concurrent.ScheduledExecutorService localPlayerTimer;
+
+    private void startLocalPlayerTimer() {
+        localPlayerTimer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
+            r -> new Thread(r, "local-player-timer")
+        );
+        localPlayerTimer.scheduleAtFixedRate(() -> {
+            if ("local".equals(activeSourceType)) {
+                onLocalPlayerState();
+            }
+        }, 100, 100, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
@@ -72,12 +115,12 @@ public class SyncOutputManager {
             try {
                 Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
                 Map<String, Object> sync = (Map<String, Object>) settings.getOrDefault("sync", Map.of());
-                
+
                 // sourcePlayer 已统一到 sync.masterPlayer，TimecodeCore 从 SyncOutputManager 获取
-                
+
                 // 应用驱动配置
                 for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
-                    Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map 
+                    Map<String, Object> cfg = sync.get(e.getKey()) instanceof Map
                         ? (Map<String, Object>) sync.get(e.getKey()) : Map.of();
                     boolean enabled = Boolean.TRUE.equals(cfg.get("enabled"));
                     try { e.getValue().stop(); } catch (Exception ignored) {}
@@ -99,9 +142,14 @@ public class SyncOutputManager {
     }
 
     private List<Map<String, Object>> lastPlayersList = new ArrayList<>();
-    
+
     @SuppressWarnings("unchecked")
     public synchronized void onPlayersState(Map<String, Object> playersState) {
+        // 如果当前是本地播放器模式，跳过 CDJ 状态处理
+        if ("local".equals(activeSourceType)) {
+            return;
+        }
+
         // 保存 player 列表
         this.lastPlayersList.clear();
         if (playersState != null) {
@@ -115,10 +163,10 @@ public class SyncOutputManager {
                 }
             }
         }
-        
+
         // 构建派生状态
         Map<String, Object> derived = buildDerivedState();
-        
+
         if (playersState != null) {
             Object players = playersState.get("players");
             if (players instanceof List) {
@@ -126,10 +174,10 @@ public class SyncOutputManager {
                 Map<String, Object> chosen = null;
 
                 Map<String, Object> settings = UserSettingsStore.getInstance().getAll();
-                Map<String, Object> sync = settings.get("sync") instanceof Map 
+                Map<String, Object> sync = settings.get("sync") instanceof Map
                     ? (Map<String, Object>) settings.get("sync") : Map.of();
                 String sourceMode = String.valueOf(sync.getOrDefault("sourceMode", "master"));
-                int selectedPlayer = sync.get("masterPlayer") instanceof Number 
+                int selectedPlayer = sync.get("masterPlayer") instanceof Number
                     ? ((Number) sync.get("masterPlayer")).intValue() : 1;
 
                 // A) 手动模式
@@ -160,8 +208,8 @@ public class SyncOutputManager {
                     for (Object o : list) {
                         if (!(o instanceof Map)) continue;
                         Map<String, Object> p = (Map<String, Object>) o;
-                        if (Boolean.TRUE.equals(p.get("playing")) && Boolean.TRUE.equals(p.get("active"))) { 
-                            chosen = p; break; 
+                        if (Boolean.TRUE.equals(p.get("playing")) && Boolean.TRUE.equals(p.get("active"))) {
+                            chosen = p; break;
                         }
                     }
                 }
@@ -224,7 +272,7 @@ public class SyncOutputManager {
                 }
             }
         }
-        
+
         // 广播状态
         broadcastState(derived);
     }
@@ -232,7 +280,7 @@ public class SyncOutputManager {
     private void broadcastState(Map<String, Object> derived) {
         // 传递给时间码核心（只执行一次事件检测）
         timecodeCore.update(derived);
-        
+
         // 传递给其他驱动（LtcDriver/MtcDriver 不再重复处理播放器逻辑）
         for (Map.Entry<String, OutputDriver> e : drivers.entrySet()) {
             OutputDriver d = e.getValue();
@@ -256,7 +304,7 @@ public class SyncOutputManager {
 
     public synchronized Map<String, Object> getStatus() {
         Map<String, Object> out = new LinkedHashMap<>();
-        
+
         // 驱动状态
         Map<String, Object> ds = new LinkedHashMap<>();
         for (OutputDriver d : drivers.values()) {
@@ -267,6 +315,7 @@ public class SyncOutputManager {
         // 源状态
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer != null ? sourcePlayer : 0);
+        out.put("sourceType", activeSourceType);
 
         // 时间码核心状态（独立）
         out.put("timecode", timecodeCore.getStatus());
@@ -296,5 +345,70 @@ public class SyncOutputManager {
 
     public synchronized boolean isTimecodeManualTestMode() {
         return timecodeCore.isManualTestMode();
+    }
+
+    // ========== Source Input Manager 集成 ==========
+
+    /**
+     * 获取输入源管理器（用于本地播放器控制）
+     */
+    public SourceInputManager getSourceInputManager() {
+        return sourceInputManager;
+    }
+
+    /**
+     * 切换输入源（djlink / local）
+     */
+    public synchronized boolean switchSource(String sourceType) {
+        if (!"djlink".equals(sourceType) && !"local".equals(sourceType)) {
+            return false;
+        }
+        boolean success = sourceInputManager.switchToSource(sourceType);
+        if (success) {
+            this.activeSourceType = sourceType;
+            System.out.println("[SyncOutputManager] Switched to source: " + sourceType);
+        }
+        return success;
+    }
+
+    /**
+     * 获取当前激活的输入源类型
+     */
+    public String getActiveSourceType() {
+        return activeSourceType;
+    }
+
+    /**
+     * 从本地播放器输入源获取状态（当 local 模式时调用）
+     */
+    public void onLocalPlayerState() {
+        SourceInput localSource = sourceInputManager.getSource("local");
+        if (localSource == null || !"local".equals(activeSourceType)) {
+            return;
+        }
+
+        Map<String, Object> derived = new LinkedHashMap<>();
+        derived.put("masterTimeSec", localSource.getSourceTimeSec());
+        derived.put("rawTimeSec", localSource.getSourceTimeSec());
+        derived.put("masterBpm", localSource.getSourceBpm());
+        derived.put("sourcePlaying", "PLAYING".equals(localSource.getState()));
+        derived.put("sourceActive", localSource.isOnline());
+        derived.put("sourcePlayer", 1); // 本地播放器固定为 1
+        derived.put("sourceMode", "local");
+        derived.put("sourceState", localSource.getState());
+        derived.put("players", List.of(Map.of(
+            "number", 1,
+            "playing", "PLAYING".equals(localSource.getState()),
+            "active", localSource.isOnline(),
+            "currentTimeMs", (long)(localSource.getSourceTimeSec() * 1000),
+            "bpm", localSource.getSourceBpm(),
+            "pitch", localSource.getSourcePitch()
+        )));
+
+        this.sourceState = localSource.getState();
+        this.sourcePlayer = 1;
+        this.lastTimeSec = localSource.getSourceTimeSec();
+
+        broadcastState(derived);
     }
 }

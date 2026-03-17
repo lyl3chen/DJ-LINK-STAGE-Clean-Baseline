@@ -611,9 +611,9 @@
     <div class="io-setup">
       <div class="cfg-card">
         <h3>播放源</h3>
+        <div class="cfg-row"><label>输入源类型</label><select id="cfgInputSourceType"><option value="djlink">DJ Link (CDJ)</option><option value="local">本地播放器</option></select></div>
         <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
-        <!-- timecodeSource UI 已移除 -->
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
 
@@ -1090,6 +1090,17 @@
         const titan = sync.titanApi || {};
         const ma2 = sync.ma2Telnet || {};
         const runtime = userSettings._runtime || {};
+        
+        // 获取当前输入源类型
+        try {
+          const stateR = await fetch('/api/sync/state');
+          const stateJ = await stateR.json();
+          const sourceType = stateJ.sourceType || 'djlink';
+          document.getElementById('cfgInputSourceType').value = sourceType;
+        } catch (e) {
+          console.error('Failed to load source type:', e);
+        }
+        
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
         // LTC/MTC 配置加载 - sourcePlayer 已统一使用 sync.masterPlayer
@@ -1157,6 +1168,21 @@
 
     async function saveIoConfig() {
       const masterPlayer = Number(document.getElementById('cfgManualPlayer').value || 1);
+      
+      // 切换输入源类型（djlink / local）
+      const sourceType = document.getElementById('cfgInputSourceType').value || 'djlink';
+      try {
+        const r = await fetch('/api/source/switch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceType })
+        });
+        const j = await r.json();
+        console.log('Source switch:', j);
+      } catch (e) {
+        console.error('Source switch failed:', e);
+      }
+
       const patch = {
         sync: {
           sourceMode: document.getElementById('cfgSourceMode').value || 'master',
