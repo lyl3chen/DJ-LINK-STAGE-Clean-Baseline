@@ -1,5 +1,6 @@
 package dbclient.input;
 
+import dbclient.media.library.LocalLibraryService;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -102,5 +103,16 @@ public class SourceInputManager {
             "sourceBpm", source.getSourceBpm(),
             "sourcePitch", source.getSourcePitch()
         );
+    }
+
+    /**
+     * 获取 LocalLibraryService（从 local 输入源获取）
+     */
+    public LocalLibraryService getLocalLibraryService() {
+        SourceInput local = sources.get("local");
+        if (local instanceof LocalSourceInput) {
+            return ((LocalSourceInput) local).getLibraryService();
+        }
+        return null;
     }
 }

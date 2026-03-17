@@ -5,21 +5,21 @@
   },
   "sync": {
     "enabled": true,
-    "sourceMode": "manual",
+    "sourceMode": "master",
     "timecodeSource": 2.0,
-    "masterPlayer": 2.0,
+    "masterPlayer": 1.0,
     "ltc": {
-      "enabled": true,
+      "enabled": false,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
       "gainDb": -8.0,
-      "deviceName": "default [default]",
+      "deviceName": "default",
       "frameRate": 25.0
     },
     "mtc": {
-      "enabled": true,
-      "midiPort": "CH345 [hw:1,0,0]",
+      "enabled": false,
+      "midiPort": "default",
       "frameRate": 25.0
     },
     "abletonLink": {
@@ -34,10 +34,9 @@
       "versionMode": "auto",
       "enabled": false,
       "rateLimitMs": 500.0,
-      "ip": "192.168.100.127",
+      "ip": "127.0.0.1",
       "masterIndices": [
-        0.0,
-        1.0
+        0.0
       ]
     },
     "ma2Telnet": {
@@ -55,7 +54,7 @@
       "onlyWhenPlaying": true
     },
     "timecode": {
-      "sourcePlayer": 1.0
+      "sourcePlayer": 2.0
     }
   },
   "ai": {

@@ -595,6 +595,7 @@
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="io">I/O Setup</button>
     <button class="tab-btn" data-tab="commander">Commander</button>
+    <button class="tab-btn" data-tab="localplayer">本地播放器</button>
   </div>
 
   <section class="tab-panel active" id="panel-dashboard">
@@ -697,6 +698,74 @@
         <div class="cfg-row"><button id="aiGenerateBtn" class="scan-btn">生成规则</button></div>
       </div>
       <div class="cfg-card"><h3>AI Rules</h3><pre id="aiRules" style="white-space:pre-wrap;color:#d3e4ff">[]</pre></div>
+    </div>
+  </section>
+
+  <!-- 本地播放器测试 Panel -->
+  <section class="tab-panel" id="panel-localplayer">
+    <div class="io-setup">
+      <!-- 提示信息 -->
+      <div class="cfg-card full" id="localPlayerWarning">
+        <h3 style="color:#ffb347; margin:0 0 8px;">⚠️ 使用提示</h3>
+        <p style="margin:0; color:#b9d8ff;">
+          测试本地播放器前，请先在 I/O Setup 页面将"输入源类型"切换为 <strong>本地播放器</strong>。
+          <span id="currentSourceType" style="color:#2dff7a;">检测中...</span>
+        </p>
+      </div>
+
+      <!-- 文件导入区 -->
+      <div class="cfg-card">
+        <h3>📁 导入音频文件</h3>
+        <div class="cfg-row">
+          <label>文件路径</label>
+          <input id="localImportPath" type="text" placeholder="/path/to/audio.wav" style="flex:1; min-width:300px;" />
+        </div>
+        <div class="cfg-row">
+          <button id="localImportBtn" class="scan-btn">导入</button>
+          <span id="localImportMsg" style="color:#2dff7a; margin-left:8px;"></span>
+        </div>
+        <div class="diag-card" id="localImportResult">等待导入...</div>
+      </div>
+
+      <!-- 曲目列表 -->
+      <div class="cfg-card">
+        <h3>🎵 曲目列表</h3>
+        <div class="cfg-row">
+          <button id="localRefreshTracksBtn" class="scan-btn">刷新列表</button>
+        </div>
+        <div id="localTracksList" style="max-height:300px; overflow-y:auto;">
+          <p style="color:#7f8ea8;">暂无曲目</p>
+        </div>
+      </div>
+
+      <!-- 播放控制 -->
+      <div class="cfg-card">
+        <h3>🎮 播放控制</h3>
+        <div class="cfg-row">
+          <button id="localPlayBtn" class="scan-btn" style="background:linear-gradient(180deg,#12412a,#0c2d1f);">▶ Play</button>
+          <button id="localPauseBtn" class="scan-btn">⏸ Pause</button>
+          <button id="localStopBtn" class="scan-btn" style="background:linear-gradient(180deg,#412020,#2d1515);">⏹ Stop</button>
+        </div>
+        <div class="cfg-row">
+          <label>Seek (ms)</label>
+          <input id="localSeekPos" type="number" value="0" step="1000" style="width:100px;" />
+          <button id="localSeekBtn" class="scan-btn">跳转</button>
+        </div>
+      </div>
+
+      <!-- 状态显示 -->
+      <div class="cfg-card">
+        <h3>📊 播放状态</h3>
+        <div id="localStatusDisplay" style="font-family:monospace; font-size:12px; line-height:1.6;">
+          <div><span style="color:#7f8ea8;">Source Type:</span> <span id="localStatusSourceType">-</span></div>
+          <div><span style="color:#7f8ea8;">Current Track:</span> <span id="localStatusTrack">-</span></div>
+          <div><span style="color:#7f8ea8;">State:</span> <span id="localStatusState">-</span></div>
+          <div><span style="color:#7f8ea8;">Position:</span> <span id="localStatusPosition">-</span></div>
+          <div><span style="color:#7f8ea8;">Duration:</span> <span id="localStatusDuration">-</span></div>
+          <div><span style="color:#7f8ea8;">Source BPM:</span> <span id="localStatusBpm">-</span></div>
+        </div>
+        <div class="diag-card" id="localStatusMsg" style="margin-top:10px;">等待状态更新...</div>
+      </div>
     </div>
   </section>
 
@@ -979,7 +1048,9 @@
       document.getElementById('panel-dashboard').classList.toggle('active', tab === 'dashboard');
       document.getElementById('panel-io').classList.toggle('active', tab === 'io');
       document.getElementById('panel-commander').classList.toggle('active', tab === 'commander');
+      document.getElementById('panel-localplayer').classList.toggle('active', tab === 'localplayer');
       if (tab === 'io') await loadSettings();
+      if (tab === 'localplayer') await refreshLocalPlayerStatus();
     }
 
     function refreshManualPlayerOptions(selected = 1) {
@@ -1756,6 +1827,222 @@
     }
 
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
+    // ==================== 本地播放器功能 ====================
+    let localPlayerStatusInterval = null;
+
+    async function refreshLocalPlayerStatus() {
+      try {
+        const res = await fetch('/api/local/status');
+        const data = await res.json();
+        
+        // 更新源类型提示
+        const sourceType = data.sourceType || '-';
+        document.getElementById('currentSourceType').textContent = 
+          sourceType === 'local' ? '✅ 当前已是 local 模式' : `⚠️ 当前是 ${sourceType} 模式`;
+        document.getElementById('currentSourceType').style.color = 
+          sourceType === 'local' ? '#2dff7a' : '#ffb347';
+        
+        // 更新状态显示
+        document.getElementById('localStatusSourceType').textContent = sourceType;
+        document.getElementById('localStatusTrack').textContent = 
+          data.currentTrack ? data.currentTrack.title : '-';
+        document.getElementById('localStatusState').textContent = 
+          data.status ? data.status.state : '-';
+        document.getElementById('localStatusState').style.color = 
+          data.status && data.status.state === 'PLAYING' ? '#2dff7a' : '#b9d8ff';
+        document.getElementById('localStatusPosition').textContent = 
+          data.status ? `${data.status.positionMs}ms` : '-';
+        document.getElementById('localStatusDuration').textContent = 
+          data.status ? `${data.status.durationMs}ms` : '-';
+        document.getElementById('localStatusBpm').textContent = 
+          data.sourceBpm || '-';
+        
+        // 更新消息区域
+        const msgEl = document.getElementById('localStatusMsg');
+        if (sourceType !== 'local') {
+          msgEl.textContent = '⚠️ 请先切换到 local 源模式';
+          msgEl.className = 'diag-card error';
+        } else {
+          msgEl.textContent = data.status ? `状态: ${data.status.state}` : '等待播放...';
+          msgEl.className = 'diag-card';
+        }
+      } catch (e) {
+        console.error('refreshLocalPlayerStatus error:', e);
+        document.getElementById('localStatusMsg').textContent = '获取状态失败: ' + e.message;
+        document.getElementById('localStatusMsg').className = 'diag-card error';
+      }
+    }
+
+    async function importLocalFile() {
+      const pathInput = document.getElementById('localImportPath');
+      const filePath = pathInput.value.trim();
+      if (!filePath) {
+        showLocalImportMsg('请输入文件路径', true);
+        return;
+      }
+      
+      try {
+        showLocalImportMsg('导入中...');
+        const res = await fetch('/api/local/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath })
+        });
+        const data = await res.json();
+        
+        if (data.ok && data.track) {
+          showLocalImportMsg(`导入成功: ${data.track.title}`, false);
+          document.getElementById('localImportResult').innerHTML = `
+            <div><strong>Track ID:</strong> ${data.track.trackId}</div>
+            <div><strong>Title:</strong> ${data.track.title}</div>
+            <div><strong>Duration:</strong> ${data.track.durationMs}ms</div>
+            <div><strong>Sample Rate:</strong> ${data.track.sampleRate}</div>
+          `;
+          refreshLocalTracksList();
+        } else {
+          showLocalImportMsg(data.error || '导入失败', true);
+        }
+      } catch (e) {
+        showLocalImportMsg('导入失败: ' + e.message, true);
+      }
+    }
+
+    function showLocalImportMsg(msg, isError) {
+      const el = document.getElementById('localImportMsg');
+      el.textContent = msg;
+      el.style.color = isError ? '#ff4d6d' : '#2dff7a';
+    }
+
+    async function refreshLocalTracksList() {
+      try {
+        const res = await fetch('/api/local/tracks');
+        const data = await res.json();
+        
+        const listEl = document.getElementById('localTracksList');
+        if (!data.ok || !data.tracks || data.tracks.length === 0) {
+          listEl.innerHTML = '<p style="color:#7f8ea8;">暂无曲目</p>';
+          return;
+        }
+        
+        listEl.innerHTML = data.tracks.map(track => `
+          <div style="border:1px solid #2f425e; background:#0d1422; border-radius:4px; padding:8px; margin-bottom:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div style="flex:1;">
+                <div style="font-weight:bold; color:#d7e5ff;">${escapeHtml(track.title)}</div>
+                <div style="font-size:11px; color:#7f8ea8;">
+                  ID: ${track.trackId.substring(0, 8)}... | 
+                  ${track.durationMs > 0 ? (track.durationMs / 1000).toFixed(1) + 's' : '未知时长'} | 
+                  ${track.sampleRate}Hz
+                </div>
+              </div>
+              <button class="scan-btn" onclick="loadLocalTrack('${track.trackId}')">加载</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('localTracksList').innerHTML = 
+          `<p style="color:#ff4d6d;">获取曲目列表失败: ${e.message}</p>`;
+      }
+    }
+
+    async function loadLocalTrack(trackId) {
+      try {
+        document.getElementById('localStatusMsg').textContent = '加载中...';
+        const res = await fetch('/api/local/load', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+          document.getElementById('localStatusMsg').textContent = '✅ 曲目已加载';
+          document.getElementById('localStatusMsg').className = 'diag-card';
+          refreshLocalPlayerStatus();
+        } else {
+          document.getElementById('localStatusMsg').textContent = '❌ 加载失败: ' + (data.error || '未知错误');
+          document.getElementById('localStatusMsg').className = 'diag-card error';
+        }
+      } catch (e) {
+        document.getElementById('localStatusMsg').textContent = '加载失败: ' + e.message;
+        document.getElementById('localStatusMsg').className = 'diag-card error';
+      }
+    }
+
+    async function localPlayerPlay() {
+      try {
+        const res = await fetch('/api/local/play', { method: 'POST' });
+        const data = await res.json();
+        showLocalControlMsg(data.ok ? '▶️ 播放中' : '播放失败: ' + (data.error || ''), !data.ok);
+        refreshLocalPlayerStatus();
+      } catch (e) {
+        showLocalControlMsg('播放失败: ' + e.message, true);
+      }
+    }
+
+    async function localPlayerPause() {
+      try {
+        const res = await fetch('/api/local/pause', { method: 'POST' });
+        const data = await res.json();
+        showLocalControlMsg(data.ok ? '⏸️ 已暂停' : '暂停失败: ' + (data.error || ''), !data.ok);
+        refreshLocalPlayerStatus();
+      } catch (e) {
+        showLocalControlMsg('暂停失败: ' + e.message, true);
+      }
+    }
+
+    async function localPlayerStop() {
+      try {
+        const res = await fetch('/api/local/stop', { method: 'POST' });
+        const data = await res.json();
+        showLocalControlMsg(data.ok ? '⏹️ 已停止' : '停止失败: ' + (data.error || ''), !data.ok);
+        refreshLocalPlayerStatus();
+      } catch (e) {
+        showLocalControlMsg('停止失败: ' + e.message, true);
+      }
+    }
+
+    async function localPlayerSeek() {
+      const posInput = document.getElementById('localSeekPos');
+      const positionMs = parseInt(posInput.value, 10) || 0;
+      
+      try {
+        const res = await fetch('/api/local/seek', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ positionMs })
+        });
+        const data = await res.json();
+        showLocalControlMsg(data.ok ? `⏩ 跳转到 ${positionMs}ms` : '跳转失败: ' + (data.error || ''), !data.ok);
+        refreshLocalPlayerStatus();
+      } catch (e) {
+        showLocalControlMsg('跳转失败: ' + e.message, true);
+      }
+    }
+
+    function showLocalControlMsg(msg, isError) {
+      const el = document.getElementById('localStatusMsg');
+      el.textContent = msg;
+      el.className = isError ? 'diag-card error' : 'diag-card';
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    document.getElementById('localImportBtn')?.addEventListener('click', importLocalFile);
+    document.getElementById('localRefreshTracksBtn')?.addEventListener('click', refreshLocalTracksList);
+    document.getElementById('localPlayBtn')?.addEventListener('click', localPlayerPlay);
+    document.getElementById('localPauseBtn')?.addEventListener('click', localPlayerPause);
+    document.getElementById('localStopBtn')?.addEventListener('click', localPlayerStop);
+    document.getElementById('localSeekBtn')?.addEventListener('click', localPlayerSeek);
+    
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadAvailableDevices());
     document.getElementById('cfgMtcPort')?.addEventListener('mousedown', () => loadAvailableDevices());
     document.getElementById('saveIoBtn')?.addEventListener('click', saveIoConfig);
@@ -1784,6 +2071,13 @@
     setInterval(refreshMixerState, 5000);
     setInterval(refreshPlayersStateLite, 5000);
     setInterval(refreshSyncState, 100);
+    // 本地播放器状态刷新（仅在localplayer tab激活时）
+    setInterval(() => {
+      const panel = document.getElementById('panel-localplayer');
+      if (panel && panel.classList.contains('active')) {
+        refreshLocalPlayerStatus();
+      }
+    }, 500);
     // python-prodj-link-like continuous playhead progression
     setInterval(() => {
       if (players.some(p => p.playing)) scheduleRender();

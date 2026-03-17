@@ -2,6 +2,7 @@ package dbclient.sync;
 
 import dbclient.config.UserSettingsStore;
 import dbclient.input.*;
+import dbclient.media.analysis.BasicAudioAnalyzer;
 import dbclient.media.library.InMemoryTrackRepository;
 import dbclient.media.library.LocalLibraryService;
 import dbclient.media.player.BasicLocalPlaybackEngine;
@@ -58,7 +59,7 @@ public class SyncOutputManager {
         // 注册本地播放器输入源
         BasicLocalPlaybackEngine localEngine = new BasicLocalPlaybackEngine();
         InMemoryTrackRepository trackRepo = new InMemoryTrackRepository();
-        LocalLibraryService libraryService = new LocalLibraryService(trackRepo, null);
+        LocalLibraryService libraryService = new LocalLibraryService(trackRepo, new BasicAudioAnalyzer());
         LocalSourceInput localSource = new LocalSourceInput(localEngine, libraryService);
         sourceInputManager.registerSource("local", localSource);
 
@@ -98,9 +99,11 @@ public class SyncOutputManager {
         );
         localPlayerTimer.scheduleAtFixedRate(() -> {
             if ("local".equals(activeSourceType)) {
+                System.out.println("[SyncOutputManager] Local player timer tick, state=" + sourceState);
                 onLocalPlayerState();
             }
         }, 100, 100, java.util.concurrent.TimeUnit.MILLISECONDS);
+        System.out.println("[SyncOutputManager] Local player timer started");
     }
 
     private void register(OutputDriver d) { drivers.put(d.name(), d); }
@@ -387,28 +390,35 @@ public class SyncOutputManager {
             return;
         }
 
+        String localState = localSource.getState();
+        double localTimeSec = localSource.getSourceTimeSec();
+        boolean localPlaying = "PLAYING".equals(localState);
+        
+        System.out.println("[SyncOutputManager] onLocalPlayerState: localSource.getState()=" + localState + ", timeSec=" + localTimeSec);
+
         Map<String, Object> derived = new LinkedHashMap<>();
-        derived.put("masterTimeSec", localSource.getSourceTimeSec());
-        derived.put("rawTimeSec", localSource.getSourceTimeSec());
+        derived.put("masterTimeSec", localTimeSec);
+        derived.put("rawTimeSec", localTimeSec);
         derived.put("masterBpm", localSource.getSourceBpm());
-        derived.put("sourcePlaying", "PLAYING".equals(localSource.getState()));
+        derived.put("sourcePlaying", localPlaying);
         derived.put("sourceActive", localSource.isOnline());
         derived.put("sourcePlayer", 1); // 本地播放器固定为 1
         derived.put("sourceMode", "local");
-        derived.put("sourceState", localSource.getState());
+        derived.put("sourceState", localState);
         derived.put("players", List.of(Map.of(
             "number", 1,
-            "playing", "PLAYING".equals(localSource.getState()),
+            "playing", localPlaying,
             "active", localSource.isOnline(),
-            "currentTimeMs", (long)(localSource.getSourceTimeSec() * 1000),
+            "currentTimeMs", (long)(localTimeSec * 1000),
             "bpm", localSource.getSourceBpm(),
             "pitch", localSource.getSourcePitch()
         )));
 
-        this.sourceState = localSource.getState();
+        this.sourceState = localState;
         this.sourcePlayer = 1;
-        this.lastTimeSec = localSource.getSourceTimeSec();
+        this.lastTimeSec = localTimeSec;
 
+        System.out.println("[SyncOutputManager] onLocalPlayerState: broadcast with sourceState=" + localState);
         broadcastState(derived);
     }
 }

@@ -55,12 +55,13 @@ public class JettyServer {
     private static final SyncOutputManager syncOutputManager = SyncOutputManager.getInstance();
     private static final UserSettingsStore settingsStore = UserSettingsStore.getInstance();
     
-    // Local player test service (isolated from main DJ Link flow)
-    private static final LocalLibraryService localLibraryService = new LocalLibraryService();
-    private static final LocalSourceInput localSourceInput = new LocalSourceInput(
-        new BasicLocalPlaybackEngine(), 
-        localLibraryService
-    );
+    // Local player - 使用 SyncOutputManager 共享的实例（确保状态一致）
+    private static LocalSourceInput getLocalSourceInput() {
+        return (LocalSourceInput) syncOutputManager.getSourceInputManager().getSource("local");
+    }
+    private static LocalLibraryService getLocalLibraryService() {
+        return syncOutputManager.getSourceInputManager().getLocalLibraryService();
+    }
     private static final AiAgentService aiAgentService = AiAgentService.getInstance();
     
     public static void start(int port) throws Exception {
@@ -202,6 +203,35 @@ public class JettyServer {
                         response.setContentType("application/json");
                         response.getWriter().print(gson.toJson(Map.of("ports", portList)));
                         return;
+                    } else if (path.equals("/api/local/tracks")) {
+                        // GET /api/local/tracks - 列出所有本地曲目
+                        List<TrackInfo> tracks = getLocalLibraryService().getAllTracks();
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
+                        return;
+                    } else if (path.equals("/api/local/status")) {
+                        // GET /api/local/status - 获取本地播放器状态
+                        LocalSourceInput localSource = getLocalSourceInput();
+                        if (localSource == null) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of(
+                                "ok", false,
+                                "error", "Local source not initialized"
+                            )));
+                            return;
+                        }
+                        PlaybackStatus status = localSource.getPlaybackStatus();
+                        TrackInfo track = localSource.getCurrentTrack();
+                        double bpm = localSource.getSourceBpm();
+                        response.setContentType("application/json");
+                        Map<String, Object> statusMap = new HashMap<>();
+                        statusMap.put("ok", true);
+                        statusMap.put("status", status != null ? status : Map.of("state", "STOPPED"));
+                        statusMap.put("currentTrack", track);
+                        statusMap.put("sourceBpm", bpm);
+                        statusMap.put("sourceType", localSource.getType());
+                        response.getWriter().print(gson.toJson(statusMap));
+                        return;
                     } else {
                         serveStatic(path, response);
                         return;
@@ -293,7 +323,8 @@ public class JettyServer {
                                 "error", "Unsupported format. Only WAV/AIFF/AU supported. MP3 requires additional decoder.")));
                             return;
                         }
-                        TrackInfo track = localLibraryService.importFile(filePath);
+                        TrackInfo track = getLocalLibraryService().importFile(filePath);
+                        System.out.println("[JettyServer] Imported to: " + getLocalLibraryService());
                         if (track == null) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Import failed")));
                             return;
@@ -302,7 +333,7 @@ public class JettyServer {
                         return;
                     }
                     if (path.equals("/api/local/tracks")) {
-                        List<TrackInfo> tracks = localLibraryService.getAllTracks();
+                        List<TrackInfo> tracks = getLocalLibraryService().getAllTracks();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
                         return;
                     }
@@ -312,47 +343,81 @@ public class JettyServer {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
                             return;
                         }
-                        Optional<TrackInfo> trackOpt = localLibraryService.getTrack(trackId);
+                        Optional<TrackInfo> trackOpt = getLocalLibraryService().getTrack(trackId);
                         if (trackOpt.isEmpty()) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
                             return;
                         }
-                        localSourceInput.load(trackOpt.get());
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
+                        System.out.println("[JettyServer] Loading track to: " + localSrc);
+                        localSrc.load(trackOpt.get());
+                        System.out.println("[JettyServer] load() completed");
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track loaded")));
                         return;
                     }
                     if (path.equals("/api/local/play")) {
-                        localSourceInput.play();
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
+                        System.out.println("[JettyServer] Calling play on: " + localSrc);
+                        localSrc.play();
+                        System.out.println("[JettyServer] play() completed");
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Playing")));
                         return;
                     }
                     if (path.equals("/api/local/pause")) {
-                        localSourceInput.pause();
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
+                        localSrc.pause();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Paused")));
                         return;
                     }
                     if (path.equals("/api/local/stop")) {
-                        localSourceInput.stop();
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
+                        localSrc.stop();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Stopped")));
                         return;
                     }
                     if (path.equals("/api/local/seek")) {
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
                         Object posObj = payload.get("positionMs");
                         long positionMs = posObj instanceof Number ? ((Number) posObj).longValue() : 0;
-                        localSourceInput.seek(positionMs);
+                        localSrc.seek(positionMs);
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "positionMs", positionMs)));
                         return;
                     }
                     if (path.equals("/api/local/status")) {
-                        PlaybackStatus status = localSourceInput.getPlaybackStatus();
-                        TrackInfo track = localSourceInput.getCurrentTrack();
-                        double bpm = localSourceInput.getSourceBpm();
+                        LocalSourceInput localSrc2 = getLocalSourceInput();
+                        if (localSrc2 == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
+                            return;
+                        }
+                        PlaybackStatus status = localSrc2.getPlaybackStatus();
+                        TrackInfo track = localSrc2.getCurrentTrack();
+                        double bpm = localSrc2.getSourceBpm();
                         response.getWriter().print(gson.toJson(Map.of(
                             "ok", true,
                             "status", status,
                             "currentTrack", track,
                             "sourceBpm", bpm,
-                            "sourceType", localSourceInput.getType()
+                            "sourceType", localSrc2.getType()
                         )));
                         return;
                     }

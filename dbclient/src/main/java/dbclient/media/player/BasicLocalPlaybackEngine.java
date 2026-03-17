@@ -33,6 +33,8 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         this.currentPositionMs = 0;
         this.pausePositionMs = 0;
 
+        System.out.println("[BasicLocalPlaybackEngine] load() called for: " + track.getTitle() + " on instance: " + this);
+
         try {
             File audioFile = new File(track.getFilePath());
             if (!audioFile.exists()) {
@@ -65,26 +67,30 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             audioLine = (SourceDataLine) AudioSystem.getLine(info);
             audioLine.open(decodedFormat);
 
-            System.out.println("[BasicLocalPlaybackEngine] Loaded: " + track.getTitle());
+            System.out.println("[BasicLocalPlaybackEngine] Loaded successfully: " + track.getTitle() + ", audioLine=" + audioLine + ", instance=" + this);
 
         } catch (UnsupportedAudioFileException e) {
             System.err.println("[BasicLocalPlaybackEngine] Unsupported format: " + e.getMessage());
             System.err.println("[BasicLocalPlaybackEngine] Currently supports: WAV files");
         } catch (Exception e) {
             System.err.println("[BasicLocalPlaybackEngine] Load error: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
     @Override
     public void play() {
         if (audioLine == null || currentTrack == null) {
-            System.err.println("[BasicLocalPlaybackEngine] No track loaded");
+            System.err.println("[BasicLocalPlaybackEngine] No track loaded, audioLine=" + audioLine + ", currentTrack=" + currentTrack);
             return;
         }
 
         if (currentState == PlaybackStatus.State.PLAYING) {
+            System.out.println("[BasicLocalPlaybackEngine] Already playing");
             return; // 已经在播放
         }
+
+        System.out.println("[BasicLocalPlaybackEngine] play() called, currentState=" + currentState + ", audioStream=" + audioStream);
 
         // 如果是从暂停恢复，需要重新定位
         if (currentState == PlaybackStatus.State.PAUSED) {
@@ -101,7 +107,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         playbackThread = new Thread(this::playbackLoop, "local-playback");
         playbackThread.start();
 
-        System.out.println("[BasicLocalPlaybackEngine] Playing: " + currentTrack.getTitle());
+        System.out.println("[BasicLocalPlaybackEngine] Playing: " + currentTrack.getTitle() + ", thread started");
     }
 
     @Override
@@ -162,8 +168,8 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         // 计算当前位置
         if (currentState == PlaybackStatus.State.PLAYING) {
             currentPositionMs = System.currentTimeMillis() - startTimeMs;
-            // 限制不超过总时长
-            if (currentPositionMs > currentTrack.getDurationMs()) {
+            // 限制不超过总时长（只有当 duration > 0 时才检查）
+            if (currentTrack != null && currentTrack.getDurationMs() > 0 && currentPositionMs > currentTrack.getDurationMs()) {
                 currentPositionMs = currentTrack.getDurationMs();
                 // 自动停止
                 stop();
@@ -213,16 +219,31 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     private void playbackLoop() {
         byte[] buffer = new byte[4096];
 
+        System.out.println("[BasicLocalPlaybackEngine] playbackLoop started, audioStream=" + audioStream + ", audioLine=" + audioLine);
+
         try {
+            int loopCount = 0;
             while (currentState == PlaybackStatus.State.PLAYING && !Thread.interrupted()) {
+                if (audioStream == null) {
+                    System.err.println("[BasicLocalPlaybackEngine] audioStream is null!");
+                    break;
+                }
+
                 int bytesRead = audioStream.read(buffer);
+                loopCount++;
+
                 if (bytesRead == -1) {
                     // 播放结束
+                    System.out.println("[BasicLocalPlaybackEngine] End of stream reached after " + loopCount + " loops");
                     break;
                 }
 
                 if (bytesRead > 0) {
                     audioLine.write(buffer, 0, bytesRead);
+                }
+
+                if (loopCount % 100 == 0) {
+                    System.out.println("[BasicLocalPlaybackEngine] playbackLoop iteration " + loopCount + ", bytesRead=" + bytesRead);
                 }
             }
 
@@ -232,12 +253,15 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
                 audioLine.drain();
                 currentState = PlaybackStatus.State.STOPPED;
                 currentPositionMs = currentTrack.getDurationMs();
-                System.out.println("[BasicLocalPlaybackEngine] Playback finished");
+                System.out.println("[BasicLocalPlaybackEngine] Playback finished naturally");
+            } else {
+                System.out.println("[BasicLocalPlaybackEngine] Playback stopped, state=" + currentState + ", interrupted=" + Thread.interrupted());
             }
 
         } catch (Exception e) {
+            System.err.println("[BasicLocalPlaybackEngine] Playback error: " + e.getMessage());
+            e.printStackTrace();
             if (currentState != PlaybackStatus.State.STOPPED) {
-                System.err.println("[BasicLocalPlaybackEngine] Playback error: " + e.getMessage());
                 currentState = PlaybackStatus.State.STOPPED;
             }
         }
