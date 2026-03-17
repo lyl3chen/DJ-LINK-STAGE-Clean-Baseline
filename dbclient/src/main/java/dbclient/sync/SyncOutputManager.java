@@ -46,6 +46,7 @@ public class SyncOutputManager {
         timecodeCore.registerConsumer(ltcDriver);
         timecodeCore.addStateListener(ltcDriver);
         timecodeCore.registerConsumer(mtcDriver);
+        timecodeCore.addStateListener(mtcDriver);
         
         // 注册所有驱动
         register(ltcDriver);
@@ -248,7 +249,8 @@ public class SyncOutputManager {
         state.put("sourceActive", false);
         state.put("sourceState", "OFFLINE");
         state.put("semantic", new LinkedHashMap<>(lastSemantic));
-        state.put("players", lastPlayersList);
+        // FIX: 复制 players 列表，避免并发竞争导致列表被清空
+        state.put("players", new ArrayList<>(lastPlayersList));
         return state;
     }
 

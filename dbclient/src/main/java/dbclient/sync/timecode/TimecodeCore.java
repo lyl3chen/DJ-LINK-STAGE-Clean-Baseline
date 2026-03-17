@@ -5,81 +5,59 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 /**
- * TimecodeCore - 共享时间码核心
+ * TimecodeCore - 共享时间码核心 (FINAL - 已稳定，勿改动架构)
  *
- * 职责：
- * - 管理手动选择的播放源
- * - 播放器事件检测
- * - 本地单调时钟线性推进
- * - 时间码重锚（re-anchor）
- * - 向消费者输出当前线性时间
+ * 【关键架构 - 禁止误改】
+ * 1. sourcePlayer 由 SyncOutputManager 统一提供，本层不维护独立 source 字段
+ * 2. update(state) 只用于事件检测和重锚，不作为输出节奏
+ * 3. 独立线程以 25fps 均匀推送，通过 onFrame() 回调
+ * 4. 事件驱动重锚：PLAY_STARTED, JUMPED, PAUSED, STOPPED
+ * 5. 正常播放期间本地线性推进，不实时贴合 CDJ
  *
- * 原则：
- * - update(state) 只用于事件检测，不作为输出节奏
- * - 独立线程驱动均匀输出（25fps）
- * - 正常播放期间不实时贴合 CDJ，仅事件重锚
+ * 【状态流转】
+ * STOPPED -> PLAY_STARTED -> PLAYING --(JUMPED)--> PLAYING
+ *                              |
+ *                              +--(PAUSED)--> PAUSED
+ *                              |
+ *                              +--(STOPPED)--> STOPPED
  */
 public class TimecodeCore implements Runnable {
 
     public static final double FRAME_RATE = 25.0;
     public static final long FRAME_INTERVAL_MS = 40;  // 1000/25
 
-    // 配置
-    private volatile int sourcePlayer = 1;  // 手动选择的播放源（1-4）
-
-    // 本地时钟状态
-    private volatile long anchorTimeNs = 0;     // 单调时间锚点（System.nanoTime）
-    private volatile long anchorFrame = 0;      // 帧号锚点
+    // 本地时钟锚点（事件发生时重置，PLAYING 期间不变）
+    private volatile long anchorTimeNs = 0;     // System.nanoTime()
+    private volatile long anchorFrame = 0;      // 当前锚点帧号
     private volatile String currentState = "STOPPED";  // STOPPED/PAUSED/PLAYING
 
-    // 事件检测
+    // 事件检测器（历史状态在内部维护，禁止外部重置）
     private final PlayerEventDetector detector = new PlayerEventDetector();
     private volatile String lastTrackId = "";
-    private volatile long lastUpdateTime = 0;
 
-    // 手动测试模式（脱离播放源，固定线性推进）
+    // 手动测试模式（脱离 CDJ，固定从 00:00:00.00 推进）
     private volatile boolean manualTestMode = false;
 
     // 运行状态
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread outputThread;
 
-    // 消费者列表（LtcDriver, MtcDriver）
+    // 消费者列表（LTC/MTC，顺序注册顺序回调）
     private final List<TimecodeConsumer> consumers = new CopyOnWriteArrayList<>();
 
-    // 源变更监听器
+    // 【已废弃】源变更监听器，保留仅作兼容性，不再使用
     public interface SourceChangeListener {
         void onSourceChanged(int newPlayer);
     }
-    private final List<SourceChangeListener> sourceListeners = new CopyOnWriteArrayList<>();
 
-    public void addSourceChangeListener(SourceChangeListener listener) {
-        if (listener != null) sourceListeners.add(listener);
-    }
-
-    public void setSourcePlayer(int player) {
-        int newPlayer = Math.max(1, Math.min(4, player));
-        if (newPlayer != this.sourcePlayer) {
-            this.sourcePlayer = newPlayer;
-            for (SourceChangeListener l : sourceListeners) {
-                try { l.onSourceChanged(newPlayer); } catch (Exception ignored) {}
-            }
-        }
-    }
-
-    public int getSourcePlayer() {
-        return sourcePlayer;
+    public void registerConsumer(TimecodeConsumer consumer) {
+        if (consumer != null) consumers.add(consumer);
     }
 
     /**
-     * 注册消费者（LTC/MTC 驱动）
+     * 设置手动测试模式
+     * 开启后：从 00:00:00.00 固定推进，不受 CDJ 影响
      */
-    public void registerConsumer(TimecodeConsumer consumer) {
-        if (consumer != null) {
-            consumers.add(consumer);
-        }
-    }
-
     public void setManualTestMode(boolean enabled) {
         if (manualTestMode == enabled) return;
 
@@ -95,7 +73,6 @@ public class TimecodeCore implements Runnable {
             anchorFrame = 0;
         }
 
-        // 通知状态变化
         if (!currentState.equals(oldState)) {
             notifyStateChange(oldState, currentState);
         }
@@ -106,23 +83,22 @@ public class TimecodeCore implements Runnable {
     }
 
     /**
-     * 接收播放器状态，用于事件检测和重锚判断
-     * 注意：此方法只更新状态，不作为输出节奏
-     * sourcePlayer 从 state 中读取（由 SyncOutputManager 统一提供）
+     * 接收播放器状态，用于事件检测和重锚
+     * 【关键】本方法只更新内部状态机，不直接输出时间码
+     * 输出由独立线程通过 run() -> onFrame() 驱动
+     *
+     * @param state 必须包含：sourcePlayer, players[], sourceState
      */
     public void update(Map<String, Object> state) {
-        if (state == null) return;
-        if (manualTestMode) return;
+        if (state == null || manualTestMode) return;
 
-        // 从 SyncOutputManager 获取当前 sourcePlayer
-        int currentSourcePlayer = state.get("sourcePlayer") instanceof Number 
-            ? ((Number) state.get("sourcePlayer")).intValue() : this.sourcePlayer;
+        int currentSourcePlayer = state.get("sourcePlayer") instanceof Number
+            ? ((Number) state.get("sourcePlayer")).intValue() : 1;
 
-        // 提取选定播放器的状态
         PlayerEventDetector.PlayerState ps = extractPlayerState(state, currentSourcePlayer);
         if (ps == null) return;
 
-        // 计算当前预期帧（本地线性推进）
+        // 计算预期帧（基于当前锚点和流逝时间）
         long expectedFrame = anchorFrame;
         if ("PLAYING".equals(currentState)) {
             long elapsedNs = System.nanoTime() - anchorTimeNs;
@@ -130,25 +106,21 @@ public class TimecodeCore implements Runnable {
             expectedFrame = anchorFrame + elapsedFrames;
         }
 
-        // 事件检测
+        // 事件检测（核心逻辑）
         PlayerEvent event = detector.detect(ps, expectedFrame, lastTrackId);
 
-        // 处理事件
         if (event != PlayerEvent.NONE) {
             handleEvent(event, ps);
         }
 
-        // 更新记录
         lastTrackId = ps.trackId;
-        lastUpdateTime = System.currentTimeMillis();
     }
 
     /**
-     * 启动时间码核心
+     * 启动时间码核心（独立线程 25fps 输出）
      */
     public void start() {
         if (running.get()) return;
-
         running.set(true);
         outputThread = new Thread(this, "timecode-core");
         outputThread.start();
@@ -159,19 +131,17 @@ public class TimecodeCore implements Runnable {
      */
     public void stop() {
         if (!running.get()) return;
-
         running.set(false);
         if (outputThread != null) {
             outputThread.interrupt();
-            try {
-                outputThread.join(100);
-            } catch (InterruptedException ignored) {}
+            try { outputThread.join(100); } catch (InterruptedException ignored) {}
             outputThread = null;
         }
     }
 
     /**
      * 独立线程：均匀输出节奏（25fps）
+     * 【关键】每次循环向所有消费者推送当前帧
      */
     @Override
     public void run() {
@@ -181,33 +151,23 @@ public class TimecodeCore implements Runnable {
             try {
                 long currentFrame = getCurrentFrame();
 
-                // 推送给所有消费者
                 for (TimecodeConsumer consumer : consumers) {
-                    try {
-                        consumer.onFrame(currentFrame);
-                    } catch (Exception e) {
-                        System.err.println("[TimecodeCore] Consumer error: " + e.getMessage());
-                    }
+                    try { consumer.onFrame(currentFrame); }
+                    catch (Exception e) { /* 忽略单个消费者错误 */ }
                 }
 
-                // 计算下一帧时间
                 nextFrameTime += FRAME_INTERVAL_MS;
                 long sleepTime = nextFrameTime - System.currentTimeMillis();
+                if (sleepTime > 0) Thread.sleep(sleepTime);
 
-                if (sleepTime > 0) {
-                    Thread.sleep(sleepTime);
-                }
-
-            } catch (InterruptedException e) {
-                break;
-            } catch (Exception e) {
-                System.err.println("[TimecodeCore] Error: " + e.getMessage());
-            }
+            } catch (InterruptedException e) { break; }
+            catch (Exception e) { /* 忽略错误，继续运行 */ }
         }
     }
 
     /**
-     * 获取当前帧（本地线性推进）
+     * 获取当前帧（基于本地线性推进）
+     * 【公式】PLAYING: anchorFrame + elapsedFramesFromAnchor
      */
     public long getCurrentFrame() {
         switch (currentState) {
@@ -216,40 +176,82 @@ public class TimecodeCore implements Runnable {
                 long elapsedFrames = (long) (elapsedNs * FRAME_RATE / 1_000_000_000.0);
                 return anchorFrame + elapsedFrames;
             case "PAUSED":
-                return anchorFrame;  // 冻结
+                return anchorFrame;
             case "STOPPED":
             default:
-                return 0;  // 归零
+                return 0;
         }
     }
 
     /**
-     * 获取当前状态
+     * 处理事件，更新锚点和状态
+     * 【关键】所有状态变更和重锚逻辑集中于此
      */
-    public Map<String, Object> getStatus() {
-        return Map.of(
-            "tcSourcePlayer", sourcePlayer,
-            "state", currentState,
-            "anchorFrame", anchorFrame,
-            "currentFrame", getCurrentFrame(),
-            "frameRate", FRAME_RATE,
-            "running", running.get(),
-            "consumerCount", consumers.size(),
-            "manualTestMode", manualTestMode
-        );
+    private void handleEvent(PlayerEvent event, PlayerEventDetector.PlayerState ps) {
+        long newFrame = (long) (ps.timeSec * FRAME_RATE);
+        String oldState = currentState;
+
+        switch (event) {
+            case PLAY_STARTED:
+            case RESUMED:
+                currentState = "PLAYING";
+                anchorFrame = newFrame;
+                anchorTimeNs = System.nanoTime();
+                break;
+
+            case PAUSED:
+                if (!"PAUSED".equals(currentState)) {
+                    currentState = "PAUSED";
+                    if (newFrame > 0) anchorFrame = newFrame;
+                }
+                break;
+
+            case STOPPED:
+                currentState = "STOPPED";
+                anchorFrame = 0;
+                break;
+
+            case TIME_JUMPED:
+            case TRACK_CHANGED:
+            case DRIFT_TOO_LARGE:
+                // 重锚：保持当前状态，更新锚点
+                if ("PLAYING".equals(currentState) && ps.playing) {
+                    anchorFrame = newFrame;
+                    anchorTimeNs = System.nanoTime();
+                } else if ("PAUSED".equals(currentState) && newFrame > 0) {
+                    anchorFrame = newFrame;
+                }
+                break;
+        }
+
+        if (!currentState.equals(oldState)) {
+            notifyStateChange(oldState, currentState);
+        }
     }
 
-    // ============ 私有方法 ============
+    /**
+     * 通知驱动状态变化（用于 LTC/MTC 状态机同步）
+     */
+    private void notifyStateChange(String from, String to) {
+        for (TimecodeConsumer c : consumers) {
+            if (c instanceof TimecodeStateListener) {
+                try {
+                    ((TimecodeStateListener) c).onStateChange(from, to, anchorFrame, anchorTimeNs);
+                } catch (Exception ignored) {}
+            }
+        }
+    }
 
+    /**
+     * 从 players 列表提取指定 player 的状态
+     */
     private PlayerEventDetector.PlayerState extractPlayerState(Map<String, Object> state, int playerNum) {
         Object playersObj = state.get("players");
         if (!(playersObj instanceof List)) return null;
 
-        List<?> players = (List<?>) playersObj;
-        for (Object p : players) {
+        for (Object p : (List<?>) playersObj) {
             if (!(p instanceof Map)) continue;
             Map<?, ?> player = (Map<?, ?>) p;
-
             Object num = player.get("number");
             if (num instanceof Number && ((Number) num).intValue() == playerNum) {
                 PlayerEventDetector.PlayerState ps = new PlayerEventDetector.PlayerState();
@@ -266,80 +268,30 @@ public class TimecodeCore implements Runnable {
         return null;
     }
 
-    private void handleEvent(PlayerEvent event, PlayerEventDetector.PlayerState ps) {
-        long newFrame = (long) (ps.timeSec * FRAME_RATE);
-        String oldState = currentState;
-
-        switch (event) {
-            case PLAY_STARTED:
-            case RESUMED:
-                currentState = "PLAYING";
-                anchorFrame = newFrame;
-                anchorTimeNs = System.nanoTime();
-                break;
-
-            case PAUSED:
-                // 只有首次进入 PAUSED 才冻结，避免边界抖动反复更新
-                if (!"PAUSED".equals(currentState)) {
-                    currentState = "PAUSED";
-                    if (newFrame > 0) {
-                        anchorFrame = newFrame;
-                    }
-                }
-                break;
-
-            case STOPPED:
-                currentState = "STOPPED";
-                anchorFrame = 0;
-                break;
-
-            case TIME_JUMPED:
-            case TRACK_CHANGED:
-            case DRIFT_TOO_LARGE:
-                // 重锚到当前时间
-                if ("PLAYING".equals(currentState) && ps.playing) {
-                    currentState = "PLAYING";
-                    anchorFrame = newFrame;
-                    anchorTimeNs = System.nanoTime();
-                } else if ("PAUSED".equals(currentState)) {
-                    // PAUSED 状态下只有 newFrame > 0 才更新，避免 timeMs 为 null 导致 frame=0
-                    if (newFrame > 0) {
-                        anchorFrame = newFrame;
-                    }
-                } else {
-                    currentState = "STOPPED";
-                    anchorFrame = 0;
-                }
-                break;
-        }
-
-        // 通知驱动状态变化
-        if (!currentState.equals(oldState)) {
-            notifyStateChange(oldState, currentState);
-        }
+    /**
+     * 获取当前状态（用于 API 查询）
+     */
+    public Map<String, Object> getStatus() {
+        return Map.of(
+            "state", currentState,
+            "anchorFrame", anchorFrame,
+            "currentFrame", getCurrentFrame(),
+            "frameRate", FRAME_RATE,
+            "running", running.get(),
+            "consumerCount", consumers.size(),
+            "manualTestMode", manualTestMode
+        );
     }
 
-    private void notifyStateChange(String from, String to) {
-        for (TimecodeStateListener listener : stateListeners) {
-            try {
-                listener.onStateChange(from, to, anchorFrame, anchorTimeNs);
-            } catch (Exception e) {
-                System.err.println("[TimecodeCore] State listener error: " + e.getMessage());
-            }
-        }
-    }
-
+    // 【已废弃】状态监听器接口，仅保留兼容性
     public interface TimecodeStateListener {
         void onStateChange(String fromState, String toState, long anchorFrame, long anchorTimeNs);
     }
 
+    // 状态监听器列表
     private final List<TimecodeStateListener> stateListeners = new CopyOnWriteArrayList<>();
 
     public void addStateListener(TimecodeStateListener listener) {
         if (listener != null) stateListeners.add(listener);
-    }
-
-    public void removeStateListener(TimecodeStateListener listener) {
-        stateListeners.remove(listener);
     }
 }
