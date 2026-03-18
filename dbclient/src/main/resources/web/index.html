@@ -673,7 +673,7 @@
       <div class="cfg-card">
         <h3>本地播放器音频</h3>
         <div class="cfg-row"><label>音频输出设备</label><select id="cfgLocalPlayerDevice"><option value="default">Default</option></select></div>
-        <div class="diag-card" id="localPlayerDiag">Local Player: Ready | 实际设备状态请在"本地播放器"页面查看</div>
+        <div class="diag-card" id="localPlayerDiag">Local Player: Ready | Configured Device=default（实际打开设备见"本地播放器"页）</div>
       </div>
 
       <!-- MTC 配置模块 -->
@@ -1517,7 +1517,8 @@
         if (localPlayerDiag) {
           const localPlayerCfg = (userSettings.sync || {}).localPlayer || {};
           const localDevice = localPlayerCfg.audioDevice || 'default';
-          localPlayerDiag.textContent = `Local Player: Ready | Audio Device=${localDevice}`;
+          // 这里显示的是“配置值”，不是实际打开结果（实际值见本地播放器页 actualOpenedDevice）
+          localPlayerDiag.textContent = `Local Player: Ready | Configured Device=${localDevice}`;
         }
 
         // Timecode Core 状态显示
