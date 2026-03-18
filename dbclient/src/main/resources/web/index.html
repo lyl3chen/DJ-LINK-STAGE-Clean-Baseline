@@ -812,6 +812,8 @@
     let localRuntimeState = 'STOPPED';
     let localSelectedTrackId = null;
     let localTrackListRenderKey = '';
+    // trackId -> analysis snapshot
+    const localAnalysisCache = new Map();
     // 统一错误状态管理（避免被状态刷新立刻覆盖）
     let localActiveError = null;      // 当前活跃错误
     let localActiveErrorTime = 0;     // 错误产生时间戳
@@ -2103,11 +2105,26 @@
           return;
         }
 
+        // 拉取每首曲目的分析结果（轻量：并发 GET）
+        await Promise.all((data.tracks || []).map(async (t) => {
+          try {
+            const r = await fetch(`/api/local/analysis?trackId=${encodeURIComponent(t.trackId)}`);
+            const j = await r.json();
+            localAnalysisCache.set(t.trackId, j && j.ok ? j.analysis : null);
+          } catch (_) {
+            localAnalysisCache.set(t.trackId, null);
+          }
+        }));
+
         const renderKey = JSON.stringify({
           ids: data.tracks.map(t => t.trackId),
           loaded: localRuntimeTrackId,
           state: localRuntimeState,
-          selected: localSelectedTrackId
+          selected: localSelectedTrackId,
+          analysis: data.tracks.map(t => {
+            const a = localAnalysisCache.get(t.trackId);
+            return a ? `${a.analysisStatus}:${a.bpm}:${a.bpmConfidence}` : 'none';
+          })
         });
         if (renderKey === localTrackListRenderKey) return;
         localTrackListRenderKey = renderKey;
@@ -2118,6 +2135,7 @@
           const isPaused = isLoaded && localRuntimeState === 'PAUSED';
           const isStopped = isLoaded && localRuntimeState === 'STOPPED';
           const isSelected = localSelectedTrackId && track.trackId === localSelectedTrackId;
+          const analysis = localAnalysisCache.get(track.trackId);
 
           const borderColor = isPlaying ? '#2dff7a' : (isLoaded ? '#4da3ff' : (isSelected ? '#7f8ea8' : '#2f425e'));
           const bg = isPlaying ? '#102016' : (isLoaded ? '#0f1b2a' : '#0d1422');
@@ -2130,6 +2148,12 @@
                 : isLoaded
                   ? '<span style="color:#4da3ff;font-weight:bold;">已加载</span>'
                   : '<span style="color:#7f8ea8;">未加载</span>';
+
+          const analysisText = analysis
+            ? (analysis.analysisStatus === 'COMPLETED'
+                ? `BPM: ${analysis.bpm ?? '-'} | Conf: ${analysis.bpmConfidence != null ? Number(analysis.bpmConfidence).toFixed(3) : '-'}`
+                : `分析状态: ${analysis.analysisStatus}`)
+            : '分析状态: 未分析';
 
           // 【修复】删除按钮策略：PLAYING/PAUSED 禁止删除，STOPPED 允许删除
           const canDelete = !isPlaying && !isPaused;
@@ -2145,9 +2169,11 @@
                   ${track.sampleRate || '-'}Hz
                 </div>
                 <div style="font-size:11px; margin-top:2px;">${badge}</div>
+                <div style="font-size:11px; margin-top:2px; color:#b9d8ff;">${analysisText}</div>
               </div>
               <div style="display:flex; gap:6px;">
                 <button class="scan-btn" onclick="loadLocalTrack('${track.trackId}')">加载</button>
+                <button class="scan-btn" onclick="analyzeLocalTrack('${track.trackId}')">分析</button>
                 <button class="scan-btn" 
                   style="background:linear-gradient(180deg,#4a1b1b,#2d1010);border-color:#6b2a2a;${!canDelete ? 'opacity:0.45;cursor:not-allowed;' : ''}" 
                   title="${!canDelete ? '播放/暂停中曲目不可删除，请先停止' : '删除曲目'}"
@@ -2190,6 +2216,28 @@
       }
     }
 
+    async function analyzeLocalTrack(trackId) {
+      try {
+        showLocalControlMsg('🔎 分析中...', false);
+        const res = await fetch('/api/local/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId })
+        });
+        const data = await res.json();
+        if (data.ok && data.analysis) {
+          const a = data.analysis;
+          localAnalysisCache.set(trackId, a);
+          showLocalControlMsg(`✅ 分析完成: BPM=${a.bpm ?? '-'} 置信度=${a.bpmConfidence != null ? Number(a.bpmConfidence).toFixed(3) : '-'}`, false);
+          await refreshLocalTracksList();
+        } else {
+          showLocalControlMsg('❌ 分析失败: ' + (data.error || data.analysis?.errorMessage || '未知错误'), true);
+        }
+      } catch (e) {
+        showLocalControlMsg('❌ 分析失败: ' + e.message, true);
+      }
+    }
+
     async function deleteLocalTrack(trackId) {
       if (!confirm('确认删除这首曲目吗？')) return;
       try {
@@ -2202,6 +2250,7 @@
         if (data.ok) {
           if (localSelectedTrackId === trackId) localSelectedTrackId = null;
           clearLocalActiveError();
+          localAnalysisCache.delete(trackId);
           showLocalControlMsg('🗑️ 已删除曲目', false);
           await refreshLocalTracksList();
           await refreshLocalPlayerStatus();
