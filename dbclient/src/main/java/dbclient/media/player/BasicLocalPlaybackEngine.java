@@ -110,12 +110,14 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             this.lastError = "Unsupported format: " + e.getMessage();
             System.err.println("[BasicLocalPlaybackEngine] " + this.lastError);
             System.out.println("[BasicLocalPlaybackEngine] ====== LOAD FAILED ======");
+            return; // 【修复】立即返回，避免继续执行触发 NPE
         } catch (Exception e) {
-            this.lastError = "Load error: " + e.getClass().getSimpleName() + " - " + e.getMessage();
+            this.lastError = "设备打开失败: " + e.getClass().getSimpleName() + " - " + e.getMessage();
             System.err.println("[BasicLocalPlaybackEngine] ====== LOAD FAILED ======");
             System.err.println("[BasicLocalPlaybackEngine] configuredDevice=" + configuredDevice);
             System.err.println("[BasicLocalPlaybackEngine] Error: " + this.lastError);
             e.printStackTrace();
+            return; // 【修复】立即返回，避免继续执行触发 NPE
         }
     }
 
