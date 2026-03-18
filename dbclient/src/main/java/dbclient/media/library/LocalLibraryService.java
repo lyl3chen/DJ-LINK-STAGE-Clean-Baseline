@@ -173,6 +173,19 @@ public class LocalLibraryService {
     }
 
     /**
+     * 删除曲目
+     *
+     * @param trackId 曲目 ID
+     * @return 是否删除成功
+     */
+    public boolean deleteTrack(String trackId) {
+        if (trackId == null || trackId.isEmpty()) return false;
+        if (!trackRepository.exists(trackId)) return false;
+        trackRepository.delete(trackId);
+        return true;
+    }
+
+    /**
      * 获取曲库仓储（用于高级操作）
      */
     public TrackRepository getRepository() {

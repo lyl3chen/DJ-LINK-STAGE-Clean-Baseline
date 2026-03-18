@@ -371,6 +371,20 @@ public class JettyServer {
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
                         return;
                     }
+                    if (path.equals("/api/local/delete")) {
+                        String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
+                        if (trackId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        boolean deleted = getLocalLibraryService().deleteTrack(trackId);
+                        if (!deleted) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
+                            return;
+                        }
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track deleted", "trackId", trackId)));
+                        return;
+                    }
                     if (path.equals("/api/local/load")) {
                         String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
                         if (trackId.isEmpty()) {
@@ -391,7 +405,23 @@ public class JettyServer {
                         System.out.println("[JettyServer] load() called on PlaybackEngine: " + System.identityHashCode(localSrc.getPlaybackEngine()));
                         localSrc.load(trackOpt.get());
                         System.out.println("[JettyServer] load() completed");
-                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track loaded")));
+
+                        // load 后如果存在诊断错误，返回失败原因
+                        PlaybackEngine engine = localSrc.getPlaybackEngine();
+                        if (engine instanceof BasicLocalPlaybackEngine) {
+                            BasicLocalPlaybackEngine.DeviceDiagnostics d = ((BasicLocalPlaybackEngine) engine).getDiagnostics();
+                            if (d.lastError() != null) {
+                                response.getWriter().print(gson.toJson(Map.of(
+                                    "ok", false,
+                                    "error", d.lastError(),
+                                    "configuredDevice", d.configuredDevice(),
+                                    "actualOpenedDevice", d.actualOpenedDevice()
+                                )));
+                                return;
+                            }
+                        }
+
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track loaded", "trackId", trackId)));
                         return;
                     }
                     if (path.equals("/api/local/play")) {
