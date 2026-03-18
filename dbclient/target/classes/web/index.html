@@ -725,12 +725,17 @@
       <div class="cfg-card">
         <h3>📁 导入音频文件</h3>
         <div class="cfg-row">
-          <label>文件路径</label>
-          <input id="localImportPath" type="text" placeholder="/path/to/audio.wav" style="flex:1; min-width:300px;" />
+          <label>选择文件</label>
+          <input type="file" id="localFileSelect" accept=".wav,.aiff,.aif,.au,.mp3" style="color:#d7e5ff;" />
         </div>
         <div class="cfg-row">
-          <button id="localImportBtn" class="scan-btn">导入</button>
+          <button id="localUploadBtn" class="scan-btn">上传并导入</button>
           <span id="localImportMsg" style="color:#2dff7a; margin-left:8px;"></span>
+        </div>
+        <div class="cfg-row" style="margin-top:8px; border-top:1px solid #2a3549; padding-top:8px;">
+          <label style="font-size:11px; color:#7f8ea8;">备用：手动输入路径</label>
+          <input id="localImportPath" type="text" placeholder="/path/to/audio.wav" style="flex:1; min-width:300px;" />
+          <button id="localImportBtn" class="scan-btn">路径导入</button>
         </div>
         <div class="diag-card" id="localImportResult">等待导入...</div>
       </div>
@@ -1918,6 +1923,49 @@
       }
     }
 
+    async function uploadAndImportFile() {
+      const fileInput = document.getElementById('localFileSelect');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showLocalImportMsg('请先选择文件', true);
+        return;
+      }
+      
+      try {
+        showLocalImportMsg('上传中...');
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const res = await fetch('/api/local/upload-and-import', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        
+        if (data.ok && data.track) {
+          showLocalImportMsg(`导入成功: ${data.track.title}`, false);
+          document.getElementById('localImportResult').innerHTML = `
+            <div><strong>Track ID:</strong> ${data.track.trackId}</div>
+            <div><strong>Title:</strong> ${data.track.title}</div>
+            <div><strong>Duration:</strong> ${data.track.durationMs}ms</div>
+            <div><strong>Sample Rate:</strong> ${data.track.sampleRate}Hz</div>
+          `;
+          // 清空文件选择
+          fileInput.value = '';
+          // 刷新曲目列表
+          refreshLocalTracksList();
+        } else {
+          showLocalImportMsg(data.error || '导入失败', true);
+          document.getElementById('localImportResult').textContent = data.error || '导入失败';
+        }
+      } catch (e) {
+        showLocalImportMsg('上传失败: ' + e.message, true);
+        document.getElementById('localImportResult').textContent = '上传失败: ' + e.message;
+      }
+    }
+
     async function importLocalFile() {
       const pathInput = document.getElementById('localImportPath');
       const filePath = pathInput.value.trim();
@@ -2082,6 +2130,7 @@
     }
 
     document.getElementById('localImportBtn')?.addEventListener('click', importLocalFile);
+    document.getElementById('localUploadBtn')?.addEventListener('click', uploadAndImportFile);
     document.getElementById('localRefreshTracksBtn')?.addEventListener('click', refreshLocalTracksList);
     document.getElementById('localPlayBtn')?.addEventListener('click', localPlayerPlay);
     document.getElementById('localPauseBtn')?.addEventListener('click', localPlayerPause);

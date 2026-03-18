@@ -20,6 +20,8 @@ import org.eclipse.jetty.websocket.servlet.WebSocketServlet;
 import org.eclipse.jetty.websocket.servlet.WebSocketServletFactory;
 
 import javax.servlet.http.*;
+import javax.servlet.annotation.MultipartConfig;
+import javax.servlet.MultipartConfigElement;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Mixer;
 import javax.sound.midi.MidiDevice;
@@ -77,7 +79,7 @@ public class JettyServer {
         System.out.println("[WS] WebSocket endpoint /ws registered");
         
         // HTTP + Static
-        context.addServlet(new ServletHolder(new HttpServlet() {
+        ServletHolder httpServletHolder = new ServletHolder(new HttpServlet() {
             protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
                 String path = request.getPathInfo();
                 if (path == null || path.equals("/")) path = "/index.html";
@@ -314,6 +316,11 @@ public class JettyServer {
                         return;
                     }
                     // ====== Local Player Test APIs (isolated from main flow) ======
+                    if (path.equals("/api/local/upload-and-import")) {
+                        // 处理文件上传并导入
+                        handleFileUploadAndImport(request, response);
+                        return;
+                    }
                     if (path.equals("/api/local/import")) {
                         String filePath = String.valueOf(payload.getOrDefault("filePath", ""));
                         if (filePath.isEmpty()) {
@@ -434,6 +441,97 @@ public class JettyServer {
                 }
             }
 
+            private void handleFileUploadAndImport(HttpServletRequest request, HttpServletResponse response) throws IOException {
+                response.setContentType("application/json");
+                try {
+                    // 检查是否为 multipart 请求
+                    String contentType = request.getContentType();
+                    if (contentType == null || !contentType.toLowerCase().startsWith("multipart/")) {
+                        response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Not a multipart request")));
+                        return;
+                    }
+
+                    // 创建上传目录
+                    Path uploadDir = Path.of(System.getProperty("java.io.tmpdir"), "dj-link-stage-uploads");
+                    if (!Files.exists(uploadDir)) {
+                        Files.createDirectories(uploadDir);
+                    }
+
+                    // 解析上传的文件
+                    String fileName = null;
+                    Path tempFile = null;
+
+                    // 使用 servlet Part API 处理上传
+                    try {
+                        for (Part part : request.getParts()) {
+                            if (part.getName().equals("file")) {
+                                fileName = part.getSubmittedFileName();
+                                if (fileName == null || fileName.isEmpty()) {
+                                    continue;
+                                }
+
+                                // 安全检查文件名
+                                fileName = fileName.replaceAll("[^a-zA-Z0-9.\\-\\_]", "_");
+                                tempFile = uploadDir.resolve(fileName);
+
+                                // 保存文件
+                                try (InputStream is = part.getInputStream()) {
+                                    Files.copy(is, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                }
+                                break;
+                            }
+                        }
+                    } catch (Exception e) {
+                        response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "File upload failed: " + e.getMessage())));
+                        return;
+                    }
+
+                    if (tempFile == null || !Files.exists(tempFile)) {
+                        response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "No file uploaded")));
+                        return;
+                    }
+
+                    // 检查格式
+                    String lower = fileName.toLowerCase();
+                    if (!lower.endsWith(".wav") && !lower.endsWith(".aiff") && !lower.endsWith(".au") && !lower.endsWith(".mp3")) {
+                        Files.deleteIfExists(tempFile);
+                        response.getWriter().print(gson.toJson(Map.of("ok", false,
+                            "error", "Unsupported format. Only WAV/AIFF/AU supported. MP3 requires additional decoder.")));
+                        return;
+                    }
+
+                    // 导入文件
+                    TrackInfo track = getLocalLibraryService().importFile(tempFile.toString());
+                    if (track == null) {
+                        Files.deleteIfExists(tempFile);
+                        response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Import failed")));
+                        return;
+                    }
+
+                    // 可选：移动文件到永久存储位置
+                    Path permanentDir = Path.of(System.getProperty("user.home"), "dj-link-stage-library");
+                    if (!Files.exists(permanentDir)) {
+                        Files.createDirectories(permanentDir);
+                    }
+                    Path permanentFile = permanentDir.resolve(fileName);
+                    try {
+                        Files.move(tempFile, permanentFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                        // 更新 track 的路径
+                        track = getLocalLibraryService().importFile(permanentFile.toString());
+                    } catch (Exception e) {
+                        // 如果移动失败，使用临时文件路径
+                        System.out.println("[JettyServer] Failed to move file to permanent location: " + e.getMessage());
+                    }
+
+                    System.out.println("[JettyServer] Uploaded and imported: " + fileName);
+                    response.getWriter().print(gson.toJson(Map.of("ok", true, "track", track, "message", "File uploaded and imported successfully")));
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Upload failed: " + e.getMessage())));
+                }
+            }
+
             private void serveStatic(String path, HttpServletResponse response) throws IOException {
                 if (path.startsWith("/")) path = path.substring(1);
                 InputStream is = getClass().getClassLoader().getResourceAsStream("web/" + path);
@@ -453,7 +551,16 @@ public class JettyServer {
                 while ((r = is.read(buf)) != -1) bos.write(buf, 0, r);
                 response.getOutputStream().write(bos.toByteArray());
             }
-        }), "/*");
+        });
+        httpServletHolder.getRegistration().setMultipartConfig(
+            new MultipartConfigElement(
+                System.getProperty("java.io.tmpdir"),  // location
+                100 * 1024 * 1024,  // maxFileSize: 100MB
+                100 * 1024 * 1024,  // maxRequestSize: 100MB
+                1024 * 1024         // fileSizeThreshold: 1MB
+            )
+        );
+        context.addServlet(httpServletHolder, "/*");
         
         server.start();
         System.out.println("Server started on port " + port);
