@@ -47,7 +47,7 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
     private Thread audioThread;
 
     // 传输状态机
-    private enum TransportState { STOPPED, PLAYING }
+    private enum TransportState { STOPPED, PLAYING, PAUSED }
     private volatile TransportState transportState = TransportState.STOPPED;
 
     // 本地帧推进状态（核心）
@@ -145,7 +145,8 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
                 lastAnchorFrame = 0;
                 break;
             case "PAUSED":
-                // 保持 PLAYING 状态但帧不再推进（由音频线程处理）
+                transportState = TransportState.PAUSED;
+                // 保持当前帧位置，不再推进
                 break;
         }
     }

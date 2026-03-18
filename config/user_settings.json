@@ -14,7 +14,7 @@
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
       "gainDb": -8.0,
-      "deviceName": "default",
+      "deviceName": "PCH [plughw:0,0]",
       "frameRate": 25.0
     },
     "mtc": {

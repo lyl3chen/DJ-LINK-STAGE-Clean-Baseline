@@ -673,8 +673,7 @@
       <div class="cfg-card">
         <h3>本地播放器音频</h3>
         <div class="cfg-row"><label>音频输出设备</label><select id="cfgLocalPlayerDevice"><option value="default">Default</option></select></div>
-        <div class="cfg-row"><label>状态</label><span id="localPlayerDeviceStatus" style="color:#7f8ea8;">使用系统默认设备</span></div>
-        <div class="diag-card" id="localPlayerDiag">Local Player: Ready</div>
+        <div class="diag-card" id="localPlayerDiag">Local Player: Ready | 实际设备状态请在"本地播放器"页面查看</div>
       </div>
 
       <!-- MTC 配置模块 -->
@@ -768,7 +767,7 @@
 
       <!-- 状态显示 -->
       <div class="cfg-card">
-        <h3>📊 播放状态</h3>
+        <h3>📊 播放状态（诊断）</h3>
         <div id="localStatusDisplay" style="font-family:monospace; font-size:12px; line-height:1.6;">
           <div><span style="color:#7f8ea8;">Source Type:</span> <span id="localStatusSourceType">-</span></div>
           <div><span style="color:#7f8ea8;">Current Track:</span> <span id="localStatusTrack">-</span></div>
@@ -776,6 +775,12 @@
           <div><span style="color:#7f8ea8;">Position:</span> <span id="localStatusPosition">-</span></div>
           <div><span style="color:#7f8ea8;">Duration:</span> <span id="localStatusDuration">-</span></div>
           <div><span style="color:#7f8ea8;">Source BPM:</span> <span id="localStatusBpm">-</span></div>
+          <hr style="border-color:#2f425e; margin:8px 0;">
+          <div style="color:#ffb347; font-weight:bold;">=== 设备诊断 ===</div>
+          <div><span style="color:#7f8ea8;">configuredDevice:</span> <span id="localStatusConfiguredDevice" style="color:#ff4d6d;">-</span></div>
+          <div><span style="color:#7f8ea8;">actualOpenedDevice:</span> <span id="localStatusActualDevice" style="color:#2dff7a;">-</span></div>
+          <div><span style="color:#7f8ea8;">lastError:</span> <span id="localStatusLastError" style="color:#ff4d6d;">-</span></div>
+          <div><span style="color:#7f8ea8;">audioFormat:</span> <span id="localStatusAudioFormat">-</span></div>
         </div>
         <div class="diag-card" id="localStatusMsg" style="margin-top:10px;">等待状态更新...</div>
       </div>
@@ -1087,7 +1092,7 @@
       sel.value = String(selected || uniq[0] || 1);
     }
 
-    function refreshAudioDeviceOptions(devices, selected = 'default') {
+    function refreshAudioDeviceOptions(devices, ltcSelected = 'default', localPlayerSelected = 'default') {
       // 更新 LTC 设备选择
       const ltcSel = document.getElementById('cfgLtcDevice');
       const localSel = document.getElementById('cfgLocalPlayerDevice');
@@ -1131,8 +1136,8 @@
           o.title = opt.title;
           ltcSel.appendChild(o);
         });
-        ltcSel.value = selected || 'default';
-        if (ltcSel.value !== (selected || 'default')) ltcSel.value = 'default';
+        ltcSel.value = ltcSelected || 'default';
+        if (ltcSel.value !== (ltcSelected || 'default')) ltcSel.value = 'default';
       }
       
       // 更新本地播放器设备选择
@@ -1145,8 +1150,9 @@
           o.title = opt.title;
           localSel.appendChild(o);
         });
-        localSel.value = selected || 'default';
-        if (localSel.value !== (selected || 'default')) localSel.value = 'default';
+        // 使用 localPlayer 独立的 selected 值
+        localSel.value = localPlayerSelected || 'default';
+        if (localSel.value !== (localPlayerSelected || 'default')) localSel.value = 'default';
       }
     }
 
@@ -1262,8 +1268,10 @@
         // 获取音频设备列表
         const audioR = await fetch('/api/devices/audio');
         const audioData = await audioR.json();
-        const currentAudio = document.getElementById('cfgLtcDevice')?.value || 'default';
-        refreshAudioDeviceOptions(audioData.devices || [], currentAudio);
+        // LTC 和 LocalPlayer 使用各自的当前值
+        const ltcDevice = document.getElementById('cfgLtcDevice')?.value || 'default';
+        const localPlayerDevice = document.getElementById('cfgLocalPlayerDevice')?.value || 'default';
+        refreshAudioDeviceOptions(audioData.devices || [], ltcDevice, localPlayerDevice);
 
         // 获取 MIDI 端口列表
         const midiR = await fetch('/api/devices/midi');
@@ -1907,13 +1915,33 @@
         document.getElementById('localStatusBpm').textContent = 
           data.sourceBpm || '-';
         
+        // 诊断信息
+        document.getElementById('localStatusConfiguredDevice').textContent = 
+          data.configuredDevice || 'unknown';
+        document.getElementById('localStatusActualDevice').textContent = 
+          data.actualOpenedDevice || '(null - 打开失败)';
+        document.getElementById('localStatusActualDevice').style.color = 
+          data.actualOpenedDevice ? '#2dff7a' : '#ff4d6d';
+        document.getElementById('localStatusLastError').textContent = 
+          data.lastError || '(none)';
+        document.getElementById('localStatusLastError').style.color = 
+          data.lastError ? '#ff4d6d' : '#7f8ea8';
+        document.getElementById('localStatusAudioFormat').textContent = 
+          data.audioFormat || '-';
+        
         // 更新消息区域
         const msgEl = document.getElementById('localStatusMsg');
         if (sourceType !== 'local') {
           msgEl.textContent = '⚠️ 请先切换到 local 源模式';
           msgEl.className = 'diag-card error';
+        } else if (data.lastError) {
+          msgEl.textContent = '❌ 错误: ' + data.lastError;
+          msgEl.className = 'diag-card error';
+        } else if (!data.actualOpenedDevice) {
+          msgEl.textContent = '⚠️ 设备未成功打开，请检查配置';
+          msgEl.className = 'diag-card error';
         } else {
-          msgEl.textContent = data.status ? `状态: ${data.status.state}` : '等待播放...';
+          msgEl.textContent = data.status ? `✅ 状态: ${data.status.state}` : '等待播放...';
           msgEl.className = 'diag-card';
         }
       } catch (e) {

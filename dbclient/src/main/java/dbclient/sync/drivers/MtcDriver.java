@@ -87,8 +87,8 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
     public void onFrame(long frame) {
         if (!running.get() || !enabled) return;
 
-        // 【关键】只在 PLAYING 状态发送
-        if (!"PLAYING".equals(currentState)) return;
+        // 【关键】PLAYING 或 PAUSED 状态都发送，STOPPED 不发送
+        if ("STOPPED".equals(currentState)) return;
 
         // 检测跳变并重锚
         long diff = Math.abs(frame - lastAnchorFrame);
@@ -107,8 +107,10 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
             System.err.println("[MTC] Output error: " + e.getMessage());
         }
 
-        // 推进到下一帧
-        nextFrameToWrite++;
+        // PLAYING 时推进到下一帧，PAUSED 时保持
+        if ("PLAYING".equals(currentState)) {
+            nextFrameToWrite++;
+        }
     }
 
     /**

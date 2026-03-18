@@ -7,6 +7,7 @@ import dbclient.media.library.LocalLibraryService;
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
 import dbclient.media.player.BasicLocalPlaybackEngine;
+import dbclient.media.player.PlaybackEngine;
 import dbclient.sync.SyncOutputManager;
 import dbclient.sync.drivers.AudioDeviceEnumerator;
 import dbclient.sync.drivers.MidiDeviceEnumerator;
@@ -225,9 +226,24 @@ public class JettyServer {
                         PlaybackStatus status = localSource.getPlaybackStatus();
                         TrackInfo track = localSource.getCurrentTrack();
                         double bpm = localSource.getSourceBpm();
-                        String audioDevice = localSource.getPlaybackEngine() != null 
-                            ? localSource.getPlaybackEngine().getAudioDevice() 
-                            : "default";
+                        
+                        // 获取诊断信息
+                        PlaybackEngine engine = localSource.getPlaybackEngine();
+                        String configuredDevice = "unknown";
+                        String actualOpenedDevice = null;
+                        String lastError = null;
+                        String audioFormat = null;
+                        
+                        if (engine instanceof BasicLocalPlaybackEngine) {
+                            BasicLocalPlaybackEngine.DeviceDiagnostics diag = ((BasicLocalPlaybackEngine) engine).getDiagnostics();
+                            configuredDevice = diag.configuredDevice();
+                            actualOpenedDevice = diag.actualOpenedDevice();
+                            lastError = diag.lastError();
+                            audioFormat = diag.audioFormat();
+                        } else if (engine != null) {
+                            configuredDevice = engine.getAudioDevice();
+                        }
+                        
                         response.setContentType("application/json");
                         Map<String, Object> statusMap = new HashMap<>();
                         statusMap.put("ok", true);
@@ -235,7 +251,11 @@ public class JettyServer {
                         statusMap.put("currentTrack", track);
                         statusMap.put("sourceBpm", bpm);
                         statusMap.put("sourceType", localSource.getType());
-                        statusMap.put("audioDevice", audioDevice);
+                        // 诊断信息
+                        statusMap.put("configuredDevice", configuredDevice);
+                        statusMap.put("actualOpenedDevice", actualOpenedDevice);
+                        statusMap.put("lastError", lastError);
+                        statusMap.put("audioFormat", audioFormat);
                         response.getWriter().print(gson.toJson(statusMap));
                         return;
                     } else {
@@ -364,7 +384,8 @@ public class JettyServer {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
                             return;
                         }
-                        System.out.println("[JettyServer] Loading track to: " + localSrc);
+                        System.out.println("[JettyServer] load() called on LocalSourceInput: " + System.identityHashCode(localSrc));
+                        System.out.println("[JettyServer] load() called on PlaybackEngine: " + System.identityHashCode(localSrc.getPlaybackEngine()));
                         localSrc.load(trackOpt.get());
                         System.out.println("[JettyServer] load() completed");
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Track loaded")));
@@ -376,7 +397,7 @@ public class JettyServer {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
                             return;
                         }
-                        System.out.println("[JettyServer] Calling play on: " + localSrc);
+                        System.out.println("[JettyServer] Calling play on: " + localSrc + " (PlaybackEngine: " + System.identityHashCode(localSrc.getPlaybackEngine()) + ")");
                         localSrc.play();
                         System.out.println("[JettyServer] play() completed");
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "message", "Playing")));

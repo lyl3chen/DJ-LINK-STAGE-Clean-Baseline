@@ -16,6 +16,7 @@ dbclient/media/model/PlaybackStatus.class
 dbclient/websocket/JettyServer$WsEndpoint.class
 dbclient/media/analysis/BasicAudioAnalyzer.class
 dbclient/media/analysis/AudioAnalyzer.class
+dbclient/media/player/BasicLocalPlaybackEngine$DeviceDiagnostics.class
 dbclient/ai/AiAgentService.class
 dbclient/sync/timecode/TimecodeCore$TimecodeStateListener.class
 dbclient/web/WebServer$DjPhraseHandler.class

@@ -142,7 +142,9 @@ public class LocalSourceInput implements SourceInput {
     }
 
     public PlaybackStatus getPlaybackStatus() {
-        return playbackEngine.getStatus();
+        PlaybackStatus status = playbackEngine.getStatus();
+        System.out.println("[LocalSourceInput] getPlaybackStatus: state=" + (status != null ? status.getState() : "null") + ", position=" + (status != null ? status.getPositionMs() : 0));
+        return status;
     }
 
     public void close() {

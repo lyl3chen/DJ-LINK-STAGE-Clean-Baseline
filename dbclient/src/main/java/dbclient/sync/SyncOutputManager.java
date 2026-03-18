@@ -408,7 +408,18 @@ public class SyncOutputManager {
         double localTimeSec = localSource.getSourceTimeSec();
         boolean localPlaying = "PLAYING".equals(localState);
         
-        System.out.println("[SyncOutputManager] onLocalPlayerState: localSource.getState()=" + localState + ", timeSec=" + localTimeSec);
+        // 获取 PlaybackEngine 实例 ID 用于调试
+        Object playbackEngine = null;
+        if (localSource instanceof dbclient.input.LocalSourceInput) {
+            try {
+                java.lang.reflect.Method m = localSource.getClass().getMethod("getPlaybackEngine");
+                playbackEngine = m.invoke(localSource);
+            } catch (Exception e) {}
+        }
+        
+        System.out.println("[SyncOutputManager] onLocalPlayerState: localSource=" + System.identityHashCode(localSource) + 
+            ", PlaybackEngine=" + (playbackEngine != null ? System.identityHashCode(playbackEngine) : "null") +
+            ", state=" + localState + ", timeSec=" + localTimeSec);
 
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("masterTimeSec", localTimeSec);
