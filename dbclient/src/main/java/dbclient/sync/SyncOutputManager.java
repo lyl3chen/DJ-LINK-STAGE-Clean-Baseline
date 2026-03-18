@@ -38,6 +38,12 @@ public class SyncOutputManager {
     private final Map<String, OutputDriver> drivers = new LinkedHashMap<>();
     private final Map<String, Object> lastSemantic = new ConcurrentHashMap<>();
 
+    /**
+     * 统一输入状态字段（系统单一事实来源，供 API/TimecodeCore/输出驱动消费）
+     * sourceState: OFFLINE | STOPPED | PLAYING | PAUSED
+     * sourcePlayer: 当前主播放源编号（local 固定为 1；djlink 由主控播放器决定）
+     * activeSourceType: djlink | local（由 /api/source/switch 控制）
+     */
     private volatile String sourceState = "OFFLINE";
     private volatile Integer sourcePlayer = null;
     private volatile double lastTimeSec = 0.0;

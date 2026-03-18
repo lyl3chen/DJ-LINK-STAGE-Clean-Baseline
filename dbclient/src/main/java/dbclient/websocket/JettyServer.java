@@ -251,7 +251,10 @@ public class JettyServer {
                         statusMap.put("currentTrack", track);
                         statusMap.put("sourceBpm", bpm);
                         statusMap.put("sourceType", localSource.getType());
-                        // 诊断信息
+                        // 诊断信息（语义约定）
+                        // configuredDevice: 配置目标设备（用户选择）
+                        // actualOpenedDevice: 实际成功打开的设备（null 表示尚未成功打开）
+                        // lastError: 最近一次 load/play 相关错误（null 表示无错误）
                         statusMap.put("configuredDevice", configuredDevice);
                         statusMap.put("actualOpenedDevice", actualOpenedDevice);
                         statusMap.put("lastError", lastError);
