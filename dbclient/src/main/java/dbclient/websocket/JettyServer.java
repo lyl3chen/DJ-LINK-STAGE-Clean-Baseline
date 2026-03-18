@@ -381,19 +381,28 @@ public class JettyServer {
                             return;
                         }
 
-                        // 删除保护策略 A：当前播放/已加载曲目禁止删除，避免状态混乱
+                        // 【修复】删除保护策略：PLAYING/PAUSED 禁止删除，STOPPED 允许删除
                         LocalSourceInput localSrc = getLocalSourceInput();
                         if (localSrc != null) {
                             TrackInfo current = localSrc.getCurrentTrack();
                             PlaybackStatus st = localSrc.getPlaybackStatus();
                             if (current != null && trackId.equals(current.getTrackId())) {
                                 String state = (st != null && st.getState() != null) ? st.getState().name() : "UNKNOWN";
-                                response.getWriter().print(gson.toJson(Map.of(
-                                    "ok", false,
-                                    "error", "Cannot delete currently loaded track (state=" + state + "). 请先加载其他曲目后再删除。",
-                                    "code", "TRACK_IN_USE"
-                                )));
-                                return;
+                                // 只有 PLAYING 或 PAUSED 状态禁止删除，STOPPED 允许删除
+                                if ("PLAYING".equals(state) || "PAUSED".equals(state)) {
+                                    response.getWriter().print(gson.toJson(Map.of(
+                                        "ok", false,
+                                        "error", "Cannot delete track while " + state + ". 请先停止播放后再删除。",
+                                        "code", "TRACK_IN_USE"
+                                    )));
+                                    return;
+                                }
+                                // STOPPED 状态：允许删除，但需要先清空当前加载状态
+                                System.out.println("[JettyServer] Deleting current track in STOPPED state, clearing load status first");
+                                PlaybackEngine engine = localSrc.getPlaybackEngine();
+                                if (engine instanceof BasicLocalPlaybackEngine) {
+                                    ((BasicLocalPlaybackEngine) engine).clearCurrentTrack();
+                                }
                             }
                         }
 

@@ -374,12 +374,20 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             this.currentState = PlaybackStatus.State.PLAYING;
             System.out.println("[BasicLocalPlaybackEngine] Seek from PLAYING, restarting playback at " + clampedPos + "ms");
 
-            // 重新初始化音频（如果需要）并播放
-            if (audioLine == null || audioStream == null) {
-                if (!reinitializeAudio()) {
-                    this.currentState = PlaybackStatus.State.STOPPED;
-                    return;
-                }
+            // 【修复】PLAYING状态下seek必须完全重新初始化音频
+            // 因为之前的audioStream可能已经耗尽或位置不对
+            if (audioLine != null) {
+                try { audioLine.close(); } catch (Exception ignored) {}
+                audioLine = null;
+            }
+            if (audioStream != null) {
+                try { audioStream.close(); } catch (IOException ignored) {}
+                audioStream = null;
+            }
+            
+            if (!reinitializeAudio()) {
+                this.currentState = PlaybackStatus.State.STOPPED;
+                return;
             }
 
             // 重新启动播放线程
@@ -485,6 +493,18 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     @Override
     public TrackInfo getCurrentTrack() {
         return currentTrack;
+    }
+
+    /**
+     * 【修复】清空当前曲目（STOPPED状态下删除当前曲目时使用）
+     */
+    public void clearCurrentTrack() {
+        System.out.println("[BasicLocalPlaybackEngine] clearCurrentTrack() called, currentTrack=" + (currentTrack != null ? currentTrack.getTitle() : "null"));
+        this.currentTrack = null;
+        this.currentPositionMs = 0;
+        this.pausePositionMs = 0;
+        // 注意：不清理audioLine/audioStream，因为STOPPED状态下它们已经被清理或保留下次使用
+        System.out.println("[BasicLocalPlaybackEngine] Current track cleared");
     }
 
     @Override

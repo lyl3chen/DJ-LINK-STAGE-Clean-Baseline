@@ -2116,6 +2116,7 @@
           const isLoaded = localRuntimeTrackId && track.trackId === localRuntimeTrackId;
           const isPlaying = isLoaded && localRuntimeState === 'PLAYING';
           const isPaused = isLoaded && localRuntimeState === 'PAUSED';
+          const isStopped = isLoaded && localRuntimeState === 'STOPPED';
           const isSelected = localSelectedTrackId && track.trackId === localSelectedTrackId;
 
           const borderColor = isPlaying ? '#2dff7a' : (isLoaded ? '#4da3ff' : (isSelected ? '#7f8ea8' : '#2f425e'));
@@ -2124,9 +2125,14 @@
             ? '<span style="color:#2dff7a;font-weight:bold;">▶ 正在播放</span>'
             : isPaused
               ? '<span style="color:#ffb347;font-weight:bold;">⏸ 已暂停</span>'
-              : isLoaded
-                ? '<span style="color:#4da3ff;font-weight:bold;">已加载</span>'
-                : '<span style="color:#7f8ea8;">未加载</span>';
+              : isStopped
+                ? '<span style="color:#4da3ff;font-weight:bold;">已停止</span>'
+                : isLoaded
+                  ? '<span style="color:#4da3ff;font-weight:bold;">已加载</span>'
+                  : '<span style="color:#7f8ea8;">未加载</span>';
+
+          // 【修复】删除按钮策略：PLAYING/PAUSED 禁止删除，STOPPED 允许删除
+          const canDelete = !isPlaying && !isPaused;
 
           return `
           <div style="border:1px solid ${borderColor}; background:${bg}; border-radius:4px; padding:8px; margin-bottom:6px;">
@@ -2143,9 +2149,9 @@
               <div style="display:flex; gap:6px;">
                 <button class="scan-btn" onclick="loadLocalTrack('${track.trackId}')">加载</button>
                 <button class="scan-btn" 
-                  style="background:linear-gradient(180deg,#4a1b1b,#2d1010);border-color:#6b2a2a;${isLoaded ? 'opacity:0.45;cursor:not-allowed;' : ''}" 
-                  title="${isLoaded ? '当前已加载/播放曲目不可删除' : '删除曲目'}"
-                  ${isLoaded ? 'disabled' : ''}
+                  style="background:linear-gradient(180deg,#4a1b1b,#2d1010);border-color:#6b2a2a;${!canDelete ? 'opacity:0.45;cursor:not-allowed;' : ''}" 
+                  title="${!canDelete ? '播放/暂停中曲目不可删除，请先停止' : '删除曲目'}"
+                  ${!canDelete ? 'disabled' : ''}
                   onclick="deleteLocalTrack('${track.trackId}')">删除</button>
               </div>
             </div>
