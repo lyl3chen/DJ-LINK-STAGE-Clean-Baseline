@@ -126,6 +126,14 @@ public class LocalLibraryService {
         TrackInfo track = trackOpt.get();
         System.out.println("[LocalLibraryService] Analyzing: " + track.getTitle());
 
+        // 先写入 ANALYZING 状态（C1）
+        trackRepository.saveAnalysis(trackId, AnalysisResult.builder()
+            .success(false)
+            .analysisStatus(AnalysisStatus.ANALYZING)
+            .errorMessage(null)
+            .analyzedAt(System.currentTimeMillis())
+            .build());
+
         // 执行分析
         AnalysisResult result = audioAnalyzer.analyze(track);
 

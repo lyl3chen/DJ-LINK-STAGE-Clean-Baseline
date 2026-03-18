@@ -4,6 +4,7 @@ import dbclient.ai.AiAgentService;
 import dbclient.config.UserSettingsStore;
 import dbclient.input.LocalSourceInput;
 import dbclient.media.library.LocalLibraryService;
+import dbclient.media.model.AnalysisResult;
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
 import dbclient.media.player.BasicLocalPlaybackEngine;
@@ -206,6 +207,17 @@ public class JettyServer {
                         response.setContentType("application/json");
                         response.getWriter().print(gson.toJson(Map.of("ports", portList)));
                         return;
+                    } else if (path.equals("/api/local/analysis")) {
+                        String trackId = request.getParameter("trackId");
+                        if (trackId == null || trackId.isBlank()) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        Optional<AnalysisResult> ar = getLocalLibraryService().getAnalysis(trackId);
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ok", ar.isPresent(), "analysis", ar.orElse(null))));
+                        return;
                     } else if (path.equals("/api/local/tracks")) {
                         // GET /api/local/tracks - 列出所有本地曲目
                         List<TrackInfo> tracks = getLocalLibraryService().getAllTracks();
@@ -372,6 +384,16 @@ public class JettyServer {
                     if (path.equals("/api/local/tracks")) {
                         List<TrackInfo> tracks = getLocalLibraryService().getAllTracks();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "tracks", tracks)));
+                        return;
+                    }
+                    if (path.equals("/api/local/analyze")) {
+                        String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
+                        if (trackId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        AnalysisResult ar = getLocalLibraryService().analyzeTrack(trackId);
+                        response.getWriter().print(gson.toJson(Map.of("ok", ar != null && ar.isSuccess(), "analysis", ar)));
                         return;
                     }
                     if (path.equals("/api/local/delete")) {

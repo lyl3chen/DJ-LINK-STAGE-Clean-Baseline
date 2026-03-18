@@ -8,6 +8,7 @@ public class AnalysisResult {
     private boolean success;
     private AnalysisStatus analysisStatus;
     private Integer bpm;
+    private Double bpmConfidence;
     private long durationMs;
     private String waveformCachePath;
     private boolean beatGridAvailable;
@@ -35,6 +36,11 @@ public class AnalysisResult {
 
         public Builder bpm(Integer bpm) {
             result.bpm = bpm;
+            return this;
+        }
+
+        public Builder bpmConfidence(Double bpmConfidence) {
+            result.bpmConfidence = bpmConfidence;
             return this;
         }
 
@@ -78,6 +84,9 @@ public class AnalysisResult {
     public Integer getBpm() { return bpm; }
     public void setBpm(Integer bpm) { this.bpm = bpm; }
 
+    public Double getBpmConfidence() { return bpmConfidence; }
+    public void setBpmConfidence(Double bpmConfidence) { this.bpmConfidence = bpmConfidence; }
+
     public long getDurationMs() { return durationMs; }
     public void setDurationMs(long durationMs) { this.durationMs = durationMs; }
 
@@ -99,6 +108,7 @@ public class AnalysisResult {
                 "success=" + success +
                 ", analysisStatus=" + analysisStatus +
                 ", bpm=" + bpm +
+                ", bpmConfidence=" + bpmConfidence +
                 ", durationMs=" + durationMs +
                 ", errorMessage='" + errorMessage + '\'' +
                 '}';
