@@ -238,16 +238,27 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
 
     @Override
     public void seek(long positionMs) {
-        System.out.println("[BasicLocalPlaybackEngine] Seek to " + positionMs + "ms (simplified: not supported in v1)");
+        System.out.println("[BasicLocalPlaybackEngine] Seek to " + positionMs + "ms (simplified: not sample-accurate)");
         
-        // 第一版简化：不支持精确 seek
-        // 实际实现需要重新打开流并跳过指定字节数
+        // 【Step B4 明确限制】第一版简化实现：不支持精准采样级 seek
+        // 实际行为：停止 -> 设置位置 -> 重新播放（会有短暂中断）
+        // 精准实现需：重新打开流并跳过指定字节数（Phase C 考虑）
+        
+        // 边界保护：确保 position 在有效范围内
+        long durationMs = currentTrack != null ? currentTrack.getDurationMs() : 0;
+        long clampedPos = positionMs;
+        if (durationMs > 0) {
+            clampedPos = Math.max(0, Math.min(positionMs, durationMs));
+            if (clampedPos != positionMs) {
+                System.out.println("[BasicLocalPlaybackEngine] Seek position clamped: " + positionMs + " -> " + clampedPos);
+            }
+        }
         
         // 如果正在播放，停止后重新定位
         boolean wasPlaying = (currentState == PlaybackStatus.State.PLAYING);
         stop();
-        this.currentPositionMs = positionMs;
-        this.pausePositionMs = positionMs;
+        this.currentPositionMs = clampedPos;
+        this.pausePositionMs = clampedPos;
 
         if (wasPlaying) {
             play();

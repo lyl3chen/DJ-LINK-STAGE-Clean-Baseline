@@ -760,11 +760,12 @@
         </div>
         <div class="cfg-row">
           <label>Seek (ms)</label>
-          <input id="localSeekPos" type="number" value="0" step="1000" style="width:100px;" />
-          <button id="localSeekBtn" class="scan-btn">跳转</button>
+          <input id="localSeekPos" type="number" value="0" step="1000" min="0" style="width:100px;" />
+          <button id="localSeekBtn" class="scan-btn" title="跳转到指定位置（非采样级精准）">跳转</button>
+          <span id="localSeekBounds" style="font-size:11px;color:#7f8ea8;margin-left:8px;">范围: 0ms</span>
         </div>
         <div class="cfg-row" style="font-size:11px;color:#7f8ea8;">
-          说明：当前 seek 为最小可用实现（非采样级精准定位）。
+          说明：当前 seek 为最小可用实现（停止-定位-重播，非采样级精准，会有短暂中断）。
         </div>
       </div>
 
@@ -1934,6 +1935,18 @@
         document.getElementById('localStatusBpm').textContent =
           data.sourceBpm || '-';
 
+        // 更新 seek 输入范围提示
+        const seekBoundsEl = document.getElementById('localSeekBounds');
+        if (seekBoundsEl) {
+          if (safeDur > 0) {
+            seekBoundsEl.textContent = `范围: 0 - ${formatMs(safeDur)}`;
+            document.getElementById('localSeekPos').max = safeDur;
+          } else {
+            seekBoundsEl.textContent = '范围: 未加载曲目';
+            document.getElementById('localSeekPos').max = 0;
+          }
+        }
+
         // 诊断信息
         document.getElementById('localStatusConfiguredDevice').textContent =
           data.configuredDevice || 'unknown';
@@ -2253,6 +2266,12 @@
       const posInput = document.getElementById('localSeekPos');
       const positionMs = parseInt(posInput.value, 10) || 0;
 
+      // 前置检查：未加载曲目时禁止 seek
+      if (!localRuntimeTrackId) {
+        showLocalControlMsg('⚠️ 请先加载曲目再 seek', true);
+        return;
+      }
+
       try {
         const res = await fetch('/api/local/seek', {
           method: 'POST',
@@ -2262,10 +2281,13 @@
         const data = await res.json();
         if (data.ok) {
           clearLocalActiveError();
-          showLocalControlMsg(`⏩ 已请求跳转到 ${positionMs}ms（最小可用实现）`, false);
+          // 显示被后端 clamp 后的实际位置
+          const actualPos = data.positionMs !== undefined ? data.positionMs : positionMs;
+          showLocalControlMsg(`⏩ 已跳转至 ${formatMs(actualPos)}（最小可用实现：停止-定位-重播）`, false);
         } else {
           showLocalControlMsg('❌ 跳转失败: ' + (data.error || ''), true);
         }
+        // 立即刷新状态，让页面显示最新位置
         await refreshLocalPlayerStatus();
       } catch (e) {
         showLocalControlMsg('❌ 跳转失败: ' + e.message, true);
