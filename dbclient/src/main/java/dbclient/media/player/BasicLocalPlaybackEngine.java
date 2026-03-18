@@ -123,14 +123,23 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     public void play() {
         System.out.println("[BasicLocalPlaybackEngine] play() called, currentState=" + currentState + ", audioLine=" + audioLine + ", currentTrack=" + currentTrack);
         
-        if (audioLine == null || currentTrack == null) {
-            System.err.println("[BasicLocalPlaybackEngine] No track loaded, audioLine=" + audioLine + ", currentTrack=" + currentTrack);
+        if (currentTrack == null) {
+            System.err.println("[BasicLocalPlaybackEngine] No track loaded, currentTrack=" + currentTrack);
             return;
         }
 
         if (currentState == PlaybackStatus.State.PLAYING) {
             System.out.println("[BasicLocalPlaybackEngine] Already playing");
             return; // 已经在播放
+        }
+
+        // 【修正】如果 audioLine 为 null（Stop 后），但有 currentTrack，重新初始化
+        if (audioLine == null || audioStream == null) {
+            System.out.println("[BasicLocalPlaybackEngine] Re-initializing audio after stop (audioLine=" + audioLine + ", audioStream=" + audioStream + ")");
+            if (!reinitializeAudio()) {
+                System.err.println("[BasicLocalPlaybackEngine] Failed to reinitialize audio");
+                return;
+            }
         }
 
         System.out.println("[BasicLocalPlaybackEngine] play() proceeding, audioStream=" + audioStream);
@@ -146,39 +155,62 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         System.out.println("[BasicLocalPlaybackEngine] Setting state to PLAYING, now=" + currentState);
         startTimeMs = System.currentTimeMillis() - currentPositionMs;
         
-        // 【修复首次播放杂音】先预填充缓冲区，再启动播放
-        // 使用 mark/reset 让 playbackLoop 能从正确位置继续
+        // 启动播放（预填充 + 启动）
         try {
-            if (audioStream.markSupported()) {
-                audioStream.mark(16384); // 标记当前位置
-            }
-            byte[] preBuffer = new byte[8192]; // 预填充 8KB
-            int preFilled = 0;
-            int targetPreFill = 8192;
-            while (preFilled < targetPreFill) {
-                int read = audioStream.read(preBuffer, 0, Math.min(preBuffer.length, targetPreFill - preFilled));
-                if (read <= 0) break;
-                audioLine.write(preBuffer, 0, read);
-                preFilled += read;
-            }
-            // 重置流位置，让 playbackLoop 从头读取
-            if (audioStream.markSupported()) {
-                audioStream.reset();
-                System.out.println("[BasicLocalPlaybackEngine] Pre-filled " + preFilled + " bytes, stream reset for playback loop");
-            } else {
-                System.out.println("[BasicLocalPlaybackEngine] Pre-filled " + preFilled + " bytes (mark not supported, continuing from current position)");
-            }
+            prefillAndStartPlayback();
         } catch (Exception e) {
-            System.err.println("[BasicLocalPlaybackEngine] Pre-fill warning: " + e.getMessage());
+            System.err.println("[BasicLocalPlaybackEngine] Play start error: " + e.getMessage());
+            this.currentState = PlaybackStatus.State.STOPPED;
+            return;
         }
-        
-        audioLine.start();
-
-        // 启动播放线程
-        playbackThread = new Thread(this::playbackLoop, "local-playback");
-        playbackThread.start();
 
         System.out.println("[BasicLocalPlaybackEngine] Playing: " + currentTrack.getTitle() + ", thread started");
+    }
+
+    /**
+     * 【修正】重新初始化音频（Stop 后 Play 使用）
+     * 保留 currentTrack，只重新打开 audioLine 和 audioStream
+     */
+    private boolean reinitializeAudio() {
+        if (currentTrack == null) {
+            return false;
+        }
+        try {
+            File audioFile = new File(currentTrack.getFilePath());
+            if (!audioFile.exists()) {
+                this.lastError = "File not found: " + currentTrack.getFilePath();
+                return false;
+            }
+
+            // 重新获取音频输入流
+            AudioInputStream newStream = AudioSystem.getAudioInputStream(audioFile);
+            AudioFormat baseFormat = newStream.getFormat();
+            AudioFormat decodedFormat = new AudioFormat(
+                AudioFormat.Encoding.PCM_SIGNED,
+                baseFormat.getSampleRate(),
+                16,
+                baseFormat.getChannels(),
+                baseFormat.getChannels() * 2,
+                baseFormat.getSampleRate(),
+                false
+            );
+            if (!baseFormat.getEncoding().equals(AudioFormat.Encoding.PCM_SIGNED)) {
+                newStream = AudioSystem.getAudioInputStream(decodedFormat, newStream);
+            }
+            this.audioStream = newStream;
+
+            // 重新打开音频线
+            this.audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, decodedFormat);
+            this.audioLine.open(decodedFormat);
+            this.actualOpenedDevice = deviceName;
+
+            System.out.println("[BasicLocalPlaybackEngine] Audio reinitialized successfully");
+            return true;
+        } catch (Exception e) {
+            this.lastError = "Reinitialize error: " + e.getMessage();
+            System.err.println("[BasicLocalPlaybackEngine] " + this.lastError);
+            return false;
+        }
     }
 
     @Override
@@ -216,53 +248,123 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             System.out.println("[BasicLocalPlaybackEngine] Playback thread interrupted");
         }
 
-        // 关闭音频流
+        // 【修正】Stop 不关闭 audioStream 和 audioLine，保留 currentTrack
+        // 这样 Stop 后可以立即 Play，不需要重新 Load
+        // 只重置流到开头位置，下次 Play 时从 0 开始
         if (audioStream != null) {
             try {
-                audioStream.close();
-            } catch (IOException e) {
-                System.err.println("[BasicLocalPlaybackEngine] Error closing audio stream: " + e.getMessage());
+                // 尝试重置流到开头
+                if (audioStream.markSupported()) {
+                    audioStream.reset();
+                }
+                // 注意：不关闭 stream，保留用于下次 play
+            } catch (Exception e) {
+                System.err.println("[BasicLocalPlaybackEngine] Stream reset warning: " + e.getMessage());
+                // 如果重置失败，关闭并清空，下次 play 重新打开
+                try {
+                    audioStream.close();
+                } catch (IOException ignored) {}
+                audioStream = null;
             }
-            audioStream = null;
         }
 
-        // 关闭音频线
-        if (audioLine != null) {
-            audioLine.close();
-            audioLine = null;
-            System.out.println("[BasicLocalPlaybackEngine] Audio line closed");
-        }
-
-        System.out.println("[BasicLocalPlaybackEngine] Stopped");
+        System.out.println("[BasicLocalPlaybackEngine] Stopped (currentTrack retained: " + (currentTrack != null ? currentTrack.getTitle() : "null") + ")");
     }
 
     @Override
     public void seek(long positionMs) {
-        System.out.println("[BasicLocalPlaybackEngine] Seek to " + positionMs + "ms (simplified: not sample-accurate)");
+        System.out.println("[BasicLocalPlaybackEngine] Seek to " + positionMs + "ms from state=" + currentState);
         
-        // 【Step B4 明确限制】第一版简化实现：不支持精准采样级 seek
-        // 实际行为：停止 -> 设置位置 -> 重新播放（会有短暂中断）
-        // 精准实现需：重新打开流并跳过指定字节数（Phase C 考虑）
+        // 【修正】Seek 语义：
+        // - PLAYING 状态下 seek：跳转后继续播放
+        // - PAUSED 状态下 seek：跳转后保持暂停  
+        // - STOPPED 状态下 seek：跳转后进入 PAUSED（不自动播放）
         
-        // 边界保护：确保 position 在有效范围内
-        long durationMs = currentTrack != null ? currentTrack.getDurationMs() : 0;
+        if (currentTrack == null) {
+            System.err.println("[BasicLocalPlaybackEngine] Cannot seek: no track loaded");
+            return;
+        }
+        
+        // 边界保护
+        long durationMs = currentTrack.getDurationMs();
         long clampedPos = positionMs;
         if (durationMs > 0) {
             clampedPos = Math.max(0, Math.min(positionMs, durationMs));
-            if (clampedPos != positionMs) {
-                System.out.println("[BasicLocalPlaybackEngine] Seek position clamped: " + positionMs + " -> " + clampedPos);
+        }
+        
+        // 记录原状态
+        PlaybackStatus.State originalState = currentState;
+        
+        // 停止当前播放（但不卸载）
+        if (currentState == PlaybackStatus.State.PLAYING || currentState == PlaybackStatus.State.PAUSED) {
+            // 只停止不卸载（保留 currentTrack）
+            if (audioLine != null) {
+                audioLine.stop();
+                audioLine.flush();
+            }
+            if (playbackThread != null) {
+                playbackThread.interrupt();
+                playbackThread = null;
             }
         }
         
-        // 如果正在播放，停止后重新定位
-        boolean wasPlaying = (currentState == PlaybackStatus.State.PLAYING);
-        stop();
+        // 设置新位置
         this.currentPositionMs = clampedPos;
         this.pausePositionMs = clampedPos;
-
-        if (wasPlaying) {
-            play();
+        
+        // 根据原状态决定新状态
+        if (originalState == PlaybackStatus.State.PLAYING) {
+            // PLAYING -> 继续 PLAYING（重新启动播放）
+            this.currentState = PlaybackStatus.State.PLAYING;
+            System.out.println("[BasicLocalPlaybackEngine] Seek from PLAYING, restarting playback at " + clampedPos + "ms");
+            
+            // 重新初始化音频（如果需要）并播放
+            if (audioLine == null || audioStream == null) {
+                if (!reinitializeAudio()) {
+                    this.currentState = PlaybackStatus.State.STOPPED;
+                    return;
+                }
+            }
+            
+            // 重新启动播放线程
+            this.startTimeMs = System.currentTimeMillis() - currentPositionMs;
+            try {
+                prefillAndStartPlayback();
+            } catch (Exception e) {
+                System.err.println("[BasicLocalPlaybackEngine] Seek restart error: " + e.getMessage());
+                this.currentState = PlaybackStatus.State.PAUSED;
+            }
+        } else {
+            // PAUSED 或 STOPPED -> 进入 PAUSED（不自动播放）
+            this.currentState = PlaybackStatus.State.PAUSED;
+            System.out.println("[BasicLocalPlaybackEngine] Seek from " + originalState + ", entering PAUSED at " + clampedPos + "ms");
         }
+    }
+    
+    /**
+     * 预填充并启动播放（抽取公共逻辑）
+     */
+    private void prefillAndStartPlayback() throws Exception {
+        // 预填充缓冲区
+        if (audioStream.markSupported()) {
+            audioStream.mark(16384);
+        }
+        byte[] preBuffer = new byte[8192];
+        int preFilled = 0;
+        int targetPreFill = 8192;
+        while (preFilled < targetPreFill) {
+            int read = audioStream.read(preBuffer, 0, Math.min(preBuffer.length, targetPreFill - preFilled));
+            if (read <= 0) break;
+            audioLine.write(preBuffer, 0, read);
+            preFilled += read;
+        }
+        if (audioStream.markSupported()) {
+            audioStream.reset();
+        }
+        
+        audioLine.start();
+        playbackThread = new Thread(this::playbackLoop, "local-playback");
+        playbackThread.start();
     }
 
     @Override

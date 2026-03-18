@@ -765,7 +765,7 @@
           <span id="localSeekBounds" style="font-size:11px;color:#7f8ea8;margin-left:8px;">范围: 0ms</span>
         </div>
         <div class="cfg-row" style="font-size:11px;color:#7f8ea8;">
-          说明：当前 seek 为最小可用实现（停止-定位-重播，非采样级精准，会有短暂中断）。
+          Seek 语义：PLAYING 下跳转后继续播放；PAUSED/STOPPED 下跳转后保持暂停。
         </div>
       </div>
 
@@ -2283,7 +2283,7 @@
           clearLocalActiveError();
           // 显示被后端 clamp 后的实际位置
           const actualPos = data.positionMs !== undefined ? data.positionMs : positionMs;
-          showLocalControlMsg(`⏩ 已跳转至 ${formatMs(actualPos)}（最小可用实现：停止-定位-重播）`, false);
+          showLocalControlMsg(`⏩ 已跳转至 ${formatMs(actualPos)}`, false);
         } else {
           showLocalControlMsg('❌ 跳转失败: ' + (data.error || ''), true);
         }
