@@ -223,6 +223,9 @@ public class JettyServer {
                         PlaybackStatus status = localSource.getPlaybackStatus();
                         TrackInfo track = localSource.getCurrentTrack();
                         double bpm = localSource.getSourceBpm();
+                        String audioDevice = localSource.getPlaybackEngine() != null 
+                            ? localSource.getPlaybackEngine().getAudioDevice() 
+                            : "default";
                         response.setContentType("application/json");
                         Map<String, Object> statusMap = new HashMap<>();
                         statusMap.put("ok", true);
@@ -230,6 +233,7 @@ public class JettyServer {
                         statusMap.put("currentTrack", track);
                         statusMap.put("sourceBpm", bpm);
                         statusMap.put("sourceType", localSource.getType());
+                        statusMap.put("audioDevice", audioDevice);
                         response.getWriter().print(gson.toJson(statusMap));
                         return;
                     } else {

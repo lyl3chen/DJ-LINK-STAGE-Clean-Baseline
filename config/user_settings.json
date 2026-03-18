@@ -9,12 +9,12 @@
     "timecodeSource": 2.0,
     "masterPlayer": 1.0,
     "ltc": {
-      "enabled": false,
+      "enabled": true,
       "fps": 25.0,
       "start": "00:00:00:00",
       "sampleRate": 48000.0,
       "gainDb": -8.0,
-      "deviceName": "default",
+      "deviceName": "PCH [plughw:0,0]",
       "frameRate": 25.0
     },
     "mtc": {
@@ -55,6 +55,9 @@
     },
     "timecode": {
       "sourcePlayer": 2.0
+    },
+    "localPlayer": {
+      "audioDevice": "PCH [plughw:0,0]"
     }
   },
   "ai": {

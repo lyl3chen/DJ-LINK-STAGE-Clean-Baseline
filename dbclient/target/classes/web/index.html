@@ -1484,7 +1484,8 @@
           const ltcRunning = ltc.running ? 'Running' : 'Stopped';
           const ltcFrame = ltc.currentFrame || 0;
           const ltcGain = ltc.gainDb !== undefined ? ltc.gainDb : -8;
-          ltcDiag.textContent = `LTC: ${ltcEnabled} | ${ltcRunning} | Frame=${ltcFrame} | Gain=${ltcGain}dB`;
+          const ltcDevice = ltc.deviceName || 'default';
+          ltcDiag.textContent = `LTC: ${ltcEnabled} | ${ltcRunning} | Frame=${ltcFrame} | Gain=${ltcGain}dB | Device=${ltcDevice}`;
         }
 
         // MTC 状态显示
@@ -1496,6 +1497,14 @@
           const mtcFrame = mtc.currentFrame || 0;
           const mtcQf = mtc.qfIndex !== undefined ? mtc.qfIndex : 0;
           mtcDiag.textContent = `MTC: ${mtcEnabled} | ${mtcRunning} | Frame=${mtcFrame} | QF=${mtcQf}`;
+        }
+
+        // 本地播放器音频设备状态（从配置读取）
+        const localPlayerDiag = document.getElementById('localPlayerDiag');
+        if (localPlayerDiag) {
+          const localPlayerCfg = (userSettings.sync || {}).localPlayer || {};
+          const localDevice = localPlayerCfg.audioDevice || 'default';
+          localPlayerDiag.textContent = `Local Player: Ready | Audio Device=${localDevice}`;
         }
 
         // Timecode Core 状态显示
