@@ -283,12 +283,20 @@ public class JettyServer {
                 response.setHeader("Access-Control-Allow-Origin", "*");
                 response.setContentType("application/json");
 
-                String body = new String(request.getInputStream().readAllBytes());
-                @SuppressWarnings("unchecked")
-                Map<String, Object> payload = body == null || body.isBlank() ? new ConcurrentHashMap<>() : gson.fromJson(body, Map.class);
-                if (payload == null) payload = new ConcurrentHashMap<>();
-
                 try {
+                    // multipart 上传接口必须先处理，避免把二进制 body 当 JSON 解析导致 500 HTML 错页
+                    if (path.equals("/api/local/upload-and-import")) {
+                        handleFileUploadAndImport(request, response);
+                        return;
+                    }
+
+                    String body = new String(request.getInputStream().readAllBytes());
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> payload = body == null || body.isBlank()
+                        ? new ConcurrentHashMap<>()
+                        : gson.fromJson(body, Map.class);
+                    if (payload == null) payload = new ConcurrentHashMap<>();
+
                     if (path.equals("/api/config")) {
                         settingsStore.patch(payload);
                         syncOutputManager.applySettings();
@@ -338,12 +346,7 @@ public class JettyServer {
                         )));
                         return;
                     }
-                    // ====== Local Player Test APIs (isolated from main flow) ======
-                    if (path.equals("/api/local/upload-and-import")) {
-                        // 处理文件上传并导入
-                        handleFileUploadAndImport(request, response);
-                        return;
-                    }
+                    // ====== Local Player APIs ======
                     if (path.equals("/api/local/import")) {
                         String filePath = String.valueOf(payload.getOrDefault("filePath", ""));
                         if (filePath.isEmpty()) {
@@ -508,7 +511,12 @@ public class JettyServer {
                     response.getWriter().print(gson.toJson(Map.of("error", "unknown endpoint")));
                 } catch (Exception e) {
                     response.setStatus(500);
-                    response.getWriter().print(gson.toJson(Map.of("error", e.getMessage())));
+                    response.setContentType("application/json");
+                    response.getWriter().print(gson.toJson(Map.of(
+                        "ok", false,
+                        "error", e.getClass().getSimpleName() + ": " + e.getMessage(),
+                        "path", path
+                    )));
                 }
             }
 
