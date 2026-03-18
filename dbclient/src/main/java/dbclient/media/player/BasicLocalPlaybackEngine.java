@@ -218,6 +218,14 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
      * 保留 currentTrack，只重新打开 audioLine 和 audioStream
      */
     private boolean reinitializeAudio() {
+        return reinitializeAudioAtPositionMs(currentPositionMs);
+    }
+
+    /**
+     * 重新初始化音频并定位到目标毫秒位置。
+     * 这是 seek 的底层核心：保证“显示位置”和“真实播放位置”一致。
+     */
+    private boolean reinitializeAudioAtPositionMs(long targetPositionMs) {
         if (currentTrack == null) {
             return false;
         }
@@ -228,7 +236,16 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
                 return false;
             }
 
-            // 重新获取音频输入流
+            // 先关闭旧资源，避免设备占用残留
+            if (audioStream != null) {
+                try { audioStream.close(); } catch (IOException ignored) {}
+                audioStream = null;
+            }
+            if (audioLine != null) {
+                try { audioLine.close(); } catch (Exception ignored) {}
+                audioLine = null;
+            }
+
             AudioInputStream newStream = AudioSystem.getAudioInputStream(audioFile);
             AudioFormat baseFormat = newStream.getFormat();
             AudioFormat decodedFormat = new AudioFormat(
@@ -243,17 +260,47 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             if (!baseFormat.getEncoding().equals(AudioFormat.Encoding.PCM_SIGNED)) {
                 newStream = AudioSystem.getAudioInputStream(decodedFormat, newStream);
             }
-            this.audioStream = newStream;
 
             // 重新打开音频线
             this.audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, decodedFormat);
             this.audioLine.open(decodedFormat);
             this.actualOpenedDevice = deviceName;
 
+            // ===== seek 核心：毫秒 -> 字节偏移 =====
+            int frameSize = Math.max(1, decodedFormat.getFrameSize());
+            float sampleRate = decodedFormat.getSampleRate();
+            long targetFrame = Math.max(0L, Math.round((targetPositionMs / 1000.0) * sampleRate));
+            long targetBytes = targetFrame * frameSize;
+
+            long skipped = 0;
+            while (skipped < targetBytes) {
+                long n = newStream.skip(targetBytes - skipped);
+                if (n > 0) {
+                    skipped += n;
+                    continue;
+                }
+                // skip 可能返回 0，尝试读丢弃 1 字节推进
+                int b = newStream.read();
+                if (b == -1) {
+                    break; // EOF
+                }
+                skipped += 1;
+            }
+
+            // 计算“真实定位到的位置”（避免把期望位置当真实位置）
+            long actualFrame = skipped / frameSize;
+            long actualPositionMs = (long) ((actualFrame * 1000.0) / sampleRate);
+            this.currentPositionMs = actualPositionMs;
+            this.pausePositionMs = actualPositionMs;
+
+            this.audioStream = newStream;
+            this.lastError = null;
+
             System.out.println("[BasicLocalPlaybackEngine] Audio reinitialized successfully");
+            System.out.println("[BasicLocalPlaybackEngine] seek targetMs=" + targetPositionMs + ", targetBytes=" + targetBytes + ", skipped=" + skipped + ", actualMs=" + actualPositionMs);
             return true;
         } catch (Exception e) {
-            this.lastError = "Reinitialize error: " + e.getMessage();
+            this.lastError = "Reinitialize/seek error: " + e.getClass().getSimpleName() + " - " + e.getMessage();
             System.err.println("[BasicLocalPlaybackEngine] " + this.lastError);
             return false;
         }
@@ -364,33 +411,17 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             }
         }
 
-        // 设置新位置
-        this.currentPositionMs = clampedPos;
-        this.pausePositionMs = clampedPos;
+        // 统一先做“真实定位”（毫秒->字节偏移），得到 actualPositionMs
+        if (!reinitializeAudioAtPositionMs(clampedPos)) {
+            this.currentState = PlaybackStatus.State.STOPPED;
+            return;
+        }
 
         // 根据原状态决定新状态
         if (originalState == PlaybackStatus.State.PLAYING) {
-            // PLAYING -> 继续 PLAYING（重新启动播放）
+            // PLAYING -> 继续 PLAYING（从真实定位位置继续播放）
             this.currentState = PlaybackStatus.State.PLAYING;
-            System.out.println("[BasicLocalPlaybackEngine] Seek from PLAYING, restarting playback at " + clampedPos + "ms");
-
-            // 【修复】PLAYING状态下seek必须完全重新初始化音频
-            // 因为之前的audioStream可能已经耗尽或位置不对
-            if (audioLine != null) {
-                try { audioLine.close(); } catch (Exception ignored) {}
-                audioLine = null;
-            }
-            if (audioStream != null) {
-                try { audioStream.close(); } catch (IOException ignored) {}
-                audioStream = null;
-            }
-            
-            if (!reinitializeAudio()) {
-                this.currentState = PlaybackStatus.State.STOPPED;
-                return;
-            }
-
-            // 重新启动播放线程
+            System.out.println("[BasicLocalPlaybackEngine] Seek from PLAYING, restarting playback at actual " + currentPositionMs + "ms");
             this.startTimeMs = System.currentTimeMillis() - currentPositionMs;
             try {
                 prefillAndStartPlayback();
@@ -401,7 +432,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         } else {
             // PAUSED 或 STOPPED -> 进入 PAUSED（不自动播放）
             this.currentState = PlaybackStatus.State.PAUSED;
-            System.out.println("[BasicLocalPlaybackEngine] Seek from " + originalState + ", entering PAUSED at " + clampedPos + "ms");
+            System.out.println("[BasicLocalPlaybackEngine] Seek from " + originalState + ", entering PAUSED at actual " + currentPositionMs + "ms");
         }
     }
 

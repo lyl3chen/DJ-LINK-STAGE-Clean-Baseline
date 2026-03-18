@@ -492,9 +492,33 @@ public class JettyServer {
                             return;
                         }
                         Object posObj = payload.get("positionMs");
-                        long positionMs = posObj instanceof Number ? ((Number) posObj).longValue() : 0;
-                        localSrc.seek(positionMs);
-                        response.getWriter().print(gson.toJson(Map.of("ok", true, "positionMs", positionMs)));
+                        long requestedMs = posObj instanceof Number ? ((Number) posObj).longValue() : 0;
+                        localSrc.seek(requestedMs);
+
+                        // seek 后读取真实状态，返回“实际定位位置”
+                        PlaybackStatus st = localSrc.getPlaybackStatus();
+                        long actualMs = st != null ? st.getPositionMs() : 0;
+
+                        // 若存在底层错误，返回失败而非误判成功
+                        PlaybackEngine engine = localSrc.getPlaybackEngine();
+                        if (engine instanceof BasicLocalPlaybackEngine) {
+                            BasicLocalPlaybackEngine.DeviceDiagnostics d = ((BasicLocalPlaybackEngine) engine).getDiagnostics();
+                            if (d.lastError() != null) {
+                                response.getWriter().print(gson.toJson(Map.of(
+                                    "ok", false,
+                                    "error", d.lastError(),
+                                    "requestedMs", requestedMs,
+                                    "positionMs", actualMs
+                                )));
+                                return;
+                            }
+                        }
+
+                        response.getWriter().print(gson.toJson(Map.of(
+                            "ok", true,
+                            "requestedMs", requestedMs,
+                            "positionMs", actualMs
+                        )));
                         return;
                     }
                     if (path.equals("/api/local/status")) {
