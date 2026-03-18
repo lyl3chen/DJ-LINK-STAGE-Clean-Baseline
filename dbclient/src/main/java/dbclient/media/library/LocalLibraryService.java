@@ -27,6 +27,12 @@ import java.util.concurrent.CompletableFuture;
  * - 不做多 deck
  * - 分析为同步或简单异步
  */
+/**
+ * LocalLibraryService = 本地曲库用例编排层。
+ *
+ * 负责：导入/查询/删除/分析触发。
+ * 不负责：播放控制、时间码输出。
+ */
 public class LocalLibraryService {
 
     private final TrackRepository trackRepository;

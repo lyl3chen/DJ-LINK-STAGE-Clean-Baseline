@@ -12,6 +12,12 @@ import java.util.Optional;
  * 本地播放器输入源适配器
  * 接入 PlaybackEngine 和 LocalLibraryService
  */
+/**
+ * LocalSourceInput = PlaybackEngine 到统一 SourceInput 语义的适配层。
+ *
+ * 负责：把本地播放器状态映射为 sourceState/sourceTime/sourceBpm。
+ * 不负责：时间码推进、输出驱动控制、source 切换策略。
+ */
 public class LocalSourceInput implements SourceInput {
 
     private final PlaybackEngine playbackEngine;
