@@ -811,6 +811,10 @@
     let localRuntimeState = 'STOPPED';
     let localSelectedTrackId = null;
     let localTrackListRenderKey = '';
+    // 统一错误状态管理（避免被状态刷新立刻覆盖）
+    let localActiveError = null;      // 当前活跃错误
+    let localActiveErrorTime = 0;     // 错误产生时间戳
+    const LOCAL_ERROR_MIN_VISIBLE_MS = 3000;  // 错误最少可见 3 秒
     const RENDER_MIN_INTERVAL_MS = 33;
     const waveZoomByDeck = {1:2,2:2,3:2,4:2};
     const waveCanvasCache = new Map();
@@ -1951,20 +1955,23 @@
         localRuntimeTrackId = newTrackId;
         localRuntimeState = newState;
 
-        // 更新消息区域
+        // 更新消息区域（错误优先，且保护可见周期）
         const msgEl = document.getElementById('localStatusMsg');
-        if (sourceType !== 'local') {
-          msgEl.textContent = '⚠️ 请先切换到 local 源模式';
+        const now = Date.now();
+        const errorAge = now - localActiveErrorTime;
+        const shouldShowError = localActiveError && errorAge < LOCAL_ERROR_MIN_VISIBLE_MS;
+
+        if (shouldShowError) {
+          // 保护活跃错误不被状态刷新覆盖
+          msgEl.textContent = localActiveError;
           msgEl.className = 'diag-card error';
-        } else if (data.lastError) {
-          msgEl.textContent = '❌ 错误: ' + data.lastError;
-          msgEl.className = 'diag-card error';
-        } else if (!data.actualOpenedDevice) {
-          msgEl.textContent = '⚠️ 设备未成功打开，请检查配置';
-          msgEl.className = 'diag-card error';
+        } else if (localActiveError && errorAge >= LOCAL_ERROR_MIN_VISIBLE_MS) {
+          // 错误可见周期已过，清除并显示当前状态
+          clearLocalActiveError();
+          updateLocalStatusMessage(msgEl, sourceType, data);
         } else {
-          msgEl.textContent = data.status ? `✅ 状态: ${data.status.state}` : '等待播放...';
-          msgEl.className = 'diag-card';
+          // 无活跃错误，正常显示状态
+          updateLocalStatusMessage(msgEl, sourceType, data);
         }
 
         if (changed) {
@@ -2062,6 +2069,10 @@
       const el = document.getElementById('localImportMsg');
       el.textContent = msg;
       el.style.color = isError ? '#ff4d6d' : '#2dff7a';
+      // 重要错误也同步到统一错误区，确保用户可见
+      if (isError) {
+        showLocalControlMsg('❌ 导入: ' + msg, true);
+      }
     }
 
     async function refreshLocalTracksList() {
@@ -2145,13 +2156,13 @@
         const data = await res.json();
 
         if (data.ok) {
+          clearLocalActiveError();
           document.getElementById('localStatusMsg').textContent = '✅ 曲目已加载';
           document.getElementById('localStatusMsg').className = 'diag-card';
           await refreshLocalPlayerStatus();
           await refreshLocalTracksList();
         } else {
-          document.getElementById('localStatusMsg').textContent = '❌ 加载失败: ' + (data.error || '未知错误');
-          document.getElementById('localStatusMsg').className = 'diag-card error';
+          showLocalControlMsg('❌ 加载失败: ' + (data.error || '未知错误'), true);
           await refreshLocalPlayerStatus();
         }
       } catch (e) {
@@ -2171,6 +2182,7 @@
         const data = await res.json();
         if (data.ok) {
           if (localSelectedTrackId === trackId) localSelectedTrackId = null;
+          clearLocalActiveError();
           showLocalControlMsg('🗑️ 已删除曲目', false);
           await refreshLocalTracksList();
           await refreshLocalPlayerStatus();
@@ -2178,7 +2190,7 @@
           if (data.code === 'TRACK_IN_USE') {
             showLocalControlMsg('⚠️ 当前已加载/播放曲目不可删除，请先加载其他曲目', true);
           } else {
-            showLocalControlMsg('删除失败: ' + (data.error || '未知错误'), true);
+            showLocalControlMsg('❌ 删除失败: ' + (data.error || '未知错误'), true);
           }
         }
       } catch (e) {
@@ -2190,7 +2202,12 @@
       try {
         const res = await fetch('/api/local/play', { method: 'POST' });
         const data = await res.json();
-        showLocalControlMsg(data.ok ? '▶️ 播放中' : '❌ 播放失败: ' + (data.error || ''), !data.ok);
+        if (data.ok) {
+          clearLocalActiveError();
+          showLocalControlMsg('▶️ 播放中', false);
+        } else {
+          showLocalControlMsg('❌ 播放失败: ' + (data.error || ''), true);
+        }
         await refreshLocalPlayerStatus();
         await refreshLocalTracksList();
       } catch (e) {
@@ -2202,7 +2219,12 @@
       try {
         const res = await fetch('/api/local/pause', { method: 'POST' });
         const data = await res.json();
-        showLocalControlMsg(data.ok ? '⏸️ 已暂停' : '❌ 暂停失败: ' + (data.error || ''), !data.ok);
+        if (data.ok) {
+          clearLocalActiveError();
+          showLocalControlMsg('⏸️ 已暂停', false);
+        } else {
+          showLocalControlMsg('❌ 暂停失败: ' + (data.error || ''), true);
+        }
         await refreshLocalPlayerStatus();
         await refreshLocalTracksList();
       } catch (e) {
@@ -2214,7 +2236,12 @@
       try {
         const res = await fetch('/api/local/stop', { method: 'POST' });
         const data = await res.json();
-        showLocalControlMsg(data.ok ? '⏹️ 已停止' : '❌ 停止失败: ' + (data.error || ''), !data.ok);
+        if (data.ok) {
+          clearLocalActiveError();
+          showLocalControlMsg('⏹️ 已停止', false);
+        } else {
+          showLocalControlMsg('❌ 停止失败: ' + (data.error || ''), true);
+        }
         await refreshLocalPlayerStatus();
         await refreshLocalTracksList();
       } catch (e) {
@@ -2225,7 +2252,7 @@
     async function localPlayerSeek() {
       const posInput = document.getElementById('localSeekPos');
       const positionMs = parseInt(posInput.value, 10) || 0;
-      
+
       try {
         const res = await fetch('/api/local/seek', {
           method: 'POST',
@@ -2233,10 +2260,15 @@
           body: JSON.stringify({ positionMs })
         });
         const data = await res.json();
-        showLocalControlMsg(data.ok ? `⏩ 已请求跳转到 ${positionMs}ms（最小可用实现）` : '跳转失败: ' + (data.error || ''), !data.ok);
-        refreshLocalPlayerStatus();
+        if (data.ok) {
+          clearLocalActiveError();
+          showLocalControlMsg(`⏩ 已请求跳转到 ${positionMs}ms（最小可用实现）`, false);
+        } else {
+          showLocalControlMsg('❌ 跳转失败: ' + (data.error || ''), true);
+        }
+        await refreshLocalPlayerStatus();
       } catch (e) {
-        showLocalControlMsg('跳转失败: ' + e.message, true);
+        showLocalControlMsg('❌ 跳转失败: ' + e.message, true);
       }
     }
 
@@ -2244,6 +2276,32 @@
       const el = document.getElementById('localStatusMsg');
       el.textContent = msg;
       el.className = isError ? 'diag-card error' : 'diag-card';
+      // 统一错误状态记录：错误级别消息保留可见周期
+      if (isError || msg.startsWith('❌') || msg.startsWith('⚠️')) {
+        localActiveError = msg;
+        localActiveErrorTime = Date.now();
+      }
+    }
+
+    function clearLocalActiveError() {
+      localActiveError = null;
+      localActiveErrorTime = 0;
+    }
+
+    function updateLocalStatusMessage(msgEl, sourceType, data) {
+      if (sourceType !== 'local') {
+        msgEl.textContent = '⚠️ 请先切换到 local 源模式';
+        msgEl.className = 'diag-card error';
+      } else if (data.lastError) {
+        msgEl.textContent = '❌ 后端错误: ' + data.lastError;
+        msgEl.className = 'diag-card error';
+      } else if (!data.actualOpenedDevice) {
+        msgEl.textContent = '⚠️ 设备未成功打开，请检查配置';
+        msgEl.className = 'diag-card error';
+      } else {
+        msgEl.textContent = data.status ? `✅ 状态: ${data.status.state}` : '等待播放...';
+        msgEl.className = 'diag-card';
+      }
     }
 
     function formatMs(ms) {
