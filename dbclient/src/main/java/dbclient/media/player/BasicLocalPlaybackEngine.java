@@ -137,8 +137,8 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
 
         // 如果是从暂停恢复，需要重新定位
         if (currentState == PlaybackStatus.State.PAUSED) {
-            // TODO: 重新定位到 pausePositionMs
-            // Java Sound 重新定位比较复杂，第一版简化：从头开始
+            // 【Phase 1 已知限制】Java Sound 重新定位需要重新打开音频流并跳过字节
+            // 当前简化实现：从头开始播放。如需精确定位，需在 Phase C 实现。
             System.out.println("[BasicLocalPlaybackEngine] Resume from pause (simplified: restart from position)");
         }
 
