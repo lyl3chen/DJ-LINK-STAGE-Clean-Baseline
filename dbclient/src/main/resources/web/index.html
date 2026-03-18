@@ -663,10 +663,18 @@
       <div class="cfg-card">
         <h3>LTC (SMPTE Timecode)</h3>
         <div class="cfg-row"><label>Enable LTC</label><input id="cfgLtcEnabled" type="checkbox" /></div>
-        <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option><option value="log">Log Mode</option></select></div>
+        <div class="cfg-row"><label>Audio Device</label><select id="cfgLtcDevice"><option value="default">Default</option></select></div>
         <div class="cfg-row"><label>Gain (dB)</label><input id="cfgLtcGain" type="number" value="-8" step="1" min="-20" max="0" /></div>
         <div class="cfg-row"><label>Frame Rate</label><select id="cfgLtcFrameRate"><option value="25" selected>25 fps</option></select></div>
         <div class="diag-card" id="ltcDiag">LTC: Disabled</div>
+      </div>
+
+      <!-- 本地播放器配置模块 -->
+      <div class="cfg-card">
+        <h3>本地播放器音频</h3>
+        <div class="cfg-row"><label>音频输出设备</label><select id="cfgLocalPlayerDevice"><option value="default">Default</option></select></div>
+        <div class="cfg-row"><label>状态</label><span id="localPlayerDeviceStatus" style="color:#7f8ea8;">使用系统默认设备</span></div>
+        <div class="diag-card" id="localPlayerDiag">Local Player: Ready</div>
       </div>
 
       <!-- MTC 配置模块 -->
@@ -1075,44 +1083,66 @@
     }
 
     function refreshAudioDeviceOptions(devices, selected = 'default') {
-      const sel = document.getElementById('cfgLtcDevice');
-      if (!sel) return;
-      sel.innerHTML = '';
+      // 更新 LTC 设备选择
+      const ltcSel = document.getElementById('cfgLtcDevice');
+      const localSel = document.getElementById('cfgLocalPlayerDevice');
+      
+      // 收集设备选项
+      const options = [];
       (devices || []).forEach((d, i) => {
         const name = (d && d.name) ? String(d.name) : '';
         if (!name) return;
         
         // 从 description 中提取型号信息
-        // 格式: "Direct Audio Device: HDA Intel PCH, ALC887-VD Digital, ..."
         const description = (d && d.description) ? String(d.description) : '';
         let model = '';
         
         if (description) {
-          // 提取 "Direct Audio Device:" 后的内容
           const match = description.match(/:\s*([^,]+),\s*([^,]+)/);
           if (match) {
-            // match[1] = 厂商 (HDA Intel PCH)
-            // match[2] = 型号 (ALC887-VD Digital)
             model = match[2].trim();
           }
         }
         
-        const o = document.createElement('option');
-        o.value = name;
-        // 格式: 设备名称 - 型号
-        o.textContent = model ? `${name} - ${model}` : name;
-        o.title = description; // 鼠标悬停显示完整信息
-        sel.appendChild(o);
+        options.push({
+          value: name,
+          text: model ? `${name} - ${model}` : name,
+          title: description
+        });
       });
-      // 如果没有设备，添加一个提示
-      if (sel.innerHTML === '') {
-        const o = document.createElement('option');
-        o.value = 'default';
-        o.textContent = '未找到音频设备';
-        sel.appendChild(o);
+      
+      // 如果没有设备，添加提示
+      if (options.length === 0) {
+        options.push({ value: 'default', text: '未找到音频设备' });
       }
-      sel.value = selected || 'default';
-      if (sel.value !== (selected || 'default')) sel.value = 'default';
+      
+      // 更新 LTC 设备选择
+      if (ltcSel) {
+        ltcSel.innerHTML = '';
+        options.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.text;
+          o.title = opt.title;
+          ltcSel.appendChild(o);
+        });
+        ltcSel.value = selected || 'default';
+        if (ltcSel.value !== (selected || 'default')) ltcSel.value = 'default';
+      }
+      
+      // 更新本地播放器设备选择
+      if (localSel) {
+        localSel.innerHTML = '';
+        options.forEach(opt => {
+          const o = document.createElement('option');
+          o.value = opt.value;
+          o.textContent = opt.text;
+          o.title = opt.title;
+          localSel.appendChild(o);
+        });
+        localSel.value = selected || 'default';
+        if (localSel.value !== (selected || 'default')) localSel.value = 'default';
+      }
     }
 
     function refreshMidiDeviceOptions(devices, selected = 'default') {
@@ -1182,6 +1212,9 @@
         document.getElementById('cfgLtcDevice').value = String(ltc.deviceName || 'default');
         document.getElementById('cfgLtcGain').value = String(ltc.gainDb ?? -8);
         document.getElementById('cfgLtcFrameRate').value = String(ltc.frameRate || 25);
+        // 本地播放器音频设备配置
+        const localPlayer = sync.localPlayer || {};
+        document.getElementById('cfgLocalPlayerDevice').value = String(localPlayer.audioDevice || 'default');
         document.getElementById('cfgMtcEnabled').checked = !!mtc.enabled;
         document.getElementById('cfgMtcPort').value = String(mtc.midiPort || 'default');
         document.getElementById('cfgMtcFrameRate').value = String(mtc.frameRate || 25);
@@ -1264,6 +1297,9 @@
             deviceName: document.getElementById('cfgLtcDevice').value || 'default',
             gainDb: Number(document.getElementById('cfgLtcGain').value || -8),
             frameRate: Number(document.getElementById('cfgLtcFrameRate').value || 25)
+          },
+          localPlayer: {
+            audioDevice: document.getElementById('cfgLocalPlayerDevice').value || 'default'
           },
           mtc: {
             enabled: document.getElementById('cfgMtcEnabled').checked,

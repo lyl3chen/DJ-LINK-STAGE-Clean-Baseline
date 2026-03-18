@@ -59,6 +59,18 @@ public interface PlaybackEngine {
     void close();
 
     /**
+     * 设置音频输出设备
+     * @param deviceName 设备名称（或 "default"）
+     */
+    void setAudioDevice(String deviceName);
+
+    /**
+     * 获取当前音频输出设备
+     * @return 设备名称
+     */
+    String getAudioDevice();
+
+    /**
      * 获取播放引擎名称
      */
     String getEngineName();

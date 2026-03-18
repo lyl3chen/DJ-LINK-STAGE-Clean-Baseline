@@ -57,7 +57,7 @@ public class SyncOutputManager {
         sourceInputManager.registerSource("djlink", djLinkSource);
 
         // 注册本地播放器输入源
-        BasicLocalPlaybackEngine localEngine = new BasicLocalPlaybackEngine();
+        localEngine = new BasicLocalPlaybackEngine();
         InMemoryTrackRepository trackRepo = new InMemoryTrackRepository();
         LocalLibraryService libraryService = new LocalLibraryService(trackRepo, new BasicAudioAnalyzer());
         LocalSourceInput localSource = new LocalSourceInput(localEngine, libraryService);
@@ -90,6 +90,9 @@ public class SyncOutputManager {
         // 启动本地播放器状态推送定时器（100ms）
         startLocalPlayerTimer();
     }
+
+    // 本地播放器引擎引用（用于配置应用）
+    private BasicLocalPlaybackEngine localEngine;
 
     private java.util.concurrent.ScheduledExecutorService localPlayerTimer;
 
@@ -130,6 +133,17 @@ public class SyncOutputManager {
                     if (enabled) {
                         try { e.getValue().start(cfg); } catch (Exception ignored) {}
                     }
+                }
+
+                // 应用本地播放器音频设备配置
+                Map<String, Object> localPlayerCfg = sync.get("localPlayer") instanceof Map
+                    ? (Map<String, Object>) sync.get("localPlayer") : Map.of();
+                String audioDevice = localPlayerCfg.get("audioDevice") instanceof String
+                    ? (String) localPlayerCfg.get("audioDevice") : "default";
+                if (localEngine != null) {
+                    String oldDevice = localEngine.getAudioDevice();
+                    localEngine.setAudioDevice(audioDevice);
+                    System.out.println("[SyncOutputManager] Local player audio device: " + oldDevice + " -> " + audioDevice);
                 }
             } finally {
                 applying = false;

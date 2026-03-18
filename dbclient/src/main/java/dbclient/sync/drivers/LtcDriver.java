@@ -219,17 +219,18 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
 
     private void openAudioDevice() throws Exception {
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, "stereo".equals(channelMode) ? 2 : 1, true, false);
-        DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
-
-        if ("default".equals(deviceName)) {
-            audioLine = (SourceDataLine) AudioSystem.getLine(info);
-        } else {
-            // 按名称查找设备（简化实现，实际应遍历）
-            audioLine = (SourceDataLine) AudioSystem.getLine(info);
+        
+        // 使用 AudioDeviceEnumerator 获取指定设备的 line
+        audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, format);
+        
+        if (audioLine == null) {
+            throw new Exception("Failed to open audio device: " + deviceName);
         }
-
+        
         audioLine.open(format);
         audioLine.start();
+        
+        System.out.println("[LTC] Opened audio device: " + (deviceName != null ? deviceName : "default"));
     }
 
     private void closeAudioDevice() {

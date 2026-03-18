@@ -18,8 +18,8 @@
       "frameRate": 25.0
     },
     "mtc": {
-      "enabled": false,
-      "midiPort": "default",
+      "enabled": true,
+      "midiPort": "CH345 [hw:1,0,0]",
       "frameRate": 25.0
     },
     "abletonLink": {

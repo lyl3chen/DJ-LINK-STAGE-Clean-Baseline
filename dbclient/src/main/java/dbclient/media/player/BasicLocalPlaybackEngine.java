@@ -2,6 +2,7 @@ package dbclient.media.player;
 
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
+import dbclient.sync.drivers.AudioDeviceEnumerator;
 
 import javax.sound.sampled.*;
 import java.io.File;
@@ -24,6 +25,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     private volatile long startTimeMs = 0;
     private volatile long pausePositionMs = 0;
     private Thread playbackThread;
+    private volatile String deviceName = "default"; // 音频输出设备
 
     @Override
     public void load(TrackInfo track) {
@@ -62,12 +64,12 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
                 audioStream = AudioSystem.getAudioInputStream(decodedFormat, audioStream);
             }
 
-            // 打开音频线
-            DataLine.Info info = new DataLine.Info(SourceDataLine.class, decodedFormat);
-            audioLine = (SourceDataLine) AudioSystem.getLine(info);
+            // 打开音频线（使用指定设备）
+            audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, decodedFormat);
             audioLine.open(decodedFormat);
 
-            System.out.println("[BasicLocalPlaybackEngine] Loaded successfully: " + track.getTitle() + ", audioLine=" + audioLine + ", instance=" + this);
+            System.out.println("[BasicLocalPlaybackEngine] Loaded successfully: " + track.getTitle() + 
+                ", device=" + deviceName + ", audioLine=" + audioLine + ", instance=" + this);
 
         } catch (UnsupportedAudioFileException e) {
             System.err.println("[BasicLocalPlaybackEngine] Unsupported format: " + e.getMessage());
@@ -273,5 +275,23 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     public static boolean isSupported(String filePath) {
         String lower = filePath.toLowerCase();
         return lower.endsWith(".wav") || lower.endsWith(".aiff") || lower.endsWith(".au");
+    }
+
+    /**
+     * 设置音频输出设备
+     */
+    @Override
+    public void setAudioDevice(String deviceName) {
+        String oldDevice = this.deviceName;
+        this.deviceName = (deviceName != null && !deviceName.isEmpty()) ? deviceName : "default";
+        System.out.println("[BasicLocalPlaybackEngine] Audio device set: " + oldDevice + " -> " + this.deviceName);
+    }
+
+    /**
+     * 获取当前音频输出设备
+     */
+    @Override
+    public String getAudioDevice() {
+        return this.deviceName;
     }
 }

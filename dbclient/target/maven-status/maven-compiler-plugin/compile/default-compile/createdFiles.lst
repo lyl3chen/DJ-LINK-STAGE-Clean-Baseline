@@ -51,6 +51,7 @@ dbclient/websocket/EventPusher$WsEndpoint.class
 dbclient/media/library/LocalLibraryService.class
 dbclient/sync/drivers/AbletonLinkDriver.class
 dbclient/media/model/AnalysisStatus.class
+dbclient/sync/timecode/TimecodeCore$SourceChangeListener.class
 dbclient/websocket/JettyServer.class
 dbclient/sync/drivers/LtcDriver.class
 dbclient/sync/drivers/LtcFrameEncoder.class

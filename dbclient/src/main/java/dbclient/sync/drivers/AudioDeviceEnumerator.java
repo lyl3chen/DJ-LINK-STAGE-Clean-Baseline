@@ -151,4 +151,56 @@ public class AudioDeviceEnumerator {
             return new AudioDevice("default", "Default", "System Default", false);
         }
     }
+
+    /**
+     * 根据设备名称查找 Mixer
+     * @param deviceName 设备名称（匹配 mixerInfo.getName()）
+     * @return 找到的 Mixer，或 null 如果未找到
+     */
+    public static Mixer findMixerByName(String deviceName) {
+        if (deviceName == null || "default".equals(deviceName)) {
+            return null; // 使用默认
+        }
+
+        try {
+            Mixer.Info[] mixerInfos = AudioSystem.getMixerInfo();
+            for (Mixer.Info info : mixerInfos) {
+                if (info.getName().equals(deviceName)) {
+                    return AudioSystem.getMixer(info);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[AudioDeviceEnumerator] Error finding mixer: " + e.getMessage());
+        }
+        return null; // 未找到
+    }
+
+    /**
+     * 获取指定设备的 SourceDataLine
+     * @param deviceName 设备名称（或 "default"）
+     * @param format 音频格式
+     * @return SourceDataLine
+     * @throws Exception 如果设备不存在或无法打开
+     */
+    public static SourceDataLine getSourceDataLine(String deviceName, AudioFormat format) throws Exception {
+        DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+
+        if (deviceName == null || "default".equals(deviceName)) {
+            // 使用系统默认
+            return (SourceDataLine) AudioSystem.getLine(info);
+        }
+
+        // 按名称查找设备
+        Mixer mixer = findMixerByName(deviceName);
+        if (mixer == null) {
+            throw new Exception("Audio device not found: " + deviceName);
+        }
+
+        // 从指定 mixer 获取 line
+        try {
+            return (SourceDataLine) mixer.getLine(info);
+        } catch (Exception e) {
+            throw new Exception("Cannot open audio device '" + deviceName + "': " + e.getMessage());
+        }
+    }
 }
