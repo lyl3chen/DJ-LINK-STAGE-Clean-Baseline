@@ -377,6 +377,23 @@ public class JettyServer {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
                             return;
                         }
+
+                        // 删除保护策略 A：当前播放/已加载曲目禁止删除，避免状态混乱
+                        LocalSourceInput localSrc = getLocalSourceInput();
+                        if (localSrc != null) {
+                            TrackInfo current = localSrc.getCurrentTrack();
+                            PlaybackStatus st = localSrc.getPlaybackStatus();
+                            if (current != null && trackId.equals(current.getTrackId())) {
+                                String state = (st != null && st.getState() != null) ? st.getState().name() : "UNKNOWN";
+                                response.getWriter().print(gson.toJson(Map.of(
+                                    "ok", false,
+                                    "error", "Cannot delete currently loaded track (state=" + state + "). 请先加载其他曲目后再删除。",
+                                    "code", "TRACK_IN_USE"
+                                )));
+                                return;
+                            }
+                        }
+
                         boolean deleted = getLocalLibraryService().deleteTrack(trackId);
                         if (!deleted) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
