@@ -12,6 +12,7 @@ public class AnalysisResult {
     private long durationMs;
     private String waveformCachePath;
     private boolean beatGridAvailable;
+    private BeatGrid beatGrid;  // 新增：完整 BeatGrid 对象（向后兼容：null 表示未生成）
     private long analyzedAt;
     private String errorMessage;
 
@@ -59,6 +60,11 @@ public class AnalysisResult {
             return this;
         }
 
+        public Builder beatGrid(BeatGrid beatGrid) {
+            result.beatGrid = beatGrid;
+            return this;
+        }
+
         public Builder analyzedAt(long analyzedAt) {
             result.analyzedAt = analyzedAt;
             return this;
@@ -95,6 +101,9 @@ public class AnalysisResult {
 
     public boolean isBeatGridAvailable() { return beatGridAvailable; }
     public void setBeatGridAvailable(boolean beatGridAvailable) { this.beatGridAvailable = beatGridAvailable; }
+
+    public BeatGrid getBeatGrid() { return beatGrid; }
+    public void setBeatGrid(BeatGrid beatGrid) { this.beatGrid = beatGrid; }
 
     public long getAnalyzedAt() { return analyzedAt; }
     public void setAnalyzedAt(long analyzedAt) { this.analyzedAt = analyzedAt; }
