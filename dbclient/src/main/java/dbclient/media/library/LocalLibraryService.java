@@ -32,11 +32,15 @@ import java.util.concurrent.CompletableFuture;
  *
  * 负责：导入/查询/删除/分析触发。
  * 不负责：播放控制、时间码输出。
+ * 
+ * 注意：MVP 阶段继续使用 TrackRepository（向后兼容）
+ *      新功能建议使用 TrackLibraryService
  */
 public class LocalLibraryService {
 
     private final TrackRepository trackRepository;
     private final AudioAnalyzer audioAnalyzer;
+    private TrackLibraryService trackLibraryService;  // 可选：用于资产层操作
 
     public LocalLibraryService() {
         // 默认使用内存仓储和基础分析器
@@ -46,6 +50,21 @@ public class LocalLibraryService {
     public LocalLibraryService(TrackRepository repository, AudioAnalyzer analyzer) {
         this.trackRepository = repository;
         this.audioAnalyzer = analyzer;
+        this.trackLibraryService = null;
+    }
+
+    /**
+     * 注入 TrackLibraryService（可选，用于资产层操作）
+     */
+    public void setTrackLibraryService(TrackLibraryService service) {
+        this.trackLibraryService = service;
+    }
+
+    /**
+     * 获取 TrackLibraryService（如未注入返回 null）
+     */
+    public TrackLibraryService getTrackLibraryService() {
+        return trackLibraryService;
     }
 
     /**
