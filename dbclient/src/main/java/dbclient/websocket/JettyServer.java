@@ -389,6 +389,29 @@ public class JettyServer {
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
+                    if (path.equals("/api/trigger/manual-fire")) {
+                        // 开发调试用：手动触发一次 FIRE_MA2_EXEC
+                        // 参数：command（可选，默认 Goto 1）
+                        String command = String.valueOf(payload.getOrDefault("command", "Goto 1")).trim();
+                        
+                        System.out.println("[JettyServer] === MANUAL TRIGGER FIRE ===");
+                        System.out.println("[JettyServer] Command: " + command);
+                        
+                        // 直接调用 SyncOutputManager 发送
+                        Map<String, Object> out = syncOutputManager.sendMa2TestCommand(command);
+                        
+                        System.out.println("[JettyServer] Result: " + out);
+                        System.out.println("[JettyServer] ============================");
+                        
+                        response.getWriter().print(gson.toJson(Map.of(
+                            "ok", out.get("ok"),
+                            "command", command,
+                            "sentCommand", out.get("sentCommand"),
+                            "rawResponse", out.get("rawResponse"),
+                            "error", out.get("error")
+                        )));
+                        return;
+                    }
                     if (path.equals("/api/timecode/manual-test")) {
                         boolean enabled = Boolean.TRUE.equals(payload.get("enabled"));
                         syncOutputManager.setTimecodeManualTestMode(enabled);
@@ -511,7 +534,7 @@ public class JettyServer {
                         return;
                     }
                     if (path.equals("/api/local/markers/update")) {
-                        // POST /api/local/markers/update - 全量更新 Marker
+                        // POST /api/local/markers/update - 部分更新 Marker（MVP: 传什么更新什么）
                         dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
                         if (tls == null) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
@@ -538,7 +561,7 @@ public class JettyServer {
                             return;
                         }
 
-                        // 全量更新：覆盖所有非空字段
+                        // 部分更新（MVP: 传什么更新什么，未传字段保留原值）
                         String name = String.valueOf(payload.getOrDefault("name", existing.getName()));
                         if (!"null".equals(name)) existing.setName(name);
 

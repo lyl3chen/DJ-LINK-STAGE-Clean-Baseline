@@ -15,6 +15,8 @@ import dbclient.media.analysis.*;
  * - 复用 SyncOutputManager.sendMa2TestCommand()
  * 
  * 规则：BEAT 每 4 拍触发， FIRE_MA2_EXEC
+ * 
+ * 默认命令：Goto 1（来自 MA2 文档）
  */
 public class Ma2TriggerOutputVerification {
 
@@ -54,15 +56,15 @@ public class Ma2TriggerOutputVerification {
             .action(TriggerAction.builder()
                 .type(TriggerAction.ActionType.FIRE_MA2_EXEC)
                 .protocol("MA2")
-                .payload("Executor 1")  // 默认命令
-                .description("触发 MA2 Executor 1")
+                .payload("Goto 1")  // 默认命令：Goto 1
+                .description("触发 MA2 Goto 1")
                 .build())
             .build();
         engine.addRule(rule);
         
         System.out.println("[Ma2TriggerOutputVerification] Rule created: " + rule.getName());
         System.out.println("[Ma2TriggerOutputVerification] Rule condition: BEAT every 4 beats");
-        System.out.println("[Ma2TriggerOutputVerification] Rule action: FIRE_MA2_EXEC -> Executor 1");
+        System.out.println("[Ma2TriggerOutputVerification] Rule action: FIRE_MA2_EXEC -> Goto 1");
         
         // 7. 创建 Local 上下文模拟播放
         System.out.println("\n=== 模拟播放 ===");
@@ -90,6 +92,8 @@ public class Ma2TriggerOutputVerification {
         System.out.println("\n=== 验证完成 ===");
         System.out.println("预期结果：Beat 4, 8, 12 时触发 FIRE_MA2_EXEC");
         System.out.println("如果 SyncOutputManager 已注入，应该向 MA2 发送命令");
+        System.out.println("\n默认命令: Goto 1");
+        System.out.println("（来自 docs/MA2-OpenClaw-适配编程手册.md）");
     }
     
     private static TriggerContext createContext(PlaybackStatus.State state, long posMs, int bpm, int beat) {
