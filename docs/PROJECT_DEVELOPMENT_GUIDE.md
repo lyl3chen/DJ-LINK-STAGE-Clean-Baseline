@@ -217,10 +217,12 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `TriggerAction` 动作模型
 - [x] `TriggerEvent` 事件模型
 
-### Commit 8: Trigger Action Drivers
-- [ ] `TriggerActionDriver` 接口
-- [ ] `TitanTriggerActionDriver`
-- [ ] `Ma2TriggerActionDriver`
+### Commit 8: Trigger Action Drivers ✅
+- [x] `TriggerActionDriver` 接口
+- [x] `TriggerActionDispatcher` 分发器
+- [x] `LogTriggerActionDriver` 日志驱动
+- [x] `TitanTriggerActionDriver` 骨架
+- [x] `Ma2TriggerActionDriver` 骨架
 
 ### Commit 9: 协议客户端层抽象
 - [ ] 移动/改造 `TitanClient`
@@ -299,6 +301,7 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `39be38c` | Commit 8: Trigger Action Drivers |
 | `9bdf2ba` | Commit 7: Trigger Engine 核心 |
 | `6f8149d` | Commit 6: Trigger 基础设施 |
 | `d6ce679` | Commit 5: 分析 MVP 扩展 |
