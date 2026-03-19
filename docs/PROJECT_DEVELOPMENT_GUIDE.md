@@ -192,11 +192,12 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `AnalysisService` 分析调度 + BeatGrid 生成 + 校验
 - [x] 改造 `LocalLibraryService` 接入（可选注入）
 
-### Commit 4: Marker CRUD API
-- [ ] `POST /api/local/markers` - 创建
-- [ ] `GET /api/local/markers?trackId=` - 查询
-- [ ] `PUT /api/local/markers/{id}` - 修改
-- [ ] `DELETE /api/local/markers/{id}` - 删除
+### Commit 4: Marker CRUD API ✅
+- [x] `GET /api/local/markers?trackId=` - 查询所有（按 timeMs 升序）
+- [x] `GET /api/local/markers/enabled?trackId=` - 查询启用
+- [x] `POST /api/local/markers` - 创建
+- [x] `POST /api/local/markers/update` - 全量更新
+- [x] `POST /api/local/markers/delete` - 删除
 
 ### Commit 5: 分析 MVP 扩展
 - [ ] 扩展 `BasicAudioAnalyzer` 输出 BeatGrid
@@ -294,6 +295,7 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `ba0954b` | Commit 4: Marker CRUD API |
 | `6c219f6` | Commit 3: Service 层 |
 | `6f9fb80` | Commit 2: Repository 层 |
 | `a824f83` | Commit 1: 数据模型层 |
