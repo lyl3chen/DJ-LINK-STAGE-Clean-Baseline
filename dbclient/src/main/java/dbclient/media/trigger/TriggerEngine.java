@@ -31,8 +31,27 @@ public class TriggerEngine {
     private final List<TriggerRule> rules = new CopyOnWriteArrayList<>();
     private final List<Consumer<TriggerEvent>> eventListeners = new CopyOnWriteArrayList<>();
 
-    // 上一帧状态（用于状态变化检测）
+    // 上一帧状态（用于状态变化检测和防重复触发）
     private TriggerContext lastContext = null;
+    
+    // 防重复触发状态追踪
+    // key: ruleId, value: 最后触发时的相关状态
+    private final java.util.Map<String, TriggeredState> lastTriggeredState = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * 记录规则已触发状态（用于防重复）
+     */
+    private static class TriggeredState {
+        long lastTriggerTimestamp;
+        Integer lastBeatNumber;      // BEAT: 记录上次触发的 beat
+        String lastMarkerId;         // MARKER: 记录上次触发的 marker
+        Long lastPositionMs;         // POSITION: 记录上次触发的位置
+        PlaybackStatus.State lastState; // STATE_CHANGE: 记录上次触发时的状态
+
+        TriggeredState() {
+            this.lastTriggerTimestamp = 0;
+        }
+    }
 
     public TriggerEngine() {}
 
@@ -158,6 +177,7 @@ public class TriggerEngine {
 
     /**
      * BEAT 条件匹配：每 N 拍触发
+     * 防重复：只在 beatNumber 变化且命中 interval 时触发
      */
     private boolean matchesBeat(TriggerCondition cond, TriggerContext ctx) {
         Integer beatInterval = cond.getBeatInterval();
@@ -166,12 +186,20 @@ public class TriggerEngine {
         Integer beatNumber = ctx.getBeatNumber();
         if (beatNumber == null) return false;
 
+        // 防重复：检查 beatNumber 是否变化
+        TriggeredState state = lastTriggeredState.get(cond.getType() + "_" + cond.getBeatInterval());
+        if (state != null && state.lastBeatNumber != null && state.lastBeatNumber.equals(beatNumber)) {
+            // 同一个 beat 上重复触发，跳过
+            return false;
+        }
+
         // 每 N 拍的第一拍触发（即 0, N, 2N...）
         return beatNumber % beatInterval == 0;
     }
 
     /**
      * MARKER 条件匹配：到达指定 Marker
+     * 防重复：只在该 marker 首次命中时触发，同一 marker 不重复触发
      */
     private boolean matchesMarker(TriggerCondition cond, TriggerContext ctx) {
         String markerId = cond.getMarkerId();
@@ -183,6 +211,13 @@ public class TriggerEngine {
         long pos = ctx.getPositionMs();
         // 容差 50ms
         final long TOLERANCE = 50;
+
+        // 防重复：检查该 marker 是否刚已被触发过
+        TriggeredState state = lastTriggeredState.get("MARKER_" + markerId);
+        if (state != null && markerId.equals(state.lastMarkerId)) {
+            // 该 marker 刚已被触发过，跳过
+            return false;
+        }
 
         for (dbclient.media.model.MarkerPoint m : markers) {
             if (markerId.equals(m.getId()) && m.isEnabled()) {
@@ -197,6 +232,7 @@ public class TriggerEngine {
 
     /**
      * POSITION 条件匹配：到达指定位置
+     * 防重复：只在首次跨越阈值时触发一次
      */
     private boolean matchesPosition(TriggerCondition cond, TriggerContext ctx) {
         Long targetPos = cond.getPositionMs();
@@ -206,7 +242,20 @@ public class TriggerEngine {
         // 容差 50ms
         final long TOLERANCE = 50;
 
-        return Math.abs(pos - targetPos) <= TOLERANCE;
+        if (Math.abs(pos - targetPos) > TOLERANCE) {
+            // 不在范围内，重置防重复状态
+            lastTriggeredState.remove("POSITION_" + targetPos);
+            return false;
+        }
+
+        // 防重复：检查该位置是否已触发过
+        TriggeredState state = lastTriggeredState.get("POSITION_" + targetPos);
+        if (state != null && state.lastPositionMs != null) {
+            // 该位置已触发过，跳过
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -228,13 +277,56 @@ public class TriggerEngine {
 
     /**
      * 派发事件到监听器
+     * 同时记录防重复状态
      */
     private void dispatchEvent(TriggerEvent event) {
+        // 记录触发状态（防重复）
+        recordTriggeredState(event);
+
         for (Consumer<TriggerEvent> listener : eventListeners) {
             try {
                 listener.accept(event);
             } catch (Exception e) {
                 System.err.println("[TriggerEngine] Event listener error: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 记录触发状态用于防重复
+     */
+    private void recordTriggeredState(TriggerEvent event) {
+        TriggerCondition cond = event.getContext().getPlaybackState() != null 
+            ? null : null; // This is a placeholder, we need to get condition from rule
+        
+        // 从规则获取条件类型并记录状态
+        for (TriggerRule rule : rules) {
+            if (rule.getId().equals(event.getRuleId())) {
+                TriggerCondition c = rule.getCondition();
+                if (c == null) break;
+                
+                TriggeredState state = new TriggeredState();
+                state.lastTriggerTimestamp = System.currentTimeMillis();
+
+                switch (c.getType()) {
+                    case BEAT:
+                        state.lastBeatNumber = event.getContext().getBeatNumber();
+                        lastTriggeredState.put(c.getType() + "_" + c.getBeatInterval(), state);
+                        break;
+                    case MARKER:
+                        state.lastMarkerId = c.getMarkerId();
+                        lastTriggeredState.put("MARKER_" + c.getMarkerId(), state);
+                        break;
+                    case POSITION:
+                        state.lastPositionMs = c.getPositionMs();
+                        lastTriggeredState.put("POSITION_" + c.getPositionMs(), state);
+                        break;
+                    case STATE_CHANGE:
+                        state.lastState = event.getContext().getPlaybackState();
+                        lastTriggeredState.put("STATE_" + c.getTargetState(), state);
+                        break;
+                }
+                break;
             }
         }
     }
