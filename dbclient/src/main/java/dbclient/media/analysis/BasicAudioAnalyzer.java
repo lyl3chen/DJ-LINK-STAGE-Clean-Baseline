@@ -4,6 +4,9 @@ import dbclient.media.model.AnalysisResult;
 import dbclient.media.model.AnalysisStatus;
 import dbclient.media.model.TrackInfo;
 
+import dbclient.media.model.BeatGrid;
+import dbclient.media.model.WaveformPreview;
+
 import javax.sound.sampled.*;
 import java.io.File;
 import java.util.ArrayList;
@@ -72,7 +75,20 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
             float frameRate = decodedFormat.getFrameRate();
             long durationMs = frameRate > 0 ? (long) ((frames / frameRate) * 1000) : 0;
 
-            BpmEstimate est = estimateBpm(decoded, decodedFormat);
+            // 读取音频数据进行 BPM 分析和波形生成
+            byte[] audioData = decoded.readNBytes((int) Math.min(Integer.MAX_VALUE, frames * decodedFormat.getFrameSize()));
+            
+            // BPM 估算
+            BpmEstimate est = estimateBpm(audioData, decodedFormat);
+            
+            // 波形预览生成（峰值数组）
+            WaveformPreview waveform = generateWaveformPreview(track.getTrackId(), audioData, decodedFormat, durationMs);
+            
+            // Beat Grid 生成（基于 BPM）
+            BeatGrid beatGrid = null;
+            if (est.bpm != null && est.bpm > 0 && durationMs > 0) {
+                beatGrid = generateBeatGrid(est.bpm, durationMs);
+            }
 
             try { decoded.close(); } catch (Exception ignored) {}
             if (decoded != stream) {
@@ -85,8 +101,10 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
                 .bpm(est.bpm)
                 .bpmConfidence(est.confidence)
                 .durationMs(durationMs)
-                .waveformCachePath(null) // C2 实现
-                .beatGridAvailable(est.bpm != null)
+                .waveformPreview(waveform)
+                .waveformCachePath(null) // 后续可扩展为文件缓存路径
+                .beatGrid(beatGrid)
+                .beatGridAvailable(beatGrid != null && beatGrid.isValid())
                 .analyzedAt(System.currentTimeMillis())
                 .build();
 
@@ -120,7 +138,7 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
      * - 生成能量包络 + onset
      * - 在 [60, 180] BPM 范围做自相关选峰
      */
-    private BpmEstimate estimateBpm(AudioInputStream stream, AudioFormat format) throws Exception {
+    private BpmEstimate estimateBpm(byte[] all, AudioFormat format) throws Exception {
         int channels = Math.max(1, format.getChannels());
         int frameSize = Math.max(1, format.getFrameSize());
         float sampleRate = format.getSampleRate();
@@ -129,10 +147,9 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
         // 读取最多 120 秒，避免超大文件分析过慢
         long maxFrames = (long) (sampleRate * 120);
         int bytesPerFrame = frameSize;
-        int maxBytes = (int) Math.min(Integer.MAX_VALUE, maxFrames * bytesPerFrame);
+        int maxBytes = (int) Math.min(maxFrames * bytesPerFrame, all.length);
 
-        byte[] all = stream.readNBytes(maxBytes);
-        if (all.length < frameSize * 2) return new BpmEstimate(null, 0.0);
+        if (maxBytes < frameSize * 2) return new BpmEstimate(null, 0.0);
 
         // 16-bit little-endian PCM -> mono float
         int totalFrames = all.length / frameSize;
@@ -212,6 +229,99 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
         if (bpm < 60 || bpm > 180) return new BpmEstimate(null, conf);
 
         return new BpmEstimate(bpm, conf);
+    }
+
+    /**
+     * 生成波形预览（峰值数组）
+     * 
+     * 生成策略：
+     * - 将音频数据分成固定数量的区间（默认 1000 个峰值）
+     * - 每个区间取最大绝对值作为峰值
+     * - 峰值范围 -1.0 到 1.0
+     * 
+     * @param trackId 曲目 ID
+     * @param audioData 原始音频数据（16-bit PCM）
+     * @param format 音频格式
+     * @param durationMs 时长（毫秒）
+     * @return WaveformPreview
+     */
+    private WaveformPreview generateWaveformPreview(String trackId, byte[] audioData, AudioFormat format, long durationMs) {
+        if (audioData == null || audioData.length < 4) {
+            return null;
+        }
+
+        int channels = Math.max(1, format.getChannels());
+        int frameSize = Math.max(1, format.getFrameSize());
+        int totalFrames = audioData.length / frameSize;
+        
+        // 目标峰值数量
+        final int TARGET_PEAKS = 1000;
+        int samplesPerPeak = Math.max(1, totalFrames / TARGET_PEAKS);
+        
+        float[] peaks = new float[Math.min(TARGET_PEAKS, totalFrames)];
+        
+        for (int i = 0; i < peaks.length; i++) {
+            int start = i * samplesPerPeak * frameSize;
+            int end = Math.min(start + samplesPerPeak * frameSize, audioData.length);
+            
+            float maxAbs = 0f;
+            for (int pos = start; pos < end; pos += frameSize) {
+                if (pos + 1 >= audioData.length) break;
+                int lo = audioData[pos] & 0xFF;
+                int hi = audioData[pos + 1];
+                short s = (short) ((hi << 8) | lo);
+                float sample = s / 32768f;
+                float abs = Math.abs(sample);
+                if (abs > maxAbs) maxAbs = abs;
+            }
+            peaks[i] = maxAbs;
+        }
+
+        return WaveformPreview.builder()
+            .trackId(trackId)
+            .sampleRate((int) format.getSampleRate())
+            .channels(channels)
+            .durationMs(durationMs)
+            .samplesPerPeak(samplesPerPeak)
+            .peaks(peaks)
+            .build();
+    }
+
+    /**
+     * 生成 Beat Grid
+     * 
+     * MVP 策略：
+     * - 基于 BPM 和时长生成线性 beat grid
+     * - 假设第一个 Beat 从 0 开始
+     * - 每小节 4 拍
+     * 
+     * @param bpm BPM
+     * @param durationMs 时长（毫秒）
+     * @return BeatGrid
+     */
+    private BeatGrid generateBeatGrid(int bpm, long durationMs) {
+        if (bpm <= 0 || durationMs <= 0) {
+            return null;
+        }
+
+        double beatDurationMs = 60000.0 / bpm;
+        int totalBeats = (int) (durationMs / beatDurationMs) + 1;
+        
+        // 限制最大 beat 数量
+        totalBeats = Math.min(totalBeats, 10000);
+
+        long[] beatPositions = new long[totalBeats];
+        for (int i = 0; i < totalBeats; i++) {
+            beatPositions[i] = (long) (i * beatDurationMs);
+        }
+
+        return BeatGrid.builder()
+            .bpm(bpm)
+            .durationMs(durationMs)
+            .beatsPerMeasure(4)
+            .firstBeatMs(0)
+            .beatPositionsMs(beatPositions)
+            .build();
     }
 
     @Override

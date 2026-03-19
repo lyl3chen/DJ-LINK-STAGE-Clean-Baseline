@@ -11,6 +11,7 @@ public class AnalysisResult {
     private Double bpmConfidence;
     private long durationMs;
     private String waveformCachePath;
+    private WaveformPreview waveformPreview;  // 新增：波形预览数据
     private boolean beatGridAvailable;
     private BeatGrid beatGrid;  // 新增：完整 BeatGrid 对象（向后兼容：null 表示未生成）
     private long analyzedAt;
@@ -52,6 +53,11 @@ public class AnalysisResult {
 
         public Builder waveformCachePath(String waveformCachePath) {
             result.waveformCachePath = waveformCachePath;
+            return this;
+        }
+
+        public Builder waveformPreview(WaveformPreview waveformPreview) {
+            result.waveformPreview = waveformPreview;
             return this;
         }
 
@@ -98,6 +104,9 @@ public class AnalysisResult {
 
     public String getWaveformCachePath() { return waveformCachePath; }
     public void setWaveformCachePath(String waveformCachePath) { this.waveformCachePath = waveformCachePath; }
+
+    public WaveformPreview getWaveformPreview() { return waveformPreview; }
+    public void setWaveformPreview(WaveformPreview waveformPreview) { this.waveformPreview = waveformPreview; }
 
     public boolean isBeatGridAvailable() { return beatGridAvailable; }
     public void setBeatGridAvailable(boolean beatGridAvailable) { this.beatGridAvailable = beatGridAvailable; }
