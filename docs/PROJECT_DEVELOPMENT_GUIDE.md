@@ -210,10 +210,12 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `LocalTriggerContextAdapter` 实现
 - [x] `CdjTriggerContextAdapter` 骨架
 
-### Commit 7: Trigger Engine 核心
-- [ ] `TriggerEngine`
-- [ ] `TriggerRule` / `TriggerCondition` / `TriggerAction`
-- [ ] `TriggerActionDispatcher`
+### Commit 7: Trigger Engine 核心 ✅
+- [x] `TriggerEngine` 核心
+- [x] `TriggerRule` 规则定义
+- [x] `TriggerCondition` 条件模型
+- [x] `TriggerAction` 动作模型
+- [x] `TriggerEvent` 事件模型
 
 ### Commit 8: Trigger Action Drivers
 - [ ] `TriggerActionDriver` 接口
@@ -297,6 +299,7 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `9bdf2ba` | Commit 7: Trigger Engine 核心 |
 | `6f8149d` | Commit 6: Trigger 基础设施 |
 | `d6ce679` | Commit 5: 分析 MVP 扩展 |
 | `ba0954b` | Commit 4: Marker CRUD API |
