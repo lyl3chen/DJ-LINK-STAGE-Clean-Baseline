@@ -394,7 +394,8 @@ public class JettyServer {
                         // 参数：command（可选，默认 Go Executor 1 Cue 1）
                         String command = String.valueOf(payload.getOrDefault("command", "Go Executor 1 Cue 1")).trim();
                         
-                        System.out.println("[JettyServer] === MANUAL TRIGGER FIRE ===");
+                        System.out.println("[JettyServer] === MANUAL TRIGGER FIRE (POST) ===");
+                        System.out.println("[JettyServer] Path: " + path);
                         System.out.println("[JettyServer] Command: " + command);
                         
                         // 直接调用 SyncOutputManager 发送
