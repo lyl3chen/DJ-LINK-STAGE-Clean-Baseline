@@ -231,8 +231,8 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `TitanClientAdapter` 适配器
 - [x] `Ma2TelnetClientAdapter` 适配器
 
-### Commit 10: CDJ Adapter
-- [ ] `CdjTriggerContextAdapter`
+### Commit 10: CDJ Adapter ✅
+- [x] `CdjTriggerContextAdapter`（beat-link 集成）
 
 ### Commit 11: UI 分化
 - [ ] 本地播放器波形 + Marker UI
