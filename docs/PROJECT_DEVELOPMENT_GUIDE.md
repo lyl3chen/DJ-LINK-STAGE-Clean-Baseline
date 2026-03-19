@@ -224,9 +224,12 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `TitanTriggerActionDriver` 骨架
 - [x] `Ma2TriggerActionDriver` 骨架
 
-### Commit 9: 协议客户端层抽象
-- [ ] 移动/改造 `TitanClient`
-- [ ] 移动 `Ma2TelnetClient`
+### Commit 9: 协议客户端层抽象 ✅
+- [x] `ProtocolClient` 基础接口
+- [x] `TitanClient` 接口
+- [x] `Ma2Client` 接口
+- [x] `TitanClientAdapter` 适配器
+- [x] `Ma2TelnetClientAdapter` 适配器
 
 ### Commit 10: CDJ Adapter
 - [ ] `CdjTriggerContextAdapter`
@@ -301,6 +304,7 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `8de7cfc` | Commit 9: 协议客户端层抽象 |
 | `39be38c` | Commit 8: Trigger Action Drivers |
 | `9bdf2ba` | Commit 7: Trigger Engine 核心 |
 | `6f8149d` | Commit 6: Trigger 基础设施 |
