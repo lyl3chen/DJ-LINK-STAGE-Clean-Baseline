@@ -56,15 +56,15 @@ public class Ma2TriggerOutputVerification {
             .action(TriggerAction.builder()
                 .type(TriggerAction.ActionType.FIRE_MA2_EXEC)
                 .protocol("MA2")
-                .payload("Goto 1")  // 默认命令：Goto 1
-                .description("触发 MA2 Goto 1")
+                .payload("Go Executor 1 Cue 1")
+                .description("触发 MA2 Go Executor 1 Cue 1")
                 .build())
             .build();
         engine.addRule(rule);
         
         System.out.println("[Ma2TriggerOutputVerification] Rule created: " + rule.getName());
         System.out.println("[Ma2TriggerOutputVerification] Rule condition: BEAT every 4 beats");
-        System.out.println("[Ma2TriggerOutputVerification] Rule action: FIRE_MA2_EXEC -> Goto 1");
+        System.out.println("[Ma2TriggerOutputVerification] Rule action: FIRE_MA2_EXEC -> Go Executor 1 Cue 1");
         
         // 7. 创建 Local 上下文模拟播放
         System.out.println("\n=== 模拟播放 ===");

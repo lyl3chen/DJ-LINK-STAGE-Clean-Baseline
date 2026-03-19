@@ -711,6 +711,20 @@
   <!-- 本地播放器测试 Panel -->
   <section class="tab-panel" id="panel-localplayer">
     <div class="io-setup">
+      <!-- MA2 Trigger 测试区域（开发调试用） -->
+      <div class="cfg-card full" style="background:#1a2332; border:1px solid #3d5a80; margin-bottom:16px;">
+        <h3 style="color:#4da3ff; margin:0 0 8px;">🎯 MA2 Trigger 测试</h3>
+        <p style="margin:0 0 12px; color:#7f8ea8; font-size:11px;">
+          开发调试用：手动触发 MA2 命令
+        </p>
+        <div class="cfg-row">
+          <label>命令</label>
+          <input id="ma2TriggerCommand" type="text" value="Go Executor 1 Cue 1" style="flex:1; min-width:200px;" />
+          <button id="ma2TriggerBtn" class="scan-btn">发送测试</button>
+        </div>
+        <div id="ma2TriggerResult" style="margin-top:8px; padding:8px; background:#0d1422; border-radius:4px; font-family:monospace; font-size:11px; color:#2dff7a; white-space:pre-wrap;">等待发送...</div>
+      </div>
+
       <!-- 提示信息 -->
       <div class="cfg-card full" id="localPlayerWarning">
         <h3 style="color:#ffb347; margin:0 0 8px;">⚠️ 使用提示</h3>
@@ -2402,6 +2416,22 @@
 
     document.getElementById('localImportBtn')?.addEventListener('click', importLocalFile);
     document.getElementById('localUploadBtn')?.addEventListener('click', uploadAndImportFile);
+    document.getElementById('ma2TriggerBtn')?.addEventListener('click', async () => {
+      const command = document.getElementById('ma2TriggerCommand').value.trim();
+      const resultEl = document.getElementById('ma2TriggerResult');
+      resultEl.textContent = '发送中...';
+      try {
+        const res = await fetch('/api/trigger/manual-fire', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command })
+        });
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        resultEl.textContent = '错误: ' + e.message;
+      }
+    });
     document.getElementById('localRefreshTracksBtn')?.addEventListener('click', refreshLocalTracksList);
     document.getElementById('localPlayBtn')?.addEventListener('click', localPlayerPlay);
     document.getElementById('localPauseBtn')?.addEventListener('click', localPlayerPause);

@@ -391,8 +391,8 @@ public class JettyServer {
                     }
                     if (path.equals("/api/trigger/manual-fire")) {
                         // 开发调试用：手动触发一次 FIRE_MA2_EXEC
-                        // 参数：command（可选，默认 Goto 1）
-                        String command = String.valueOf(payload.getOrDefault("command", "Goto 1")).trim();
+                        // 参数：command（可选，默认 Go Executor 1 Cue 1）
+                        String command = String.valueOf(payload.getOrDefault("command", "Go Executor 1 Cue 1")).trim();
                         
                         System.out.println("[JettyServer] === MANUAL TRIGGER FIRE ===");
                         System.out.println("[JettyServer] Command: " + command);

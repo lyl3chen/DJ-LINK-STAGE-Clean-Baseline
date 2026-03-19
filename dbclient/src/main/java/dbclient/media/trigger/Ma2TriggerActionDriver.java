@@ -18,9 +18,9 @@ import dbclient.sync.SyncOutputManager;
  */
 public class Ma2TriggerActionDriver implements TriggerActionDriver {
 
-    // 默认测试命令：Goto 1（触发 Executor 1）
-    // 格式来自 MA2 文档：Goto <executor>
-    public static final String DEFAULT_MA2_TRIGGER_COMMAND = "Goto 1";
+    // 默认测试命令：Go Executor 1 Cue 1
+    // 格式：Go Executor X Cue Y
+    public static final String DEFAULT_MA2_TRIGGER_COMMAND = "Go Executor 1 Cue 1";
     
     private final SyncOutputManager syncOutputManager;
 
