@@ -81,6 +81,8 @@ public class WaveformPreview {
 
     /**
      * 获取指定位置的峰值
+     * 注意：当前 peaks 只表示幅度包络（0.0 到 1.0），不区分正负
+     * 后续如需正负波形信息，可扩展
      */
     public float getPeakAt(int index) {
         if (peaks == null || index < 0 || index >= peaks.length) return 0f;

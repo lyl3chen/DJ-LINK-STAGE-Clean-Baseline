@@ -290,10 +290,13 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
     /**
      * 生成 Beat Grid
      * 
-     * MVP 策略：
+     * MVP 假设（不是最终精确值）：
      * - 基于 BPM 和时长生成线性 beat grid
-     * - 假设第一个 Beat 从 0 开始
+     * - 假设第一个 Beat 从 0ms 开始（firstBeatMs = 0）
      * - 每小节 4 拍
+     * - 最多 10000 个 Beat（约对应 8 分钟 @ 120 BPM，防止异常文件占用过内存）
+     * 
+     * 后续可接入更精确的分析算法，允许 firstBeatMs 不为 0
      * 
      * @param bpm BPM
      * @param durationMs 时长（毫秒）
@@ -307,7 +310,7 @@ public class BasicAudioAnalyzer implements AudioAnalyzer {
         double beatDurationMs = 60000.0 / bpm;
         int totalBeats = (int) (durationMs / beatDurationMs) + 1;
         
-        // 限制最大 beat 数量
+        // 限制最大 beat 数量（约对应 8 分钟 @ 120 BPM）
         totalBeats = Math.min(totalBeats, 10000);
 
         long[] beatPositions = new long[totalBeats];
