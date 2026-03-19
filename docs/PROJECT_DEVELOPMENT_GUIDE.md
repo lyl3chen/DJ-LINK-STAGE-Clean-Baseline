@@ -2,21 +2,29 @@
 
 > 本文档为项目核心架构与开发指南，确保新会话可在无上下文情况下继续开发。
 > 
-> 最后更新：2026-03-19
+> **最后更新：2026-03-19**
+> 
+> **当前阶段：统一触发框架已验证通过，后续优先 Local Trigger UI**
 
 ---
 
 ## 一、项目定位
 
-**DJ-Link Stage** 是一个支持双播放源的实时同步与触发系统：
+**DJ-Link Stage** 是一个**以统一输入源为核心的实时同步与演出控制中枢**。
 
-1. **CDJ / beat-link 实时源**  
-   通过 beat-link 实时获取曲目信息、播放状态、位置、BPM、拍点，触发外部协议
+### 核心能力
 
-2. **本地播放器源**  
-   播放本地音频文件，读取分析结果、Marker 数据，触发外部协议
+1. **双播放源支持**
+   - CDJ / beat-link：实时数据流，高信息密度
+   - Local Player：本地文件 + 分析资产 + Marker
 
-**最终目标**：两条链路的数据统一流入 **Trigger Engine**，驱动外部协议（Titan / MA2 / LTC / MTC / OSC 等）
+2. **两条并行下游能力**（职责不同，不能混为一谈）
+   - **Sync Outputs**：连续同步类输出（BPM 推送、时间码推送）
+   - **Trigger Outputs**：事件触发类输出（Marker 触发、段落触发、动作触发）
+
+3. **统一 Trigger 框架**
+   - 同一套 TriggerEngine 消费 CDJ 和 Local 两种 TriggerContext
+   - 字段丰富度可以不同，但触发语义统一
 
 ---
 
@@ -26,8 +34,8 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                        播放源层                                   │
 │  ┌─────────────────────┐    ┌─────────────────────────────┐   │
-│  │   CDJ / beat-link   │    │     Local Player            │   │
-│  │   (实时数据流)       │    │     (本地文件 + 分析结果)    │   │
+│  │   CDJ / beat-link  │    │     Local Player            │   │
+│  │   (实时高密度)      │    │     (资产+Marker)           │   │
 │  └──────────┬──────────┘    └─────────────┬───────────────┘   │
 │             │                               │                    │
 │             ▼                               ▼                    │
@@ -35,31 +43,30 @@
 │                    统一运行时状态层                               │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │           SourceInputManager / SyncOutputManager            ││
-│  │           TimecodeCore (MTC/LTC 生成)                       ││
+│  │           TimecodeCore (MTC/LTC 生成)                        ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                              │                                    │
 │             ┌────────────────┼────────────────┐                 │
 │             ▼                ▼                ▼                   │
 ├─────────────────────────────────────────────────────────────────┤
-│  A. 连续同步输出层          │  B. 触发事件输出层                  │
-│  (每帧/每拍持续输出)        │  (事件驱动一次性触发)                │
+│  A. 连续同步输出层 (Sync)   │  B. 触发事件输出层 (Trigger)       │
 │  ┌─────────────────────┐    │  ┌─────────────────────────────┐   │
-│  │ TitanBpmSyncDriver │    │  │    TriggerEngine           │   │
-│  │ Ma2BpmSyncDriver   │    │  │    TriggerContextAdapter   │   │
+│  │ TitanBpmSyncDriver │    │  │    TriggerEngine            │   │
+│  │ Ma2BpmSyncDriver   │    │  │    TriggerContext          │   │
 │  │ AbletonLinkDriver  │    │  │    CdjTriggerContextAdapter│   │
 │  │ LtcDriver          │    │  │    LocalTriggerAdapter     │   │
 │  │ MtcDriver          │    │  │    TriggerActionDispatcher │   │
-│  └─────────────────────┘    │  │    TitanTriggerActionDrv   │   │
-│                             │  │    Ma2TriggerActionDrv     │   │
+│  └─────────────────────┘    │  │    TitanTriggerActionDrv  │   │
+│                             │  │    Ma2TriggerActionDrv    │   │
 │                             │  └─────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
                     ┌─────────────────┐
-                    │  协议客户端层    │
+                    │  协议客户端层      │
+                    │  ProtocolClient │
                     │  TitanClient    │
-                    │  Ma2TelnetClient│
-                    │  (未来: OscClient)│
+                    │  Ma2Client      │
                     └─────────────────┘
 ```
 
@@ -67,38 +74,45 @@
 
 ## 三、现有稳定模块（禁止破坏）
 
-### 3.1 核心链路（已验证通过）
-
-| 模块 | 路径 | 说明 |
-|------|------|------|
-| `SourceInputManager` | `dbclient/src/main/java/dbclient/input/` | 主输入切换，已稳定 |
-| `SyncOutputManager` | `dbclient/src/main/java/dbclient/sync/` | 统一运行时状态管理 |
-| `TimecodeCore` | `dbclient/src/main/java/dbclient/sync/timecode/` | MTC/LTC 生成逻辑 |
-| `BasicLocalPlaybackEngine` | `dbclient/src/main/java/dbclient/media/player/` | 本地播放/seek/stop/pause |
-
-### 3.2 输出驱动（已验证通过）
+### 3.1 核心链路
 
 | 模块 | 说明 |
 |------|------|
-| `TitanAdapter` / `TitanApiDriver` | Titan BPM 推送 |
-| `Ma2BpmDriver` / `Ma2TelnetClient` | MA2 BPM 推送 |
-| `AbletonLinkDriver` | Ableton Link 同步 |
-| `LtcDriver` | LTC 时间码输出 |
-| `MtcDriver` | MTC 时间码输出 |
+| `SourceInputManager` | 主输入切换 |
+| `SyncOutputManager` | 统一运行时状态管理 |
+| `TimecodeCore` | MTC/LTC 生成逻辑 |
+| `BasicLocalPlaybackEngine` | 本地播放/seek/stop/pause |
 
-### 3.3 本地播放器（Phase B 完成）
+### 3.2 Sync Outputs（连续同步）
 
-- `BasicLocalPlaybackEngine`：播放/seek/stop/pause 语义已修复
-- `JettyServer` 本地 API：`/api/local/load`, `/api/local/play`, `/api/local/pause`, `/api/local/stop`, `/api/local/status`
-- WebUI 本地播放器页面：调试界面
+| 模块 | 说明 |
+|------|------|
+| `TitanBpmSyncDriver` | Titan BPM 推送 |
+| `Ma2BpmSyncDriver` | MA2 BPM 推送 |
+| `AbletonLinkDriver` | Ableton Link |
+| `LtcDriver` | LTC 时间码 |
+| `MtcDriver` | MTC 时间码 |
+
+### 3.3 Trigger Outputs（事件触发）
+
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| `TriggerEngine` | ✅ 已验证 | 核心引擎 |
+| `TriggerContext` | ✅ 完成 | 统一上下文 |
+| `CdjTriggerContextAdapter` | ✅ 完成 | CDJ 数据适配 |
+| `LocalTriggerContextAdapter` | ✅ 完成 | Local 数据适配 |
+| `TriggerActionDispatcher` | ✅ 完成 | 动作分发 |
+| `TitanTriggerActionDriver` | 骨架 | 待接入真实 Client |
+| `Ma2TriggerActionDriver` | 骨架 | 待接入真实 Client |
+| `ProtocolClient` | 接口抽象 | 待实现 |
 
 ---
 
-## 四、开发进度
+## 四、开发进度（完整）
 
 ### Phase A：稳定化收口 ✅
 - 统一状态模型
-- Bug 修复（MTC/LTC PAUSED 行为、设备选择器）
+- Bug 修复
 
 ### Phase B：本地播放器 Bug 修复 ✅
 - Stop/Play 语义修复
@@ -106,229 +120,159 @@
 - Delete 按钮修复
 - 首播杂音修复
 
-### Phase C：曲目分析模块
+### Phase C：曲目分析模块 ✅
+- C1: BPM 基线 + 分析状态机 + UI 入口 ✅
+- C2: Repository 层 ✅
+- C3: Service 层 ✅
+- C4: Marker CRUD API ✅
+- C5: 分析 MVP 扩展（BeatGrid + Waveform）✅
 
-| 阶段 | 状态 | 说明 |
-|------|------|------|
-| C1 | ✅ 完成 | BPM 基线 + 分析状态机 + UI 入口 |
-| C2 | 待做 | Repository 层 + Marker CRUD |
-| C3 | 待做 | 分析 MVP 扩展（Beat Grid + Waveform） |
-| C4 | 待做 | Marker 打点系统 |
-| C5-C7 | 待做 | Trigger 架构 |
+### Phase D：统一 Trigger 框架 ✅
+- D1: Trigger 基础设施 ✅
+- D2: Trigger Engine 核心 ✅
+- D3: Trigger Action Drivers 骨架 ✅
+- D4: 协议客户端抽象 ✅
+- D5: CDJ Trigger Adapter 落地 ✅
+- D6: 双源 Trigger 验证 ✅
+
+### Phase E：（下一步）Local Trigger UI
+- 波形展示
+- Marker 打点/编辑
 
 ---
 
-## 五、数据模型（Commit 1 完成）
+## 五、数据模型
 
-### 5.1 现有模型
-
-| 类 | 用途 |
-|---|---|
-| `TrackInfo` | 播放时使用的轻量曲目对象 |
-| `PlaybackStatus` | 播放状态枚举 |
-| `AnalysisStatus` | 分析状态枚举 |
-
-### 5.2 新增模型（2026-03-19）
-
-| 类 | 用途 |
-|---|---|
-| `MarkerType` | Marker 类型枚举 |
-| `MarkerPoint` | Marker 数据模型 |
-| `BeatGrid` | Beat Grid + 时间换算 |
-| `TrackLibraryEntry` | 统一曲目资产（文件+分析+Markers） |
-
-### 5.3 AnalysisResult 扩展
+### 5.1 统一 Trigger 上下文
 
 ```java
-// 新增字段（向后兼容）
-private BeatGrid beatGrid;  // null 表示未生成
+class TriggerContext {
+    // 来源
+    TriggerSource source;  // CDJ / LOCAL
+    
+    // 曲目信息
+    String trackId;
+    String title;
+    String artist;
+    long durationMs;
+    
+    // 播放状态
+    PlaybackStatus.State playbackState;
+    long positionMs;
+    double phase;
+    
+    // 节拍信息
+    Integer bpm;
+    Integer beatNumber;
+    Integer measureNumber;
+    long nextBeatMs;
+    long nextMeasureMs;
+    
+    // 分析数据
+    AnalysisResult analysis;
+    BeatGrid beatGrid;           // Local 有，CDJ 无
+    WaveformPreview waveformPreview; // Local 有，CDJ 无
+    
+    // Markers
+    List<MarkerPoint> markers;   // Local 有，CDJ 无
+}
 ```
+
+### 5.2 本地资产模型
+
+| 类 | 用途 |
+|---|---|
+| `MarkerType` | MARKER/CUE/TRIGGER/SECTION 等 |
+| `MarkerPoint` | Marker 数据 |
+| `BeatGrid` | 节拍网格 + 时间换算 |
+| `WaveformPreview` | 波形峰值数组 |
+| `TrackLibraryEntry` | 统一曲目资产 |
 
 ---
 
 ## 六、API 概览
 
 ### 6.1 播放控制
-
-| API | 说明 |
-|-----|------|
-| `POST /api/local/load` | 加载曲目 |
-| `POST /api/local/play` | 播放 |
-| `POST /api/local/pause` | 暂停 |
-| `POST /api/local/stop` | 停止 |
-| `POST /api/local/seek` | 定位 |
-| `GET /api/local/status` | 状态查询 |
+- `/api/local/load`, `/play`, `/pause`, `/stop`, `/seek`, `/status`
 
 ### 6.2 曲库管理
+- `/api/local/import`, `/tracks`, `/delete`
 
-| API | 说明 |
-|-----|------|
-| `POST /api/local/import` | 导入文件 |
-| `GET /api/local/tracks` | 曲目列表 |
-| `POST /api/local/delete` | 删除曲目 |
-| `POST /api/local/analyze` | 触发分析 |
-| `GET /api/local/analysis?trackId=` | 查询分析结果 |
+### 6.3 分析
+- `/api/local/analyze`, `/api/local/analysis?trackId=`
 
-### 6.3 同步状态
-
-| API | 说明 |
-|-----|------|
-| `GET /api/sync/state` | 同步状态 |
-| `GET /api/config` | 全局配置 |
-| `GET /api/players/state` | CDJ 状态 |
+### 6.4 Marker CRUD
+- `GET /api/local/markers?trackId=`
+- `POST /api/local/markers`
+- `POST /api/local/markers/update`
+- `POST /api/local/markers/delete`
 
 ---
 
-## 七、后续开发计划（按 Commit 顺序）
+## 七、Trigger 语义基线（已确认）
 
-### Commit 2: Repository 层 ✅
-- [x] `MarkerRepository` 接口
-- [x] `InMemoryMarkerRepository` 实现
-- [x] `TrackLibraryRepository` 接口
-- [x] `InMemoryTrackLibraryRepository` 实现
-
-### Commit 3: Service 层 ✅
-- [x] `TrackLibraryService` 统一入口
-- [x] `AnalysisService` 分析调度 + BeatGrid 生成 + 校验
-- [x] 改造 `LocalLibraryService` 接入（可选注入）
-
-### Commit 4: Marker CRUD API ✅
-- [x] `GET /api/local/markers?trackId=` - 查询所有（按 timeMs 升序）
-- [x] `GET /api/local/markers/enabled?trackId=` - 查询启用
-- [x] `POST /api/local/markers` - 创建
-- [x] `POST /api/local/markers/update` - 全量更新
-- [x] `POST /api/local/markers/delete` - 删除
-
-### Commit 5: 分析 MVP 扩展 ✅
-- [x] BeatGrid 数据真正落地
-- [x] Waveform Preview 预计算
-- [x] 分析时一次性生成（BPM + 波形 + BeatGrid）
-
-### Commit 6: Trigger 基础设施 ✅
-- [x] `TriggerContext` 统一上下文
-- [x] `TriggerContextAdapter` 接口
-- [x] `LocalTriggerContextAdapter` 实现
-- [x] `CdjTriggerContextAdapter` 骨架
-
-### Commit 7: Trigger Engine 核心 ✅
-- [x] `TriggerEngine` 核心
-- [x] `TriggerRule` 规则定义
-- [x] `TriggerCondition` 条件模型
-- [x] `TriggerAction` 动作模型
-- [x] `TriggerEvent` 事件模型
-
-### Commit 8: Trigger Action Drivers ✅
-- [x] `TriggerActionDriver` 接口
-- [x] `TriggerActionDispatcher` 分发器
-- [x] `LogTriggerActionDriver` 日志驱动
-- [x] `TitanTriggerActionDriver` 骨架
-- [x] `Ma2TriggerActionDriver` 骨架
-
-### Commit 9: 协议客户端层抽象 ✅
-- [x] `ProtocolClient` 基础接口
-- [x] `TitanClient` 接口
-- [x] `Ma2Client` 接口
-- [x] `TitanClientAdapter` 适配器
-- [x] `Ma2TelnetClientAdapter` 适配器
-
-### Commit 10: CDJ Adapter ✅
-- [x] `CdjTriggerContextAdapter`（beat-link 集成）
-
-### Commit 11: UI 分化
-- [ ] 本地播放器波形 + Marker UI
-- [ ] CDJ 模式页面
-
----
-
-## 八、本地开发与测试
-
-### 8.1 服务启动
-
-```bash
-cd /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient
-mvn exec:java -Dexec.mainClass=dbclient.Main
-```
-
-服务地址：`http://192.168.100.200:8080`
-
-### 8.2 测试音频
-
-```
-/home/shenlei/音乐/SHENLEI - 朴树-New Boy（SHENLEI remix）.wav
-```
-
-### 8.3 USB 声卡
-
-```
-Device [plughw:3,0]
-```
-
-### 8.4 编译与测试
-
-```bash
-mvn -q compile
-mvn -q test
-```
-
-### 8.5 WebUI
-
-```
-http://192.168.100.200:8080/
-```
-
-本地播放器页面：`http://192.168.100.200:8080/#local`
-
----
-
-## 九、已知限制
-
-1. **分析格式**：仅支持 WAV/AIFF/AU（Java Sound API 原生）
-2. **分析时长**：最多 120 秒（避免分析过慢）
-3. **WebUI 定位**：仅作为测试/调试界面，不按产品 UI 标准维护
-
----
-
-## 十、重要文档索引
-
-| 文档 | 说明 |
+| 操作 | 语义 |
 |------|------|
-| `docs/ARCH_TRIGGER_DESIGN.md` | 触发架构完整设计 |
-| `docs/UNIFIED_STATE_MODEL.md` | 统一状态模型 |
-| `docs/PHASE_A_STABILIZATION.md` | Phase A 稳定化总结 |
-| `docs/PHASE_C1_BPM_BASELINE.md` | C1 BPM 基线实现 |
-| `docs/LOCAL_PLAYER_SUBSYSTEM.md` | 本地播放器子系统文档 |
+| Seek 到更早位置 | 按位置重置 |
+| Stop 后 Play 同一曲 | **视为新周期，清空触发状态** |
+| 切歌 | 清空全部触发状态 |
+| 字段缺失 | TriggerEngine 降级运行，不崩溃 |
 
 ---
 
-## 十一、Git Commit 历史（关键节点）
+## 八、CDJ 与 Local 定位差异
+
+| 维度 | CDJ | Local |
+|------|-----|-------|
+| 信息来源 | beat-link 实时 | 本地分析资产 |
+| 字段丰富度 | 高（beatNumber/phase 实时） | 中（需分析后才完整） |
+| 适用场景 | 现场实时触发 | 预编程/预触发/marker 编辑 |
+| MARKER 支持 | ❌ | ✅ |
+| BeatGrid | ❌（实时计算） | ✅（预生成） |
+| Waveform | ❌ | ✅ |
+
+---
+
+## 九、开发流程规范
+
+1. **先架构/语义收口** → **再最小实现** → **再验证** → **最后 UI**
+2. **每 commit 独立可测试**
+3. **每次只推进一个小阶段**
+4. **未审阅前不连续跳阶段**
+5. **禁止破坏现有稳定模块**
+
+---
+
+## 十、Git Commit 历史
 
 | Commit | 说明 |
 |--------|------|
-| `8de7cfc` | Commit 9: 协议客户端层抽象 |
-| `39be38c` | Commit 8: Trigger Action Drivers |
-| `9bdf2ba` | Commit 7: Trigger Engine 核心 |
-| `6f8149d` | Commit 6: Trigger 基础设施 |
-| `d6ce679` | Commit 5: 分析 MVP 扩展 |
-| `ba0954b` | Commit 4: Marker CRUD API |
-| `6c219f6` | Commit 3: Service 层 |
-| `6f9fb80` | Commit 2: Repository 层 |
-| `a824f83` | Commit 1: 数据模型层 |
-| `135e1b2` | UI 分析入口 |
-| `e544930` | C1 后端 BPM 实现 |
-| `90ecf4f` | Seek 功能修复 |
-| `dce871e` | Delete 按钮修复 |
-| `5823c83` | 设备打开根因修复 |
+| `35793af` | 双源 Trigger 验证 |
+| `fc635a4` | Stop->Play 语义 |
+| `427f3e3` | CDJ Trigger Adapter |
+| `3e847c3` | 协议客户端抽象 |
+| `39be38c` | Trigger Action Drivers |
+| `9bdf2ba` | Trigger Engine 核心 |
+| `6f8149d` | Trigger 基础设施 |
+| `d6ce679` | 分析 MVP 扩展 |
+| `ba0954b` | Marker CRUD API |
+| `6c219f6` | Service 层 |
+| `6f9fb80` | Repository 层 |
+| `a824f83` | 数据模型层 |
 
 ---
 
-## 十二、注意事项
+## 十一、后续建议
 
-1. **禁止破坏现有链路**：任何改动不能影响 SourceInputManager / SyncOutputManager / TimecodeCore / 现有输出驱动
-2. **Trigger 层只能读取**：Trigger Engine 只能读取现有模块的状态，不能改造现有模块
-3. **数据模型向后兼容**：新增字段必须 nullable，避免影响现有读取逻辑
-4. **小步提交**：每个 Commit 独立可测试，不做大幅度合并
-5. **先文档后代码**：重大架构改动先输出设计文档，确认后再实现
+**当前优先级：Local Trigger UI**
 
----
+| 阶段 | 内容 |
+|------|------|
+| B1 | Marker 列表展示 + 编辑 UI |
+| B2 | 波形展示（Canvas 渲染 peaks） |
+| B3 | 点击打点 + 删除/改名 |
 
-*本文档随项目开发持续更新*
+**为什么不先做 Trigger 输出落地？**
+- 风险更低：UI 不改动后端稳定逻辑
+- 依赖更少：API 已完成，仅需前端调用
+- 价值更直接：用户可直接使用
