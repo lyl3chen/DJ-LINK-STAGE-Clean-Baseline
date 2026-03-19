@@ -13,13 +13,20 @@ import dbclient.media.model.WaveformPreview;
  * 不区分来源（CDJ / Local），只暴露统一的语义字段
  * 
  * 字段来源划分：
- * - runtime: 来自播放实时状态（播放位置、BPM、phase 等）
- * - analysis: 来自分析资产（BPM、beatGrid、waveform）
+ * - source metadata: 曲目基本信息（trackId/title/artist/durationMs），由 Adapter 从不同来源映射
+ * - runtime: 来自播放实时状态（播放位置、实时 BPM 等）
+ * - analysis: 来自本地分析资产（BPM、beatGrid、waveform）
  * - marker: 来自用户标记（markers 列表）
+ * 
+ * 注意：
+ * - TriggerEngine 应优先消费 TriggerContext 已展开的标准字段
+ * - analysis 对象挂在上下文里更多是为调试/扩展，不应直接依赖其内部细节
+ * - markers 为空时统一为空列表（而非 null）
+ * - phase/beatNumber/measureNumber 无效时保持 null，不要用 0 隐式表示无效
  * 
  * MVP 允许为空的字段：
  * - beatGrid / waveformPreview: 本地模式可能未分析
- * - markers: 可能尚未创建任何标记
+ * - markers: 可能尚未创建任何标记（但输出为空列表）
  * - phase / beatNumber / measureNumber: 依赖有效的 beatGrid
  */
 public class TriggerContext {

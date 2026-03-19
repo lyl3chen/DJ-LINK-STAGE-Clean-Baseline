@@ -70,9 +70,11 @@ public class LocalTriggerContextAdapter implements TriggerContextAdapter {
                                 builder.waveformPreview(analysis.getWaveformPreview());
                             }
 
-                            // Markers
+                            // Markers - 统一为空列表而非 null
                             if (entry.hasMarkers()) {
                                 builder.markers(entry.getMarkers());
+                            } else {
+                                builder.markers(new java.util.ArrayList<>());
                             }
                         }
                     }
@@ -80,7 +82,7 @@ public class LocalTriggerContextAdapter implements TriggerContextAdapter {
             }
         }
 
-        // 计算相位和节拍信息（基于 beatGrid）
+        // 计算相位和节拍信息（基于 beatGrid，无 beatGrid 时保持 null）
         TriggerContext ctx = builder.build();
         enrichBeatInfo(ctx);
 
