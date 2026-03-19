@@ -60,19 +60,24 @@ public class TriggerEngine {
     /**
      * 当播放开始时调用（重新 Play 时）
      * 
-     * 语义：
-     * - Stop 后重新 Play 同一首歌：保留该曲目的触发状态（同一次播放周期）
+     * 最终语义（2026-03-19 确认）：
+     * - Stop 后重新 Play 同一首歌：视为新播放周期，**清空当前曲目触发状态**
      * - 切歌后 Play 新歌：调用 clearAllTriggerStates()
      * 
-     * 也就是说，同一首歌的 Stop/Play 不重置，切换曲目才重置
+     * 这样符合用户直觉：从头播放应该重新开始计算触发
      */
     public void onPlayStarted() {
-        // MVP 阶段：同一首歌的 Stop/Play 不重置触发状态
-        // 如果需要严格区分播放周期，可以在这里实现
+        // Stop 后重新 Play：清空当前曲目的所有触发状态
+        clearAllTriggerStates();
     }
 
     /**
      * 清除所有触发状态（切歌时调用）
+     * 
+     * 最终语义（2026-03-19 确认）：
+     * - Seek 到更早位置：按位置重置（BEAT/POSITION/MARKER）
+     * - Stop 后 Play 同一曲：视为新周期，清空当前曲目触发状态
+     * - 切歌：清空全部触发状态
      */
     public void clearAllTriggerStates() {
         lastTriggeredState.clear();
