@@ -1,25 +1,24 @@
 package dbclient.media.trigger;
 
+import dbclient.sync.SyncOutputManager;
+
 /**
  * MA2 触发动作驱动
  * 
- * MVP 支持的最小动作：
- * - SEND_COMMAND: 发送命令到 MA2
+ * 最小实现：
+ * - FIRE_MA2_EXEC: 触发 MA2 Executor
  * 
- * 与 Sync Outputs 的区别：
- * - Ma2BpmSyncDriver: 连续 BPM 推送
- * - Ma2TriggerActionDriver: 事件触发一次性命令
+ * 复用现有 MA2 BPM 同步的 Telnet 发送能力：
+ * - 通过 SyncOutputManager.sendMa2TestCommand() 发送命令
  * 
- * 当前状态：骨架实现
- * TODO: 接入现有 Ma2TelnetClient
+ * 不新建连接，复用已有 Ma2BpmDriver 的 client
  */
 public class Ma2TriggerActionDriver implements TriggerActionDriver {
 
-    // TODO: 注入 Ma2TelnetClient
-    // private final Ma2TelnetClient ma2Client;
+    private final SyncOutputManager syncOutputManager;
 
-    public Ma2TriggerActionDriver() {
-        // TODO: 注入 Ma2TelnetClient
+    public Ma2TriggerActionDriver(SyncOutputManager syncOutputManager) {
+        this.syncOutputManager = syncOutputManager;
     }
 
     @Override
@@ -34,45 +33,53 @@ public class Ma2TriggerActionDriver implements TriggerActionDriver {
 
     @Override
     public boolean execute(TriggerAction action, TriggerEvent event) {
-        if (action == null || !isAvailable()) {
+        if (action == null) {
+            System.err.println("[Ma2TriggerActionDriver] Action is null");
+            return false;
+        }
+
+        // 只处理 FIRE_MA2_EXEC 类型
+        if (action.getType() != TriggerAction.ActionType.FIRE_MA2_EXEC) {
+            System.out.println("[Ma2TriggerActionDriver] Unsupported action type: " + action.getType());
+            return false;
+        }
+
+        if (!isAvailable()) {
+            System.err.println("[Ma2TriggerActionDriver] SyncOutputManager not available");
             return false;
         }
 
         String payload = action.getPayload();
         if (payload == null || payload.isEmpty()) {
-            System.out.println("[Ma2TriggerActionDriver] No payload to send");
-            return false;
+            payload = "Executor 1";  // 默认：触发 Executor 1
         }
 
-        // TODO: 接入 Ma2TelnetClient 发送命令
-        // 示例：
-        // try {
-        //     ma2Client.sendCommand(payload);
-        //     return true;
-        // } catch (Exception e) {
-        //     System.err.println("[Ma2TriggerActionDriver] Send failed: " + e.getMessage());
-        //     return false;
-        // }
+        // 打印完整日志
+        System.out.println("[Ma2TriggerActionDriver] Executing action");
+        System.out.println("[Ma2TriggerActionDriver] Rule: " + event.getRuleName());
+        System.out.println("[Ma2TriggerActionDriver] Source: " + event.getSource());
+        System.out.println("[Ma2TriggerActionDriver] Position: " + event.getContext().getPositionMs() + "ms");
+        System.out.println("[Ma2TriggerActionDriver] BPM: " + event.getContext().getBpm());
+        System.out.println("[Ma2TriggerActionDriver] Beat: " + event.getContext().getBeatNumber());
+        System.out.println("[Ma2TriggerActionDriver] Command to send: " + payload);
 
-        // MVP: 只打印日志
-        System.out.println("[Ma2TriggerActionDriver] Would send: " + payload);
-        return true;
+        // 复用 SyncOutputManager 发送
+        try {
+            // 调用已有的 MA2 测试命令发送方法
+            java.lang.reflect.Method method = syncOutputManager.getClass().getMethod("sendMa2TestCommand", String.class);
+            Object result = method.invoke(syncOutputManager, payload);
+            
+            System.out.println("[Ma2TriggerActionDriver] Send result: " + result);
+            return true;
+        } catch (Exception e) {
+            System.err.println("[Ma2TriggerActionDriver] Send failed: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
 
     @Override
     public boolean isAvailable() {
-        // TODO: 检查 Ma2TelnetClient 是否已连接
-        // return ma2Client != null && ma2Client.isConnected();
-        return false;  // MVP 阶段默认不可用
+        return syncOutputManager != null;
     }
-
-    // ==================== MVP 支持的动作类型 ====================
-    
-    /*
-    // 后续可扩展的动作模板：
-    // - "Macro 1" -> 执行宏
-    // - "Executor 1.1" -> 触发执行器
-    // - "Group 1" -> 触发组
-    // - "Store Cue 1" -> 存储 Cue
-    */
 }

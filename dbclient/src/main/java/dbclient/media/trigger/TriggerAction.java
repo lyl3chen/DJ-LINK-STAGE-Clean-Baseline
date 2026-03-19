@@ -18,10 +18,10 @@ package dbclient.media.trigger;
 public class TriggerAction {
 
     public enum ActionType {
-        NONE,       // 空动作
-        LOG,        // 记录日志
-        CALLBACK    // 调用回调
-        // TODO: SEND_COMMAND, INVOKE_API, INVOKE_OSC
+        NONE,           // 空动作
+        LOG,            // 记录日志
+        CALLBACK,       // 调用回调
+        FIRE_MA2_EXEC  // 触发 MA2 Executor（最小实现：复用现有 Telnet 发送）
     }
 
     private ActionType type;

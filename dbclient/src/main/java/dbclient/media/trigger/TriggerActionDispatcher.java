@@ -1,5 +1,7 @@
 package dbclient.media.trigger;
 
+import dbclient.sync.SyncOutputManager;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,10 +28,24 @@ public class TriggerActionDispatcher {
 
     // protocol -> driver
     private final Map<String, TriggerActionDriver> drivers = new ConcurrentHashMap<>();
+    
+    // MA2 驱动专用：需要 SyncOutputManager
+    private TriggerActionDriver ma2Driver = null;
 
     public TriggerActionDispatcher() {
         // 注册默认驱动
         registerDriver(new LogTriggerActionDriver());
+    }
+
+    /**
+     * 设置 MA2 驱动（需要 SyncOutputManager）
+     */
+    public void setMa2Driver(TriggerActionDriver driver) {
+        this.ma2Driver = driver;
+        if (driver != null) {
+            registerDriver(driver);
+            System.out.println("[TriggerActionDispatcher] MA2 driver configured: " + driver.getName());
+        }
     }
 
     /**
@@ -64,6 +80,12 @@ public class TriggerActionDispatcher {
             return false;
         }
 
+        // 打印分发日志
+        System.out.println("[TriggerActionDispatcher] Dispatching action");
+        System.out.println("[TriggerActionDispatcher] Action type: " + action.getType());
+        System.out.println("[TriggerActionDispatcher] Action protocol: " + action.getProtocol());
+        System.out.println("[TriggerActionDispatcher] Rule: " + event.getRuleName());
+
         // 处理内置类型
         switch (action.getType()) {
             case NONE:
@@ -72,6 +94,15 @@ public class TriggerActionDispatcher {
             case LOG:
                 // 日志动作，默认驱动处理
                 break;
+            case FIRE_MA2_EXEC:
+                // MA2 触发：使用专用驱动
+                System.out.println("[TriggerActionDispatcher] Using MA2 driver for FIRE_MA2_EXEC");
+                if (ma2Driver != null && ma2Driver.isAvailable()) {
+                    return ma2Driver.execute(action, event);
+                } else {
+                    System.err.println("[TriggerActionDispatcher] MA2 driver not available, falling back to LOG");
+                    break;
+                }
             case CALLBACK:
                 // TODO: 回调处理
                 return false;
