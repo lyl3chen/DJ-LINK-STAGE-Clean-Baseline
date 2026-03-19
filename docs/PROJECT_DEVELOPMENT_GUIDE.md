@@ -187,10 +187,10 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `TrackLibraryRepository` 接口
 - [x] `InMemoryTrackLibraryRepository` 实现
 
-### Commit 3: Service 层
-- [ ] `TrackLibraryService` 统一入口
-- [ ] 改造 `LocalLibraryService` 接入
-- [ ] `AnalysisService`（从 LocalLibraryService 拆分）
+### Commit 3: Service 层 ✅
+- [x] `TrackLibraryService` 统一入口
+- [x] `AnalysisService` 分析调度 + BeatGrid 生成 + 校验
+- [x] 改造 `LocalLibraryService` 接入（可选注入）
 
 ### Commit 4: Marker CRUD API
 - [ ] `POST /api/local/markers` - 创建
@@ -294,6 +294,8 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `6c219f6` | Commit 3: Service 层 |
+| `6f9fb80` | Commit 2: Repository 层 |
 | `a824f83` | Commit 1: 数据模型层 |
 | `135e1b2` | UI 分析入口 |
 | `e544930` | C1 后端 BPM 实现 |
