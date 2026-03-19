@@ -176,4 +176,11 @@ public class TitanAdapter {
         c.setReadTimeout(1500);
         return c.getResponseCode();
     }
+
+    /**
+     * 公共 HTTP GET 接口（供 TitanClientAdapter 调用）
+     */
+    public String httpGet(String url) throws Exception {
+        return httpGetText(url);
+    }
 }

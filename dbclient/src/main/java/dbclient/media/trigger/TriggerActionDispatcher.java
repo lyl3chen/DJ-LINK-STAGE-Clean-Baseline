@@ -89,7 +89,9 @@ public class TriggerActionDispatcher {
 
         TriggerActionDriver driver = drivers.get(protocol.toUpperCase());
         if (driver == null) {
-            System.err.println("[TriggerActionDispatcher] No driver found for protocol: " + protocol);
+            System.err.println("[TriggerActionDispatcher] No driver for protocol: " + protocol + 
+                " | Rule: " + (event != null ? event.getRuleId() : "unknown") + 
+                " | Falling back to LOG");
             // 回退到日志驱动
             driver = drivers.get("LOG");
             if (driver == null) {
@@ -98,8 +100,14 @@ public class TriggerActionDispatcher {
         }
 
         if (!driver.isAvailable()) {
-            System.err.println("[TriggerActionDispatcher] Driver not available: " + driver.getName());
-            return false;
+            System.err.println("[TriggerActionDispatcher] Driver unavailable: " + driver.getName() + 
+                " | Protocol: " + protocol + 
+                " | Rule: " + (event != null ? event.getRuleId() : "unknown") +
+                " | Falling back to LOG");
+            driver = drivers.get("LOG");
+            if (driver == null) {
+                return false;
+            }
         }
 
         try {

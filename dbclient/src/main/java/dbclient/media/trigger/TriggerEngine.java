@@ -58,6 +58,14 @@ public class TriggerEngine {
     // ==================== 规则管理 ====================
 
     /**
+     * 清除所有触发状态（切歌时调用）
+     */
+    public void clearAllTriggerStates() {
+        lastTriggeredState.clear();
+        lastContext = null;
+    }
+
+    /**
      * 添加触发规则
      */
     public void addRule(TriggerRule rule) {
@@ -225,6 +233,10 @@ public class TriggerEngine {
                 if (Math.abs(pos - markerTime) <= TOLERANCE) {
                     return true;
                 }
+                // 检查是否需要重置：当 position < markerTime - TOLERANCE 时重置（即 seek 回 marker 前）
+                if (pos < markerTime - TOLERANCE) {
+                    lastTriggeredState.remove("MARKER_" + markerId);
+                }
             }
         }
         return false;
@@ -243,8 +255,11 @@ public class TriggerEngine {
         final long TOLERANCE = 50;
 
         if (Math.abs(pos - targetPos) > TOLERANCE) {
-            // 不在范围内，重置防重复状态
-            lastTriggeredState.remove("POSITION_" + targetPos);
+            // 不在范围内，判断是否需要重置防重复状态
+            // 当 position < targetPos - TOLERANCE 时重置（即 seek 回阈值前）
+            if (pos < targetPos - TOLERANCE) {
+                lastTriggeredState.remove("POSITION_" + targetPos);
+            }
             return false;
         }
 
@@ -294,6 +309,11 @@ public class TriggerEngine {
 
     /**
      * 记录触发状态用于防重复
+     * 
+     * 重置语义：
+     * - POSITION: 当 positionMs < targetPos - TOLERANCE 时重置（即 seek 回阈值前）
+     * - MARKER: 当 positionMs < markerTime - TOLERANCE 时重置（即 seek 回 marker 前）
+     * - 当 source 变化时（切歌）自动清空所有状态
      */
     private void recordTriggeredState(TriggerEvent event) {
         TriggerCondition cond = event.getContext().getPlaybackState() != null 

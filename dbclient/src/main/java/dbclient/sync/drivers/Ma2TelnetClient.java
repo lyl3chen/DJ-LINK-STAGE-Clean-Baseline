@@ -7,7 +7,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * MA2 Telnet 客户端（仅 BPM 场景最小实现）。
+ * MA2 Telnet 客户端（最小实现）。
+ * 
+ * 注：此类为原有实现，不直接实现 Ma2Client 接口
+ * 如需 Ma2Client 接口，请使用 Ma2TelnetClientAdapter
  */
 public class Ma2TelnetClient {
     private static final AtomicInteger CONN_SEQ = new AtomicInteger(1);
