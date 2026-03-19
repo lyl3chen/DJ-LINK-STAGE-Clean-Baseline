@@ -40,17 +40,19 @@ public class LocalLibraryService {
 
     private final TrackRepository trackRepository;
     private final AudioAnalyzer audioAnalyzer;
-    private TrackLibraryService trackLibraryService;  // 可选：用于资产层操作
+    private TrackLibraryService trackLibraryService;  // 资产层操作
 
     public LocalLibraryService() {
         // 默认使用内存仓储和基础分析器
         this(new InMemoryTrackRepository(), new BasicAudioAnalyzer());
+        // 默认初始化 TrackLibraryService
+        this.trackLibraryService = new TrackLibraryService();
     }
 
     public LocalLibraryService(TrackRepository repository, AudioAnalyzer analyzer) {
         this.trackRepository = repository;
         this.audioAnalyzer = analyzer;
-        this.trackLibraryService = null;
+        this.trackLibraryService = new TrackLibraryService();
     }
 
     /**
@@ -61,7 +63,7 @@ public class LocalLibraryService {
     }
 
     /**
-     * 获取 TrackLibraryService（如未注入返回 null）
+     * 获取 TrackLibraryService
      */
     public TrackLibraryService getTrackLibraryService() {
         return trackLibraryService;

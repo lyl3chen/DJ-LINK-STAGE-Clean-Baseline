@@ -5,6 +5,8 @@ import dbclient.config.UserSettingsStore;
 import dbclient.input.LocalSourceInput;
 import dbclient.media.library.LocalLibraryService;
 import dbclient.media.model.AnalysisResult;
+import dbclient.media.model.MarkerPoint;
+import dbclient.media.model.MarkerType;
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
 import dbclient.media.player.BasicLocalPlaybackEngine;
@@ -65,6 +67,17 @@ public class JettyServer {
     }
     private static LocalLibraryService getLocalLibraryService() {
         return syncOutputManager.getSourceInputManager().getLocalLibraryService();
+    }
+    private static dbclient.media.library.TrackLibraryService getTrackLibraryService() {
+        return syncOutputManager.getSourceInputManager().getLocalLibraryService().getTrackLibraryService();
+    }
+    private static dbclient.media.analysis.AnalysisService getAnalysisService() {
+        LocalLibraryService ll = getLocalLibraryService();
+        dbclient.media.library.TrackLibraryService tls = ll.getTrackLibraryService();
+        if (tls != null) {
+            return new dbclient.media.analysis.AnalysisService();
+        }
+        return null;
     }
     private static final AiAgentService aiAgentService = AiAgentService.getInstance();
     
@@ -217,6 +230,45 @@ public class JettyServer {
                         Optional<AnalysisResult> ar = getLocalLibraryService().getAnalysis(trackId);
                         response.setContentType("application/json");
                         response.getWriter().print(gson.toJson(Map.of("ok", ar.isPresent(), "analysis", ar.orElse(null))));
+                        return;
+                    } else if (path.equals("/api/local/markers")) {
+                        // GET /api/local/markers?trackId=xxx - 获取曲目所有 Markers（按 timeMs 升序）
+                        String trackId = request.getParameter("trackId");
+                        if (trackId == null || trackId.isBlank()) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
+                        if (tls == null) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
+                            return;
+                        }
+                        List<MarkerPoint> markers = tls.getMarkers(trackId);
+                        // 默认按 timeMs 升序排序
+                        markers.sort((a, b) -> Long.compare(a.getTimeMs(), b.getTimeMs()));
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "markers", markers)));
+                        return;
+                    } else if (path.equals("/api/local/markers/enabled")) {
+                        // GET /api/local/markers/enabled?trackId=xxx - 获取启用的 Markers
+                        String trackId = request.getParameter("trackId");
+                        if (trackId == null || trackId.isBlank()) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
+                        if (tls == null) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
+                            return;
+                        }
+                        List<MarkerPoint> markers = tls.getEnabledMarkers(trackId);
+                        markers.sort((a, b) -> Long.compare(a.getTimeMs(), b.getTimeMs()));
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "markers", markers)));
                         return;
                     } else if (path.equals("/api/local/tracks")) {
                         // GET /api/local/tracks - 列出所有本地曲目
@@ -394,6 +446,146 @@ public class JettyServer {
                         }
                         AnalysisResult ar = getLocalLibraryService().analyzeTrack(trackId);
                         response.getWriter().print(gson.toJson(Map.of("ok", ar != null && ar.isSuccess(), "analysis", ar)));
+                        return;
+                    }
+                    // ==================== Marker CRUD ====================
+                    if (path.equals("/api/local/markers")) {
+                        // POST /api/local/markers - 创建 Marker
+                        dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
+                        if (tls == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
+                            return;
+                        }
+
+                        String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
+                        if (trackId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+
+                        // 校验 trackId 对应的资产是否存在
+                        if (tls.findByTrackId(trackId).isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found: " + trackId)));
+                            return;
+                        }
+
+                        // 解析 timeMs（必须）
+                        long timeMs = 0;
+                        Object timeMsObj = payload.get("timeMs");
+                        if (timeMsObj instanceof Number) {
+                            timeMs = ((Number) timeMsObj).longValue();
+                        }
+                        // timeMs 校验：负数视为 0
+                        if (timeMs < 0) timeMs = 0;
+
+                        // 获取 durationMs 用于越界校验
+                        long durationMs = tls.findByTrackId(trackId).map(e -> e.getDurationMs()).orElse(0L);
+                        // timeMs 越界：超过 durationMs 则截断
+                        if (durationMs > 0 && timeMs > durationMs) {
+                            timeMs = durationMs;
+                        }
+
+                        // 解析可选字段
+                        String name = String.valueOf(payload.getOrDefault("name", "Marker"));
+                        String note = String.valueOf(payload.getOrDefault("note", ""));
+                        boolean enabled = Boolean.parseBoolean(String.valueOf(payload.getOrDefault("enabled", "true")));
+                        String typeStr = String.valueOf(payload.getOrDefault("type", "MARKER"));
+                        MarkerType type = MarkerType.MARKER;
+                        try {
+                            type = MarkerType.valueOf(typeStr.toUpperCase());
+                        } catch (Exception ignored) {}
+
+                        // 创建 Marker（id 由模型层生成）
+                        MarkerPoint marker = MarkerPoint.builder()
+                            .trackId(trackId)
+                            .name(name)
+                            .timeMs(timeMs)
+                            .type(type)
+                            .note(note)
+                            .enabled(enabled)
+                            .build();
+
+                        // 保存到资产
+                        tls.addMarker(trackId, marker);
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "marker", marker)));
+                        return;
+                    }
+                    if (path.equals("/api/local/markers/update")) {
+                        // POST /api/local/markers/update - 全量更新 Marker
+                        dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
+                        if (tls == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
+                            return;
+                        }
+
+                        String markerId = String.valueOf(payload.getOrDefault("markerId", ""));
+                        if (markerId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "markerId is required")));
+                            return;
+                        }
+
+                        // 查询现有 Marker
+                        List<MarkerPoint> allMarkers = new ArrayList<>();
+                        for (dbclient.media.model.TrackLibraryEntry e : tls.findAll()) {
+                            allMarkers.addAll(e.getMarkers());
+                        }
+                        MarkerPoint existing = allMarkers.stream()
+                            .filter(m -> m.getId().equals(markerId))
+                            .findFirst().orElse(null);
+
+                        if (existing == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Marker not found: " + markerId)));
+                            return;
+                        }
+
+                        // 全量更新：覆盖所有非空字段
+                        String name = String.valueOf(payload.getOrDefault("name", existing.getName()));
+                        if (!"null".equals(name)) existing.setName(name);
+
+                        Object timeMsObj = payload.get("timeMs");
+                        if (timeMsObj != null) {
+                            long timeMs = ((Number) timeMsObj).longValue();
+                            if (timeMs < 0) timeMs = 0;
+                            // 获取 durationMs 用于越界校验
+                            long durationMs = tls.findByTrackId(existing.getTrackId()).map(e -> e.getDurationMs()).orElse(0L);
+                            if (durationMs > 0 && timeMs > durationMs) timeMs = durationMs;
+                            existing.setTimeMs(timeMs);
+                        }
+
+                        String note = String.valueOf(payload.getOrDefault("note", existing.getNote()));
+                        if (!"null".equals(note)) existing.setNote(note);
+
+                        if (payload.containsKey("enabled")) {
+                            existing.setEnabled(Boolean.parseBoolean(String.valueOf(payload.get("enabled"))));
+                        }
+
+                        if (payload.containsKey("type")) {
+                            String typeStr = String.valueOf(payload.get("type"));
+                            try {
+                                existing.setType(MarkerType.valueOf(typeStr.toUpperCase()));
+                            } catch (Exception ignored) {}
+                        }
+
+                        tls.updateMarker(existing);
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "marker", existing)));
+                        return;
+                    }
+                    if (path.equals("/api/local/markers/delete")) {
+                        // POST /api/local/markers/delete - 删除 Marker
+                        dbclient.media.library.TrackLibraryService tls = getTrackLibraryService();
+                        if (tls == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "TrackLibraryService not initialized")));
+                            return;
+                        }
+
+                        String markerId = String.valueOf(payload.getOrDefault("markerId", ""));
+                        if (markerId.isEmpty()) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "markerId is required")));
+                            return;
+                        }
+
+                        boolean deleted = tls.deleteMarker(markerId);
+                        response.getWriter().print(gson.toJson(Map.of("ok", deleted, "error", deleted ? null : "Marker not found: " + markerId)));
                         return;
                     }
                     if (path.equals("/api/local/delete")) {
