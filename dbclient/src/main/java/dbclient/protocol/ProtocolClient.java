@@ -11,6 +11,11 @@ package dbclient.protocol;
  * - 响应处理
  * - 错误处理
  * 
+ * 注意（过渡设计）：
+ * - 当前 sendCommand 返回 String 是 MVP 过渡方案
+ * - 后续可能升级为结构化结果对象（包含成功/失败/错误码/超时区分）
+ * - 请勿过度依赖返回值字符串格式
+ * 
  * @param <C> 连接状态类型
  */
 public interface ProtocolClient<C> {

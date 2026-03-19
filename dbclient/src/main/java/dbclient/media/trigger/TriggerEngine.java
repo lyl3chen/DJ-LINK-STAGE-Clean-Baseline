@@ -58,6 +58,20 @@ public class TriggerEngine {
     // ==================== 规则管理 ====================
 
     /**
+     * 当播放开始时调用（重新 Play 时）
+     * 
+     * 语义：
+     * - Stop 后重新 Play 同一首歌：保留该曲目的触发状态（同一次播放周期）
+     * - 切歌后 Play 新歌：调用 clearAllTriggerStates()
+     * 
+     * 也就是说，同一首歌的 Stop/Play 不重置，切换曲目才重置
+     */
+    public void onPlayStarted() {
+        // MVP 阶段：同一首歌的 Stop/Play 不重置触发状态
+        // 如果需要严格区分播放周期，可以在这里实现
+    }
+
+    /**
      * 清除所有触发状态（切歌时调用）
      */
     public void clearAllTriggerStates() {
@@ -186,6 +200,11 @@ public class TriggerEngine {
     /**
      * BEAT 条件匹配：每 N 拍触发
      * 防重复：只在 beatNumber 变化且命中 interval 时触发
+     * 
+     * 重置语义：
+     * - seek 到更早位置后允许重新触发
+     * - stop/play 后同一曲目的 beat 触发历史保留
+     * - 切歌后一定清空（调用 clearAllTriggerStates）
      */
     private boolean matchesBeat(TriggerCondition cond, TriggerContext ctx) {
         Integer beatInterval = cond.getBeatInterval();
@@ -196,6 +215,14 @@ public class TriggerEngine {
 
         // 防重复：检查 beatNumber 是否变化
         TriggeredState state = lastTriggeredState.get(cond.getType() + "_" + cond.getBeatInterval());
+        
+        // 如果 beatNumber 比上次小（seek 回更早位置），允许重新触发
+        if (state != null && state.lastBeatNumber != null && beatNumber < state.lastBeatNumber) {
+            // seek 回更早位置，清除该规则的触发状态
+            lastTriggeredState.remove(cond.getType() + "_" + cond.getBeatInterval());
+            state = null;
+        }
+        
         if (state != null && state.lastBeatNumber != null && state.lastBeatNumber.equals(beatNumber)) {
             // 同一个 beat 上重复触发，跳过
             return false;
