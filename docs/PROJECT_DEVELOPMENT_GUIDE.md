@@ -181,10 +181,11 @@ private BeatGrid beatGrid;  // null 表示未生成
 
 ## 七、后续开发计划（按 Commit 顺序）
 
-### Commit 2: Repository 层
-- [ ] `MarkerRepository` 接口
-- [ ] `InMemoryMarkerRepository` 实现
-- [ ] 改造 `InMemoryTrackRepository` 支持 `TrackLibraryEntry`
+### Commit 2: Repository 层 ✅
+- [x] `MarkerRepository` 接口
+- [x] `InMemoryMarkerRepository` 实现
+- [x] `TrackLibraryRepository` 接口
+- [x] `InMemoryTrackLibraryRepository` 实现
 
 ### Commit 3: Service 层
 - [ ] `TrackLibraryService` 统一入口
