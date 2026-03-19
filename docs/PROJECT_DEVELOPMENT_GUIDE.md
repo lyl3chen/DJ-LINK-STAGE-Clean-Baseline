@@ -264,7 +264,7 @@ class TriggerContext {
 
 ## 十一、后续建议
 
-**当前优先级：Local Trigger UI**
+### 主推荐：Local Trigger UI
 
 | 阶段 | 内容 |
 |------|------|
@@ -272,7 +272,52 @@ class TriggerContext {
 | B2 | 波形展示（Canvas 渲染 peaks） |
 | B3 | 点击打点 + 删除/改名 |
 
-**为什么不先做 Trigger 输出落地？**
-- 风险更低：UI 不改动后端稳定逻辑
-- 依赖更少：API 已完成，仅需前端调用
-- 价值更直接：用户可直接使用
+**推荐理由**：
+- 风险更低：仅新增前端代码，不改动后端稳定逻辑
+- 依赖更少：API 已完成，仅需前端调用现有接口
+- 价值更直接：用户可直接使用本地 marker + 波形功能
+- 可验证性：每加一个 UI 组件可直接测试
+
+### 备选方案：Trigger 输出真正落地
+
+| 阶段 | 内容 |
+|------|------|
+| A1 | TitanTriggerActionDriver 接入 TitanClient |
+| A2 | Ma2TriggerActionDriver 接入 Ma2TelnetClient |
+| A3 | TriggerEngine → ActionDispatcher → 协议链路打通 |
+
+**备选理由**：
+- 完整触发链路：Trigger → 动作 → 外部协议
+- 但风险更高：需要改造现有稳定的 TitanAdapter / Ma2TelnetClient
+- 依赖更多：需要同步改 ProtocolClient 接口
+
+### 当前判断依据
+
+| 维度 | Local Trigger UI | Trigger 输出落地 |
+|------|-----------------|-----------------|
+| 后端改动 | ❌ 无 | ⚠️ 有 |
+| API 依赖 | ✅ 已完成 | ⚠️ 需扩展 |
+| 验证难度 | ✅ 组件级 | ⚠️ 端到端 |
+| 用户价值 | ✅ 立即可用 | ⚠️ 需配置规则 |
+
+---
+
+## 十二、历史文档状态
+
+### 已归档文档
+
+| 文件 | 状态 | 原因 |
+|------|------|------|
+| `项目演进.md` | **已废弃** | 描述的是 BLT-MA2 独立系统，与当前 dj-link-stage 无关 |
+
+### 保留参考文档
+
+| 文件 | 状态 | 说明 |
+|------|------|------|
+| `API_OVERVIEW.md` | 参考 | API 概览 |
+| `PHASE1_COMPLETE.md` | 归档 | Phase 1 历史 |
+| `PHASE_A_STABILIZATION.md` | 归档 | Phase A 完成 |
+| `LOCAL_PLAYER_SUBSYSTEM.md` | 参考 | 本地播放器说明 |
+| `LOCAL_PLAYER_ERROR_VISUALIZATION_RULES.md` | 参考 | 错误可视化规则 |
+| `UNIFIED_STATE_MODEL.md` | 参考 | 状态模型 |
+| `INCIDENT_LOCAL_PLAYER_DEVICE_JSON_CHAIN_2026-03-19.md` | 归档 | 事故记录 |
