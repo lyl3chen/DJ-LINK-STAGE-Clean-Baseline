@@ -199,9 +199,10 @@ private BeatGrid beatGrid;  // null 表示未生成
 - [x] `POST /api/local/markers/update` - 全量更新
 - [x] `POST /api/local/markers/delete` - 删除
 
-### Commit 5: 分析 MVP 扩展
-- [ ] 扩展 `BasicAudioAnalyzer` 输出 BeatGrid
-- [ ] 生成 Waveform Preview
+### Commit 5: 分析 MVP 扩展 ✅
+- [x] BeatGrid 数据真正落地
+- [x] Waveform Preview 预计算
+- [x] 分析时一次性生成（BPM + 波形 + BeatGrid）
 
 ### Commit 6: Trigger 基础设施
 - [ ] `TriggerContext` 统一上下文
@@ -295,6 +296,7 @@ http://192.168.100.200:8080/
 
 | Commit | 说明 |
 |--------|------|
+| `d6ce679` | Commit 5: 分析 MVP 扩展 |
 | `ba0954b` | Commit 4: Marker CRUD API |
 | `6c219f6` | Commit 3: Service 层 |
 | `6f9fb80` | Commit 2: Repository 层 |
