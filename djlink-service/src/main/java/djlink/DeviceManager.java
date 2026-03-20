@@ -52,6 +52,39 @@ public class DeviceManager {
     }
 
     /**
+     * 统一获取真实 master（分层优先级策略，兼容所有设备）
+     * 
+     * 优先级：
+     * 1. 设备状态明确标记：CdjStatus.isTempoMaster()
+     * 2. MasterListener 事件：masterChanged 回调
+     * 3. 如果都拿不到，返回 null
+     * 
+     * @return 真实 master player 编号，如果没有则返回 null
+     */
+    public String resolveMaster() {
+        // 先检查设备状态（CdjStatus.isTempoMaster），适用于 CDJ-3000/XDJ/XZ 等所有设备
+        for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
+            PlayerState ps = entry.getValue();
+            if (ps.status != null && ps.status.isTempoMaster()) {
+                String resolved = String.valueOf(entry.getKey());
+                if (!resolved.equals(masterPlayer.get())) {
+                    System.out.println("🎚️ [DeviceManager] resolveMaster from CdjStatus.isTempoMaster: device #" + resolved);
+                }
+                return resolved;
+            }
+        }
+        
+        // 再检查 MasterListener 事件
+        String listenerMaster = masterPlayer.get();
+        if (listenerMaster != null) {
+            return listenerMaster;
+        }
+        
+        // 都拿不到，返回 null
+        return null;
+    }
+
+    /**
      * 统一获取业务实际应使用的主源
      * 规则：
      * - 有真实 master：返回真实 master
@@ -60,21 +93,20 @@ public class DeviceManager {
      * @return 实际应使用的主源 player 编号（如 "1", "2", "3"），如果没有则返回 null
      */
     public String getEffectiveSource() {
-        String realMaster = masterPlayer.get();
-        // 不再 fallback 到 activeBeatSource，避免"谁先播放跟谁"
+        String realMaster = resolveMaster();
         if (realMaster != null) {
             return realMaster;
         }
-        System.out.println("[DeviceManager] getEffectiveSource: masterPlayer=null, returning null (no fallback)");
+        System.out.println("[DeviceManager] getEffectiveSource: resolveMaster=null, returning null");
         return null;
     }
 
     /**
-     * 获取真实 master（来自 Beat Link MasterListener）
+     * 获取真实 master（来自 resolveMaster）
      * @return 真实 master player 编号，如果没有则返回 null
      */
     public String getRealMaster() {
-        return masterPlayer.get();
+        return resolveMaster();
     }
 
     /**
@@ -256,16 +288,6 @@ public class DeviceManager {
         state.status = status;
         state.lastUpdate = System.currentTimeMillis();
         lastSignalMs = System.currentTimeMillis();
-        
-        // ========== 从设备状态获取真实 master ==========
-        // CdjStatus.isTempoMaster() 是设备自己的 master 状态
-        if (status.isTempoMaster()) {
-            String oldMaster = masterPlayer.get();
-            if (!String.valueOf(deviceNumber).equals(oldMaster)) {
-                masterPlayer.set(String.valueOf(deviceNumber));
-                System.out.println("🎚️ [DeviceManager] set master from CdjStatus.isTempoMaster(): device #" + deviceNumber);
-            }
-        }
         
         // If transitioned from not playing to playing, record start time
         if (!wasPlaying && isPlaying) {
