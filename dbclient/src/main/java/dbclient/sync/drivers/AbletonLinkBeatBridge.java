@@ -5,8 +5,23 @@ import java.util.Map;
 /**
  * AbletonLinkBeatBridge - 已禁用
  * 
- * beat 对齐已禁用，只保留 tempo 同步
- * PURE_BPM_MODE = true
+ * ========== Ableton Link 稳定版本：仅 BPM 同步 ==========
+ * 
+ * 当前状态：
+ * - PURE_BPM_MODE = true
+ * - beat 对齐已禁用，只保留 tempo 同步
+ * 
+ * 功能：
+ * - tempo 同步（ CarabinerLinkEngine 负责）
+ * - peer 会话连接
+ * 
+ * 已禁用（不再启用）：
+ * - request-beat-at-time
+ * - force-beat-at-time  
+ * - PLAY_START / SEEK / PERIODIC / MANUAL_RESYNC beat 对齐
+ * - start/stop sync
+ * 
+ * 结论：Ableton Link 仅作为 BPM 同步桥，不承担 Beat/Measure 对齐
  */
 public class AbletonLinkBeatBridge {
     
@@ -24,6 +39,6 @@ public class AbletonLinkBeatBridge {
     }
     
     public void manualResync() {
-        System.out.println("[AbletonLinkBeatBridge] DISABLED");
+        System.out.println("[AbletonLinkBeatBridge] DISABLED - Ableton Link 仅作为 BPM 同步桥");
     }
 }

@@ -129,8 +129,18 @@ public class CarabinerLinkEngine {
         if (pingThread != null) pingThread.interrupt();
     }
 
-    // 纯 BPM 模式：禁用所有 beat/measure/start-stop（用于隔离测试）
-    // beat 对齐已禁用，只保留 tempo 同步
+    // ========== Ableton Link 稳定版本：仅 BPM 同步 ==========
+    // 功能：
+    // - tempo 同步（每 500ms 发送，最小变化 0.10 BPM）
+    // - peer 会话连接
+    //
+    // 已禁用：
+    // - request-beat-at-time
+    // - force-beat-at-time
+    // - PLAY_START / SEEK / PERIODIC / MANUAL_RESYNC beat 对齐
+    // - start/stop sync
+    //
+    // 结论：Ableton Link 仅作为 BPM 同步桥，不承担 Beat/Measure 对齐
     private static final boolean PURE_BPM_MODE = true;
 
     /**
