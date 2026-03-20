@@ -19,6 +19,7 @@ public class DeviceManager {
     private final Map<Integer, PlayerState> players = new ConcurrentHashMap<>();
     private final AtomicReference<String> masterPlayer = new AtomicReference<>(null);  // 真实 master（来自 MasterListener）
     private final AtomicReference<String> activeBeatSource = new AtomicReference<>(null);  // 当前发 beat 的播放器
+    private final AtomicReference<String> masterCache = new AtomicReference<>(null);  // 缓存的 master（避免每次遍历）
     private final AtomicInteger bpm = new AtomicInteger(0);
     private static final long PLAYER_STALE_MS = 15000;
     private static final long SCAN_AUTO_STOP_MS = 30000;
@@ -62,14 +63,19 @@ public class DeviceManager {
      * @return 真实 master player 编号，如果没有则返回 null
      */
     public String resolveMaster() {
-        // 先检查设备状态（CdjStatus.isTempoMaster），适用于 CDJ-3000/XDJ/XZ 等所有设备
+        // 先检查缓存
+        String cached = masterCache.get();
+        if (cached != null) {
+            return cached;
+        }
+        
+        // 缓存为空时才遍历（只在初始或缓存失效时遍历）
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             PlayerState ps = entry.getValue();
             if (ps.status != null && ps.status.isTempoMaster()) {
                 String resolved = String.valueOf(entry.getKey());
-                if (!resolved.equals(masterPlayer.get())) {
-                    System.out.println("🎚️ [DeviceManager] resolveMaster from CdjStatus.isTempoMaster: device #" + resolved);
-                }
+                masterCache.set(resolved);  // 更新缓存
+                System.out.println("🎚️ [DeviceManager] resolveMaster from CdjStatus.isTempoMaster: device #" + resolved);
                 return resolved;
             }
         }
@@ -77,6 +83,7 @@ public class DeviceManager {
         // 再检查 MasterListener 事件
         String listenerMaster = masterPlayer.get();
         if (listenerMaster != null) {
+            masterCache.set(listenerMaster);  // 更新缓存
             return listenerMaster;
         }
         
@@ -243,6 +250,7 @@ public class DeviceManager {
                 // 真实 master 来自 Beat Link 协议
                 int masterDeviceNum = update.getDeviceNumber();
                 masterPlayer.set("" + masterDeviceNum);
+                masterCache.set("" + masterDeviceNum);  // 更新缓存
                 System.out.println("🎚️ [BeatLink] MasterListener.masterChanged: device #" + masterDeviceNum);
             }
             
@@ -288,6 +296,18 @@ public class DeviceManager {
         state.status = status;
         state.lastUpdate = System.currentTimeMillis();
         lastSignalMs = System.currentTimeMillis();
+        
+        // ========== 增量更新 masterCache（避免每次遍历）==========
+        if (status.isTempoMaster()) {
+            masterCache.set(String.valueOf(deviceNumber));
+        } else {
+            // 如果当前设备不再是 master，检查是否需要清除缓存
+            String cached = masterCache.get();
+            if (cached != null && cached.equals(String.valueOf(deviceNumber))) {
+                // 需要重新遍历确认
+                masterCache.set(null);
+            }
+        }
         
         // If transitioned from not playing to playing, record start time
         if (!wasPlaying && isPlaying) {
