@@ -55,17 +55,18 @@ public class DeviceManager {
      * 统一获取业务实际应使用的主源
      * 规则：
      * - 有真实 master：返回真实 master
-     * - 没有真实 master：返回 activeBeatSource 作为 fallback
+     * - 没有真实 master：返回 null（不再 fallback 到 activeBeatSource）
      * 
      * @return 实际应使用的主源 player 编号（如 "1", "2", "3"），如果没有则返回 null
      */
     public String getEffectiveSource() {
         String realMaster = masterPlayer.get();
-        String effective = realMaster != null ? realMaster : activeBeatSource.get();
-        if (realMaster == null) {
-            System.out.println("[DeviceManager] getEffectiveSource: masterPlayer=" + realMaster + ", activeBeatSource=" + activeBeatSource.get() + " -> returning: " + effective);
+        // 不再 fallback 到 activeBeatSource，避免"谁先播放跟谁"
+        if (realMaster != null) {
+            return realMaster;
         }
-        return effective;
+        System.out.println("[DeviceManager] getEffectiveSource: masterPlayer=null, returning null (no fallback)");
+        return null;
     }
 
     /**
@@ -255,6 +256,16 @@ public class DeviceManager {
         state.status = status;
         state.lastUpdate = System.currentTimeMillis();
         lastSignalMs = System.currentTimeMillis();
+        
+        // ========== 从设备状态获取真实 master ==========
+        // CdjStatus.isTempoMaster() 是设备自己的 master 状态
+        if (status.isTempoMaster()) {
+            String oldMaster = masterPlayer.get();
+            if (!String.valueOf(deviceNumber).equals(oldMaster)) {
+                masterPlayer.set(String.valueOf(deviceNumber));
+                System.out.println("🎚️ [DeviceManager] set master from CdjStatus.isTempoMaster(): device #" + deviceNumber);
+            }
+        }
         
         // If transitioned from not playing to playing, record start time
         if (!wasPlaying && isPlaying) {
@@ -723,11 +734,8 @@ public class DeviceManager {
         
         // master = 真实 master（只来自 masterPlayer，不允许 fallback）
         String realMaster = masterPlayer.get();
-        // effectiveSource = 真实 master 不存在时 fallback 到 activeBeatSource
-        String effectiveSource = realMaster != null ? realMaster : activeBeatSource.get();
-        if (realMaster == null && effectiveSource != null) {
-            System.out.println("[DeviceManager] master=null, effectiveSource fallback to: " + effectiveSource);
-        }
+        // effectiveSource = 不再 fallback 到 activeBeatSource，避免"谁先播放跟谁"
+        String effectiveSource = realMaster;  // 只使用真实 master
         
         Integer realMasterNum = null;
         Integer effectiveSourceNum = null;
