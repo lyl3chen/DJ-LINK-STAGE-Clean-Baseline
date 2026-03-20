@@ -55,13 +55,10 @@ public class TitanApiDriver implements OutputDriver {
     public synchronized void update(Map<String, Object> state) {
         if (!running || state == null) return;
         Object bpmObj = state.get("masterBpm");
-        Object pitchObj = state.get("sourcePitchPct");
+        // masterBpm 已经是有效 BPM（包含 pitch），直接使用，不再重复叠加 pitch
         if (!(bpmObj instanceof Number)) return;
 
         double bpm = ((Number) bpmObj).doubleValue();
-        if (pitchObj instanceof Number) {
-            bpm = bpm * (1.0 + ((Number) pitchObj).doubleValue() / 100.0);
-        }
         if (!Double.isFinite(bpm) || bpm <= 0) return;
 
         int bpmInt = (int) Math.round(bpm); // 必须整数发送

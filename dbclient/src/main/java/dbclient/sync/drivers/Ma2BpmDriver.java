@@ -67,14 +67,11 @@ public class Ma2BpmDriver implements OutputDriver {
     public synchronized void update(Map<String, Object> state) {
         if (!running || state == null) return;
         Object bpmObj = state.get("masterBpm");
-        Object pitchObj = state.get("sourcePitchPct");
+        // masterBpm 已经是有效 BPM（包含 pitch），直接使用，不再重复叠加 pitch
         Object playingObj = state.get("sourcePlaying");
         boolean isPlaying = Boolean.TRUE.equals(playingObj);
 
         double raw = bpmObj instanceof Number ? ((Number) bpmObj).doubleValue() : -1;
-        if (pitchObj instanceof Number && Double.isFinite(raw) && raw > 0) {
-            raw = raw * (1.0 + ((Number) pitchObj).doubleValue() / 100.0);
-        }
         System.out.println("[MASTER] bpm=" + raw + " playing=" + isPlaying);
         if (!Double.isFinite(raw) || raw <= 0 || raw == 65535.0) return;
         if (raw < minBpm || raw > maxBpm) return;
