@@ -1011,7 +1011,8 @@ public class DeviceManager {
         
         result.put("players", playerList);
         result.put("online", playerList.size());
-        result.put("master", currentMaster != null ? currentMaster : activeBeatSource.get());  // fallback
+        result.put("master", masterPlayer.get());  // 真实 master（来自 Beat Link）
+        result.put("effectiveSource", currentMaster != null ? currentMaster : activeBeatSource.get());  // 实际可用源
         result.put("activeBeatSource", activeBeatSource.get());
         result.put("updatedAt", now);
         result.put("ruleVersion", "sections-mvp-v2");
