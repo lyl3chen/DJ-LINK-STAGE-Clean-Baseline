@@ -300,12 +300,21 @@ public class DeviceManager {
         // ========== 增量更新 masterCache（避免每次遍历）==========
         if (status.isTempoMaster()) {
             masterCache.set(String.valueOf(deviceNumber));
+            System.out.println("🎚️ [DeviceManager] masterCache updated to: " + deviceNumber);
         } else {
-            // 如果当前设备不再是 master，检查是否需要清除缓存
+            // 如果当前设备不再是 master，需要重新遍历找到新的 master
             String cached = masterCache.get();
             if (cached != null && cached.equals(String.valueOf(deviceNumber))) {
-                // 需要重新遍历确认
                 masterCache.set(null);
+                // 立即重新遍历找到新 master
+                for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
+                    PlayerState ps = entry.getValue();
+                    if (ps.status != null && ps.status.isTempoMaster()) {
+                        masterCache.set(String.valueOf(entry.getKey()));
+                        System.out.println("🎚️ [DeviceManager] master switched: " + cached + " -> " + entry.getKey());
+                        break;
+                    }
+                }
             }
         }
         
