@@ -215,12 +215,23 @@ public class SyncOutputManager {
                     }
                 }
 
-                // B) 跟随 master 模式：使用统一 effectiveSource（来自 DeviceManager）
+                // B) 跟随 master 模式：直接从 DeviceManager 获取最新的 effectiveSource
+                // 避免依赖缓存的 playersState，确保 master 切换时能立即跟随
                 if (chosen == null && "master".equalsIgnoreCase(sourceMode)) {
-                    // 从 playersState 获取 effectiveSource（DeviceManager 统一判定）
-                    String effectiveSource = playersState.get("effectiveSource") instanceof String 
-                        ? (String) playersState.get("effectiveSource") : null;
+                    String effectiveSource = null;
+                    // 直接从 DeviceManager 获取最新 effectiveSource
+                    try {
+                        Class<?> dmClass = Class.forName("djlink.DeviceManager");
+                        Object dm = dmClass.getMethod("getInstance").invoke(null);
+                        java.lang.reflect.Method getEffectiveSource = dmClass.getMethod("getEffectiveSource");
+                        effectiveSource = (String) getEffectiveSource.invoke(dm);
+                    } catch (Exception e) {
+                        // fallback 到 playersState
+                        effectiveSource = playersState.get("effectiveSource") instanceof String 
+                            ? (String) playersState.get("effectiveSource") : null;
+                    }
                     if (effectiveSource != null) {
+                        System.out.println("[SyncOutputManager] EffectiveSource from DeviceManager: " + effectiveSource);
                         int effectiveNum;
                         try {
                             effectiveNum = Integer.parseInt(effectiveSource);
