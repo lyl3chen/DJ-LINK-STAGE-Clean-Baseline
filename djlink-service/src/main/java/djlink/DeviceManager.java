@@ -61,10 +61,11 @@ public class DeviceManager {
      */
     public String getEffectiveSource() {
         String realMaster = masterPlayer.get();
-        if (realMaster != null) {
-            return realMaster;
+        String effective = realMaster != null ? realMaster : activeBeatSource.get();
+        if (realMaster == null) {
+            System.out.println("[DeviceManager] getEffectiveSource: masterPlayer=" + realMaster + ", activeBeatSource=" + activeBeatSource.get() + " -> returning: " + effective);
         }
-        return activeBeatSource.get();
+        return effective;
     }
 
     /**
@@ -193,7 +194,12 @@ public class DeviceManager {
             public void newBeat(Beat beat) {
                 bpm.set((int) beat.getBpm());
                 // 记录当前发 beat 的设备（用于 fallback）
+                String oldSource = activeBeatSource.get();
                 activeBeatSource.set("" + beat.getDeviceNumber());
+                if (!Objects.equals(oldSource, activeBeatSource.get())) {
+                    System.out.println("🎵 [BeatLink] Beat from device #" + beat.getDeviceNumber() + 
+                        ", activeBeatSource: " + oldSource + " -> " + activeBeatSource.get());
+                }
             }
         });
         
