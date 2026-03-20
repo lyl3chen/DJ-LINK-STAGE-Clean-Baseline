@@ -17,7 +17,8 @@ public class DeviceManager {
     
     // Device state
     private final Map<Integer, PlayerState> players = new ConcurrentHashMap<>();
-    private final AtomicReference<String> masterPlayer = new AtomicReference<>(null);
+    private final AtomicReference<String> masterPlayer = new AtomicReference<>(null);  // 真实 master（来自 MasterListener）
+    private final AtomicReference<String> activeBeatSource = new AtomicReference<>(null);  // 当前发 beat 的播放器
     private final AtomicInteger bpm = new AtomicInteger(0);
     private static final long PLAYER_STALE_MS = 15000;
     private static final long SCAN_AUTO_STOP_MS = 30000;
@@ -154,14 +155,29 @@ public class DeviceManager {
             }
         });
         
-        // Beat listener
+        // Beat listener - 只负责 bpm 和 activeBeatSource，不再负责 master 判定
         beatFinder.addBeatListener(new BeatListener() {
             @Override
             public void newBeat(Beat beat) {
                 bpm.set((int) beat.getBpm());
-                if (masterPlayer.get() == null) {
-                    masterPlayer.set("" + beat.getDeviceNumber());
-                }
+                // 记录当前发 beat 的设备（用于 fallback）
+                activeBeatSource.set("" + beat.getDeviceNumber());
+            }
+        });
+        
+        // Master listener - 从 Beat Link 获取真实 master
+        beatFinder.addMasterListener(new MasterListener() {
+            @Override
+            public void masterChanged(DeviceUpdate update) {
+                // 真实 master 来自 Beat Link 协议
+                int masterDeviceNum = update.getDeviceNumber();
+                masterPlayer.set("" + masterDeviceNum);
+                System.out.println("🎚️ [BeatLink] Real master changed: device #" + masterDeviceNum);
+            }
+            
+            @Override
+            public void tempoChanged(double tempo) {
+                // 可以选择记录或忽略
             }
         });
         
@@ -316,6 +332,7 @@ public class DeviceManager {
         }
         result.put("bpm", playingCount > 0 ? playingBpm / playingCount : null);
         result.put("master", masterPlayer.get());
+        result.put("activeBeatSource", activeBeatSource.get());  // 当前发 beat 的设备（fallback 用）
         result.put("online", players.size());
         // 预热缓存可视化：用于前端直接判断 metadata 预热是否在工作。
         result.put("metadataWarmupCacheSize", metadataWarmup.size());
@@ -666,7 +683,11 @@ public class DeviceManager {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> playerList = new ArrayList<>();
         
+        // 真实 master（来自 MasterListener），如果没有则用 activeBeatSource 作为 fallback
         String currentMaster = masterPlayer.get();
+        if (currentMaster == null) {
+            currentMaster = activeBeatSource.get();  // fallback
+        }
         Integer currentMasterNum = null;
         try {
             if (currentMaster != null) currentMasterNum = Integer.parseInt(currentMaster);
@@ -686,6 +707,7 @@ public class DeviceManager {
             p.put("number", playerNum);
             p.put("active", true);
             p.put("master", currentMasterNum != null && playerNum.intValue() == currentMasterNum.intValue());
+            p.put("activeBeatSource", activeBeatSource.get());  // 新增：当前发 beat 的设备
             
             // Real-time status
             if (ps.status != null) {
@@ -989,7 +1011,8 @@ public class DeviceManager {
         
         result.put("players", playerList);
         result.put("online", playerList.size());
-        result.put("master", currentMaster);
+        result.put("master", currentMaster != null ? currentMaster : activeBeatSource.get());  // fallback
+        result.put("activeBeatSource", activeBeatSource.get());
         result.put("updatedAt", now);
         result.put("ruleVersion", "sections-mvp-v2");
         
