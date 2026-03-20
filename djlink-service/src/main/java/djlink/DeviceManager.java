@@ -774,10 +774,10 @@ public class DeviceManager {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> playerList = new ArrayList<>();
         
-        // master = 真实 master（只来自 masterPlayer，不允许 fallback）
-        String realMaster = masterPlayer.get();
-        // effectiveSource = 不再 fallback 到 activeBeatSource，避免"谁先播放跟谁"
-        String effectiveSource = realMaster;  // 只使用真实 master
+        // 使用 resolveMaster() 统一入口（包含缓存优化 + 统一优先级策略）
+        String realMaster = resolveMaster();
+        // effectiveSource = 不再 fallback 到 activeBeatSource
+        String effectiveSource = realMaster;
         
         Integer realMasterNum = null;
         Integer effectiveSourceNum = null;
