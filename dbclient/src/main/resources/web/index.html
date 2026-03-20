@@ -613,7 +613,7 @@
       <div class="cfg-card">
         <h3>播放源</h3>
         <div class="cfg-row"><label>输入源类型</label><select id="cfgInputSourceType"><option value="djlink">DJ Link (CDJ)</option><option value="local">本地播放器</option></select></div>
-        <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
+        <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode" onchange="updateManualPlayerUI()"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
@@ -1181,6 +1181,38 @@
       sel.value = String(selected || uniq[0] || 1);
     }
 
+    // 根据 sourceType 更新 UI 状态
+    function updateSourceTypeUI(sourceType) {
+      const sourceModeSel = document.getElementById('cfgSourceMode');
+      const manualPlayerSel = document.getElementById('cfgManualPlayer');
+      if (!sourceModeSel || !manualPlayerSel) return;
+      
+      if (sourceType === 'local') {
+        // local 模式：禁用播放源模式和手动player
+        sourceModeSel.disabled = true;
+        manualPlayerSel.disabled = true;
+      } else {
+        // djlink 模式：根据 sourceMode 决定 manualPlayer 状态
+        sourceModeSel.disabled = false;
+        updateManualPlayerUI();
+      }
+    }
+
+    // 根据 sourceMode 更新 manualPlayer 状态
+    function updateManualPlayerUI() {
+      const sourceModeSel = document.getElementById('cfgSourceMode');
+      const manualPlayerSel = document.getElementById('cfgManualPlayer');
+      if (!sourceModeSel || !manualPlayerSel) return;
+      
+      const sourceMode = sourceModeSel.value;
+      if (sourceMode === 'manual') {
+        manualPlayerSel.disabled = false;
+      } else {
+        // follow master 模式：禁用手动player
+        manualPlayerSel.disabled = true;
+      }
+    }
+
     function refreshAudioDeviceOptions(devices, ltcSelected = 'default', localPlayerSelected = 'default') {
       // 更新 LTC 设备选择
       const ltcSel = document.getElementById('cfgLtcDevice');
@@ -1298,12 +1330,14 @@
           const stateJ = await stateR.json();
           const sourceType = stateJ.sourceType || 'djlink';
           document.getElementById('cfgInputSourceType').value = sourceType;
+          updateSourceTypeUI(sourceType);
         } catch (e) {
           console.error('Failed to load source type:', e);
         }
         
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
+        updateManualPlayerUI();
         // LTC/MTC 配置加载 - sourcePlayer 已统一使用 sync.masterPlayer
         const timecode = sync.timecode || {};
         const ltc = sync.ltc || {};
@@ -1385,6 +1419,8 @@
         });
         const j = await r.json();
         console.log('Source switch:', j);
+        // 更新 UI 状态
+        updateSourceTypeUI(sourceType);
       } catch (e) {
         console.error('Source switch failed:', e);
       }
