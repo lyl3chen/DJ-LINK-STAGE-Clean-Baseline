@@ -49,6 +49,12 @@ public class CarabinerLinkEngine {
     private volatile boolean hadPeersBefore = false;
     private volatile long peersZeroSince = 0L;
     private volatile long lastRunnerRestartAt = 0L;
+    
+    // Phase 1: Carabiner 观测值（Link 当前会话状态，只读不回写）
+    private volatile double carabinerBeat = 0.0;        // Link 会话当前拍数
+    private volatile double carabinerPhase = 0.0;       // 小节内位置 0.0-1.0
+    private volatile long carabinerStartTimeUs = 0;     // Carabiner 时间基（微秒）
+    private volatile double carabinerQuantum = 4.0;     // Link 会话 quantum（默认4）
 
     private volatile Socket socket;
     private volatile BufferedReader reader;
@@ -123,6 +129,10 @@ public class CarabinerLinkEngine {
         if (pingThread != null) pingThread.interrupt();
     }
 
+    // 纯 BPM 模式：禁用所有 beat/measure/start-stop（用于隔离测试）
+    // 首拍对齐模式：只启用 PLAY_START/SEEK/MANUAL_RESYNC 触发 request-beat-at-time
+    private static final boolean PURE_BPM_MODE = false;
+
     /**
      * 接收上游（SyncOutputManager）派生出来的播放源状态：
      * - bpm：当前应输出给 Link 的目标 BPM（已按当前业务逻辑计算）
@@ -131,7 +141,13 @@ public class CarabinerLinkEngine {
      */
     public synchronized void updateFromSource(Double bpm, Boolean playing) {
         if (bpm != null && bpm > 0 && Double.isFinite(bpm)) desiredTempo = bpm;
-        if (playing != null) desiredPlaying = playing;
+        
+        // 纯 BPM 模式：禁用 start/stop sync
+        if (PURE_BPM_MODE) {
+            // 不发送 playing 状态
+        } else {
+            if (playing != null) desiredPlaying = playing;
+        }
     }
 
     public synchronized Map<String, Object> status() {
@@ -154,6 +170,13 @@ public class CarabinerLinkEngine {
         m.put("lastMessageType", lastMessageType);
         m.put("lastUpdateTs", lastUpdateTs);
         m.put("carabinerStartRaw", carabinerStartRaw);
+        
+        // Phase 1: Carabiner 观测值（Link 当前会话状态，只读不回写）
+        m.put("carabinerBeat", carabinerBeat);
+        m.put("carabinerPhase", carabinerPhase);
+        m.put("carabinerStartTimeUs", carabinerStartTimeUs);
+        m.put("carabinerQuantum", carabinerQuantum);
+        
         if (running && numPeers == 0) {
             m.put("linkNotice", "Carabiner is running, but no Link peers discovered yet.");
         } else {
@@ -197,6 +220,13 @@ public class CarabinerLinkEngine {
                     && m.details instanceof Map) {
                 if ("status".equals(m.messageType)) statusSeen = true;
                 Map<String, Object> details = (Map<String, Object>) m.details;
+                
+                // DEBUG: 打印原始 status 消息
+                if ("status".equals(m.messageType)) {
+                    System.out.println("[CarabinerLinkEngine] Raw status: " + trimmed);
+                    System.out.println("[CarabinerLinkEngine] Parsed details: " + details);
+                }
+                
                 Object bpm = details.get("bpm");
                 Object beat = details.get("beat");
                 Object peers = details.get("peers");
@@ -209,6 +239,26 @@ public class CarabinerLinkEngine {
                     }
                 }
                 if (beat instanceof Number) carabinerBeatPosition = ((Number) beat).doubleValue();
+                
+                // Phase 1: 解析 Carabiner 观测值
+                Object phase = details.get("phase");
+                Object quantum = details.get("quantum");
+                
+                // 明确对比：原始值 vs 解析值
+                if (beat instanceof Number) {
+                    double rawBeatValue = ((Number) beat).doubleValue();
+                    carabinerBeat = rawBeatValue;
+                    System.out.println("[CarabinerLinkEngine] BEAT_SOURCE: raw_status_beat=" + beat + 
+                        ", parsed_carabinerBeat=" + carabinerBeat + 
+                        ", source=DIRECT_FROM_STATUS_NO_CALCULATION");
+                }
+                if (phase instanceof Number) carabinerPhase = ((Number) phase).doubleValue();
+                if (quantum instanceof Number) carabinerQuantum = ((Number) quantum).doubleValue();
+                if (start instanceof Number) {
+                    carabinerStartRaw = ((Number) start).longValue();
+                    carabinerStartTimeUs = carabinerStartRaw;
+                }
+                
                 if (peers instanceof Number) {
                     int p = ((Number) peers).intValue();
                     numPeers = p;
@@ -324,28 +374,32 @@ public class CarabinerLinkEngine {
                     }
                     writer.write("status\n");
                     writer.write("version\n");
-                    // 提高 BPM 推送频率并仅在变化时发送；在 peer 变化后强制推送一次。
-                    boolean tempoChanged = (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.01);
-                    boolean forceByPeerChange = forceTempoPush;
-                    boolean forceByPeriodic = (now - lastForcedTempoAt) > 500;
-                    if (tempoChanged || forceByPeerChange || forceByPeriodic) {
+                    // 去抖 + 限频 + 保留最后候选
+                    // 最小变化阈值 0.10 BPM，最小发送间隔 500ms
+                    long nowMs = System.currentTimeMillis();
+                    boolean tempoChanged = (lastSentTempo < 0 || Math.abs(desiredTempo - lastSentTempo) >= 0.10);
+                    boolean minIntervalElapsed = (nowMs - lastForcedTempoAt) >= 500;
+                    if (tempoChanged && minIntervalElapsed) {
                         writer.write(String.format(java.util.Locale.US, "bpm %.3f\n", desiredTempo));
                         lastSentTempo = desiredTempo;
                         forceTempoPush = false;
-                        lastForcedTempoAt = now;
+                        lastForcedTempoAt = nowMs;
                     }
 
                     // Beat/Phase 同步：周期发送 beat-at-time。
                     // when 使用当前系统时间（微秒），quantum 先固定 4。
                     boolean beatChanged = Double.isNaN(lastSentBeatPosition)
                             || Math.abs(desiredBeatPosition - lastSentBeatPosition) >= 0.02;
-                    boolean beatPeriodic = (now - lastForcedBeatAt) > 1000;
-                    if (beatChanged || beatPeriodic) {
-                        long whenUs = now * 1000L;
-                        // quantum 用浮点格式，避免 Carabiner 返回 bad-quantum。
-                        writer.write(String.format(java.util.Locale.US, "force-beat-at-time %.6f %d 4\n", desiredBeatPosition, whenUs));
-                        lastSentBeatPosition = desiredBeatPosition;
-                        lastForcedBeatAt = now;
+                    // 纯 BPM 模式：禁用 beat-at-time 周期性发送
+                    if (!PURE_BPM_MODE) {
+                        boolean beatPeriodic = (now - lastForcedBeatAt) > 1000;
+                        if (beatChanged || beatPeriodic) {
+                            long whenUs = now * 1000L;
+                            // quantum 用浮点格式，避免 Carabiner 返回 bad-quantum。
+                            writer.write(String.format(java.util.Locale.US, "force-beat-at-time %.6f %d 4\n", desiredBeatPosition, whenUs));
+                            lastSentBeatPosition = desiredBeatPosition;
+                            lastForcedBeatAt = now;
+                        }
                     }
 
                     writer.flush();
@@ -484,5 +538,116 @@ public class CarabinerLinkEngine {
         if (v instanceof Number) return ((Number) v).intValue();
         try { return Integer.parseInt(String.valueOf(v)); } catch (Exception ignored) {}
         return def;
+    }
+    
+    // ==================== Phase 1: Beat/Measure 对齐命令接口 ====================
+
+    /**
+     * 发送 request-beat-at-time 命令（柔和对齐）
+     * 纯 BPM 模式下禁用
+     * @param beat 目标拍数
+     * @param atTimeUs 目标时间（微秒，基于 Carabiner 时间基）
+     */
+    public synchronized void sendRequestBeatAtTime(double beat, long atTimeUs) {
+        if (PURE_BPM_MODE) {
+            System.out.println("[CarabinerLinkEngine] PURE_BPM_MODE: request-beat-at-time DISABLED");
+            return;
+        }
+        if (writer == null || !running) return;
+        try {
+            String cmd = String.format("{\"request-beat-at-time\":{\"beat\":%.4f,\"time\":%d}}", beat, atTimeUs);
+            writer.write(cmd + "\n");
+            writer.flush();
+            System.out.println("[CarabinerLinkEngine] Sent request-beat-at-time: beat=" + beat + ", time=" + atTimeUs);
+        } catch (IOException e) {
+            System.err.println("[CarabinerLinkEngine] Failed to send request-beat-at-time: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 发送 force-beat-at-time 命令（强制对齐）
+     * 纯 BPM 模式下禁用
+     * @param beat 目标拍数
+     * @param atTimeUs 目标时间（微秒，基于 Carabiner 时间基）
+     */
+    public synchronized void sendForceBeatAtTime(double beat, long atTimeUs) {
+        if (PURE_BPM_MODE) {
+            System.out.println("[CarabinerLinkEngine] PURE_BPM_MODE: force-beat-at-time DISABLED");
+            return;
+        }
+        if (writer == null || !running) return;
+        try {
+            String cmd = String.format("{\"force-beat-at-time\":{\"beat\":%.4f,\"time\":%d}}", beat, atTimeUs);
+            writer.write(cmd + "\n");
+            writer.flush();
+            System.out.println("[CarabinerLinkEngine] Sent force-beat-at-time: beat=" + beat + ", time=" + atTimeUs);
+        } catch (IOException e) {
+            System.err.println("[CarabinerLinkEngine] Failed to send force-beat-at-time: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 发送 set-quantum 命令
+     * @param quantum 小节拍数（默认4）
+     */
+    public synchronized void sendSetQuantum(double quantum) {
+        if (writer == null || !running) return;
+        try {
+            String cmd = String.format("{\"set-quantum\":{\"quantum\":%.1f}}", quantum);
+            writer.write(cmd + "\n");
+            writer.flush();
+            System.out.println("[CarabinerLinkEngine] Sent set-quantum: " + quantum);
+        } catch (IOException e) {
+            System.err.println("[CarabinerLinkEngine] Failed to send set-quantum: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 发送 time-at-beat 查询命令
+     * @param beat 目标拍数
+     * @param quantum 小节拍数
+     */
+    public synchronized void sendTimeAtBeat(double beat, double quantum) {
+        if (writer == null || !running) return;
+        try {
+            String cmd = String.format("{\"time-at-beat\":{\"beat\":%.4f,\"quantum\":%.1f}}", beat, quantum);
+            writer.write(cmd + "\n");
+            writer.flush();
+            System.out.println("[CarabinerLinkEngine] Sent time-at-beat: beat=" + beat + ", quantum=" + quantum);
+        } catch (IOException e) {
+            System.err.println("[CarabinerLinkEngine] Failed to send time-at-beat: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 发送 phase-at-time 查询命令
+     * @param timeUs 目标时间（微秒）
+     */
+    public synchronized void sendPhaseAtTime(long timeUs) {
+        if (writer == null || !running) return;
+        try {
+            String cmd = String.format("{\"phase-at-time\":{\"time\":%d}}", timeUs);
+            writer.write(cmd + "\n");
+            writer.flush();
+            System.out.println("[CarabinerLinkEngine] Sent phase-at-time: time=" + timeUs);
+        } catch (IOException e) {
+            System.err.println("[CarabinerLinkEngine] Failed to send phase-at-time: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 将本地时间转换为 Carabiner 时间基
+     * @param localTimeMs 本地系统时间（毫秒）
+     * @return Carabiner 时间（微秒）
+     */
+    public long toCarabinerTime(long localTimeMs) {
+        // 简化实现：假设 Carabiner start 是单调时钟基准
+        // 实际换算需要记录本地- Carabiner 时间偏移
+        if (carabinerStartTimeUs == 0) return 0;
+
+        // 使用系统单调时钟计算相对时间
+        long localTimeUs = System.nanoTime() / 1000;
+        // 需要进一步校准，Phase 1 先提供接口
+        return carabinerStartTimeUs + (localTimeUs - carabinerStartTimeUs);
     }
 }

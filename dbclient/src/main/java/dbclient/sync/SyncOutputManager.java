@@ -259,9 +259,22 @@ public class SyncOutputManager {
                         lastTimeSec = 0.0;
                     }
 
+                    // Phase 1.6: BPM 必须区分 sourceType
+                    // DJLink: 需要用 pitch 调整后的有效 BPM
+                    // Local: 直接使用实际播放 BPM
+                    double baseBpm = bpm instanceof Number ? ((Number) bpm).doubleValue() : 120.0;
+                    double pitchPct = pitch instanceof Number ? ((Number) pitch).doubleValue() : 0.0;
+                    double effectiveBpm = baseBpm * (1.0 + pitchPct / 100.0);
+                    
                     derived.put("masterTimeSec", stoppedLike ? 0.0 : lastTimeSec);
-                    if (bpm instanceof Number) derived.put("masterBpm", ((Number) bpm).doubleValue());
-                    if (pitch instanceof Number) derived.put("sourcePitchPct", ((Number) pitch).doubleValue());
+                    derived.put("masterBpm", effectiveBpm);  // 使用 pitch 调整后的有效 BPM
+                    derived.put("trackBaseBpm", baseBpm);  // 保留原始 BPM
+                    derived.put("sourcePitchPct", pitchPct);
+                    
+                    // 调试日志
+                    System.out.println("[SyncOutputManager] BPM: sourceType=djlink, baseBpm=" + baseBpm + 
+                        ", pitch=" + pitchPct + "%, effectiveBpm=" + effectiveBpm);
+
                     derived.put("sourcePlayer", chosen.get("number"));
                     derived.put("sourceMode", sourceMode);
                     derived.put("sourcePlaying", playing);
@@ -279,6 +292,32 @@ public class SyncOutputManager {
                     sourceState = st;
                     sourcePlayer = chosen.get("number") instanceof Number ? ((Number) chosen.get("number")).intValue() : null;
                     derived.put("sourceState", st);
+
+                    // Phase 1.5: masterBeat 优先使用真实 CDJ beat，否则按时间推算（用有效BPM）
+                    Object rawBeat = chosen.get("beat");
+                    Double cdjBeat = rawBeat instanceof Number ? ((Number) rawBeat).doubleValue() : null;
+                    double masterBeat;
+                    String masterBeatSource;
+
+                    if (cdjBeat != null && cdjBeat >= 0) {
+                        // A: 使用真实 CDJ beat
+                        masterBeat = cdjBeat;
+                        masterBeatSource = "DJLINK_REAL";
+                        System.out.println("[SyncOutputManager] masterBeatSource = DJLINK_REAL, rawBeat = " + rawBeat + ", masterBeat = " + masterBeat);
+                    } else {
+                        // B: 按有效 BPM 推算（包含 pitch 调整）
+                        masterBeat = calculateMasterBeat(nowSec, effectiveBpm);
+                        masterBeatSource = "DERIVED_ESTIMATE";
+                        System.out.println("[SyncOutputManager] masterBeatSource = DERIVED_ESTIMATE, timeSec = " + nowSec + ", effectiveBpm = " + effectiveBpm + ", calculated = " + masterBeat + ", rawBeat = " + rawBeat);
+                    }
+                    double masterQuantum = 4.0; // 默认 4/4
+                    double masterPhase = (masterBeat % masterQuantum) / masterQuantum;
+                    long masterMeasure = (long) Math.floor(masterBeat / masterQuantum);
+
+                    derived.put("masterBeat", masterBeat);
+                    derived.put("masterQuantum", masterQuantum);
+                    derived.put("masterPhase", masterPhase);
+                    derived.put("masterMeasure", masterMeasure);
                 } else {
                     sourceState = "OFFLINE";
                     sourcePlayer = null;
@@ -302,6 +341,12 @@ public class SyncOutputManager {
 
     private double currentMasterBpm = 120.0;
     private boolean currentSourcePlaying = false;
+    
+    // Phase 1: Master Beat/Measure 状态
+    private double currentMasterBeat = 0.0;
+    private double currentMasterQuantum = 4.0;
+    private double currentMasterPhase = 0.0;
+    private long currentMasterMeasure = 0;
 
     @SuppressWarnings("unchecked")
     private void broadcastState(Map<String, Object> derived) {
@@ -314,6 +359,16 @@ public class SyncOutputManager {
         if (playing instanceof Boolean) {
             currentSourcePlaying = (Boolean) playing;
         }
+        
+        // Phase 1: 保存 masterBeat 状态
+        Object beat = derived.get("masterBeat");
+        Object quantum = derived.get("masterQuantum");
+        Object phase = derived.get("masterPhase");
+        Object measure = derived.get("masterMeasure");
+        if (beat instanceof Number) currentMasterBeat = ((Number) beat).doubleValue();
+        if (quantum instanceof Number) currentMasterQuantum = ((Number) quantum).doubleValue();
+        if (phase instanceof Number) currentMasterPhase = ((Number) phase).doubleValue();
+        if (measure instanceof Number) currentMasterMeasure = ((Number) measure).longValue();
 
         // 传递给时间码核心（只执行一次事件检测）
         timecodeCore.update(derived);
@@ -355,6 +410,12 @@ public class SyncOutputManager {
         out.put("sourceType", activeSourceType);
         out.put("masterBpm", currentMasterBpm);
         out.put("sourcePlaying", currentSourcePlaying);
+        
+        // Phase 1: Master Beat/Measure 状态
+        out.put("masterBeat", currentMasterBeat);
+        out.put("masterQuantum", currentMasterQuantum);
+        out.put("masterPhase", currentMasterPhase);
+        out.put("masterMeasure", currentMasterMeasure);
 
         // 时间码核心状态（独立）
         out.put("timecode", timecodeCore.getStatus());
@@ -443,10 +504,22 @@ public class SyncOutputManager {
             ", PlaybackEngine=" + (playbackEngine != null ? System.identityHashCode(playbackEngine) : "null") +
             ", state=" + localState + ", timeSec=" + localTimeSec);
 
+        double bpm = localSource.getSourceBpm();
+        // TODO: 从本地播放器获取真实 beat（当分析功能提供 beat grid 后）
+        // 目前按时间和 BPM 推算
+        double masterBeat = calculateMasterBeat(localTimeSec, bpm);
+        double masterQuantum = 4.0;
+        double masterPhase = (masterBeat % masterQuantum) / masterQuantum;
+        long masterMeasure = (long) Math.floor(masterBeat / masterQuantum);
+        
         Map<String, Object> derived = new LinkedHashMap<>();
         derived.put("masterTimeSec", localTimeSec);
         derived.put("rawTimeSec", localTimeSec);
-        derived.put("masterBpm", localSource.getSourceBpm());
+        derived.put("masterBpm", bpm);
+        derived.put("masterBeat", masterBeat);
+        derived.put("masterQuantum", masterQuantum);
+        derived.put("masterPhase", masterPhase);
+        derived.put("masterMeasure", masterMeasure);
         derived.put("sourcePlaying", localPlaying);
         derived.put("sourceActive", localSource.isOnline());
         derived.put("sourcePlayer", 1); // 本地播放器固定为 1
@@ -467,5 +540,22 @@ public class SyncOutputManager {
 
         System.out.println("[SyncOutputManager] onLocalPlayerState: broadcast with sourceState=" + localState);
         broadcastState(derived);
+    }
+    
+    // ==================== Phase 1: Master Beat/Measure Calculation ====================
+    
+    /**
+     * 根据时间和 BPM 计算 masterBeat
+     * @param timeSec 当前时间（秒）
+     * @param bpmObj BPM 对象
+     * @return 当前拍数
+     */
+    private double calculateMasterBeat(double timeSec, Object bpmObj) {
+        double bpm = bpmObj instanceof Number ? ((Number) bpmObj).doubleValue() : 120.0;
+        if (bpm <= 0) bpm = 120.0;
+        
+        // beat = (time / 60) * bpm
+        // 1 beat = 60/bpm seconds
+        return (timeSec / 60.0) * bpm;
     }
 }
