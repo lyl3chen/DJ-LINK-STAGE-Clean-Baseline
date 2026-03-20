@@ -50,6 +50,38 @@ public class DeviceManager {
         }
         return instance;
     }
+
+    /**
+     * 统一获取业务实际应使用的主源
+     * 规则：
+     * - 有真实 master：返回真实 master
+     * - 没有真实 master：返回 activeBeatSource 作为 fallback
+     * 
+     * @return 实际应使用的主源 player 编号（如 "1", "2", "3"），如果没有则返回 null
+     */
+    public String getEffectiveSource() {
+        String realMaster = masterPlayer.get();
+        if (realMaster != null) {
+            return realMaster;
+        }
+        return activeBeatSource.get();
+    }
+
+    /**
+     * 获取真实 master（来自 Beat Link MasterListener）
+     * @return 真实 master player 编号，如果没有则返回 null
+     */
+    public String getRealMaster() {
+        return masterPlayer.get();
+    }
+
+    /**
+     * 获取当前发 beat 的设备
+     * @return 当前发 beat 的 player 编号，如果没有则返回 null
+     */
+    public String getActiveBeatSource() {
+        return activeBeatSource.get();
+    }
     
     /**
      * Start all beat-link components

@@ -203,7 +203,7 @@ public class SyncOutputManager {
                 int selectedPlayer = sync.get("masterPlayer") instanceof Number
                     ? ((Number) sync.get("masterPlayer")).intValue() : 1;
 
-                // A) 手动模式
+                // A) 手动模式：使用配置指定 player
                 if ("manual".equalsIgnoreCase(sourceMode)) {
                     for (Object o : list) {
                         if (!(o instanceof Map)) continue;
@@ -215,13 +215,25 @@ public class SyncOutputManager {
                     }
                 }
 
-                // B) 跟随 master
-                if (chosen == null) {
-                    for (Object o : list) {
-                        if (!(o instanceof Map)) continue;
-                        Map<String, Object> p = (Map<String, Object>) o;
-                        if (Boolean.TRUE.equals(p.get("master")) && Boolean.TRUE.equals(p.get("active"))) {
-                            chosen = p; break;
+                // B) 跟随 master 模式：使用统一 effectiveSource（来自 DeviceManager）
+                if (chosen == null && "master".equalsIgnoreCase(sourceMode)) {
+                    // 从 playersState 获取 effectiveSource（DeviceManager 统一判定）
+                    String effectiveSource = playersState.get("effectiveSource") instanceof String 
+                        ? (String) playersState.get("effectiveSource") : null;
+                    if (effectiveSource != null) {
+                        int effectiveNum;
+                        try {
+                            effectiveNum = Integer.parseInt(effectiveSource);
+                        } catch (Exception e) {
+                            effectiveNum = -1;
+                        }
+                        for (Object o : list) {
+                            if (!(o instanceof Map)) continue;
+                            Map<String, Object> p = (Map<String, Object>) o;
+                            int num = p.get("number") instanceof Number ? ((Number) p.get("number")).intValue() : -1;
+                            if (num == effectiveNum && Boolean.TRUE.equals(p.get("active"))) {
+                                chosen = p; break;
+                            }
                         }
                     }
                 }
