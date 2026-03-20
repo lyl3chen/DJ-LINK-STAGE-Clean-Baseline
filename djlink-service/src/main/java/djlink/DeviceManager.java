@@ -138,7 +138,7 @@ public class DeviceManager {
         System.out.println("DeviceFinder started");
         
         // Start VirtualCdj (becomes a CDJ on network)
-        // IMPORTANT: Use device number in range 1-4 to allow MetadataFinder to query XDJ devices
+        // Use device number in range 1-4 to allow MetadataFinder to query all players
         // When VirtualCdj is 1-4, the ConnectionManager will use our number directly to query
         // instead of trying to find an alternate player number (which fails because all 1-4 are taken)
         virtualCdj = VirtualCdj.getInstance();
