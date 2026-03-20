@@ -300,7 +300,21 @@ public class SyncOutputManager {
         broadcastState(derived);
     }
 
+    private double currentMasterBpm = 120.0;
+    private boolean currentSourcePlaying = false;
+
+    @SuppressWarnings("unchecked")
     private void broadcastState(Map<String, Object> derived) {
+        // 保存当前状态用于 API 查询
+        Object bpm = derived.get("masterBpm");
+        if (bpm instanceof Number) {
+            currentMasterBpm = ((Number) bpm).doubleValue();
+        }
+        Object playing = derived.get("sourcePlaying");
+        if (playing instanceof Boolean) {
+            currentSourcePlaying = (Boolean) playing;
+        }
+
         // 传递给时间码核心（只执行一次事件检测）
         timecodeCore.update(derived);
 
@@ -339,6 +353,8 @@ public class SyncOutputManager {
         out.put("sourceState", sourceState);
         out.put("sourcePlayer", sourcePlayer != null ? sourcePlayer : 0);
         out.put("sourceType", activeSourceType);
+        out.put("masterBpm", currentMasterBpm);
+        out.put("sourcePlaying", currentSourcePlaying);
 
         // 时间码核心状态（独立）
         out.put("timecode", timecodeCore.getStatus());

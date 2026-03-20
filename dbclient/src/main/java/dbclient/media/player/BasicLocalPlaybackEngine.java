@@ -28,15 +28,34 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     private volatile String deviceName = "default"; // 音频输出设备
     private volatile String actualOpenedDevice = null; // 实际成功打开的设备
     private volatile String lastError = null; // 最后一次错误信息
+    private static volatile boolean shutdownHookRegistered = false;
+
+    public BasicLocalPlaybackEngine() {
+        registerShutdownHook();
+    }
+
+    private void registerShutdownHook() {
+        if (shutdownHookRegistered) return;
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[BasicLocalPlaybackEngine] Shutdown hook: force cleanup...");
+            forceCleanup();
+        }, "audio-cleanup"));
+        shutdownHookRegistered = true;
+    }
 
     @Override
-    public void load(TrackInfo track) {
+    public synchronized void load(TrackInfo track) {
         String configuredDevice = this.deviceName; // 记录配置的设备名
         System.out.println("[BasicLocalPlaybackEngine] ====== LOAD START ======");
         System.out.println("[BasicLocalPlaybackEngine] configuredDevice=" + configuredDevice);
         System.out.println("[BasicLocalPlaybackEngine] track=" + track.getTitle());
 
-        stop();
+        // 【根因修复】加载前彻底清理，防止设备占用残留
+        forceCleanup();
+        
+        // 短暂等待让操作系统释放音频设备
+        try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+
         this.currentTrack = null; // 先清空，成功后再设置
         this.currentState = PlaybackStatus.State.STOPPED;
         this.currentPositionMs = 0;
@@ -58,25 +77,27 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             AudioFormat baseFormat = audioStream.getFormat();
             System.out.println("[BasicLocalPlaybackEngine] Source format: " + baseFormat);
 
-            // 转换为标准格式（16-bit signed PCM）
-            AudioFormat decodedFormat = new AudioFormat(
-                AudioFormat.Encoding.PCM_SIGNED,
-                baseFormat.getSampleRate(),
-                16,
-                baseFormat.getChannels(),
-                baseFormat.getChannels() * 2,
-                baseFormat.getSampleRate(),
-                false
-            );
-            System.out.println("[BasicLocalPlaybackEngine] Target format: " + decodedFormat);
+            // 尝试多种格式，优先使用设备原生支持的格式
+            AudioFormat targetFormat = findSupportedFormat(configuredDevice, baseFormat);
+            if (targetFormat == null) {
+                this.lastError = "No compatible audio format found for device: " + configuredDevice + 
+                    ". Tried: 48000/16-bit/stereo, 44100/16-bit/stereo, 48000/16-bit/mono, 44100/16-bit/mono";
+                System.err.println("[BasicLocalPlaybackEngine] " + this.lastError);
+                cleanupAfterFailure();
+                System.out.println("[BasicLocalPlaybackEngine] ====== LOAD FAILED ======");
+                return;
+            }
+            
+            System.out.println("[BasicLocalPlaybackEngine] Selected target format: " + targetFormat);
 
-            // 如果不是 PCM，需要转换
-            if (!baseFormat.getEncoding().equals(AudioFormat.Encoding.PCM_SIGNED)) {
-                audioStream = AudioSystem.getAudioInputStream(decodedFormat, audioStream);
+            // 如果不是目标格式，需要转换
+            if (!baseFormat.matches(targetFormat)) {
+                audioStream = AudioSystem.getAudioInputStream(targetFormat, audioStream);
             }
 
             // 打开音频线（使用指定设备）
             System.out.println("[BasicLocalPlaybackEngine] Attempting to open device: '" + configuredDevice + "'");
+            System.out.println("[BasicLocalPlaybackEngine] Target format: " + targetFormat);
 
             // 获取 mixer 信息用于诊断
             Mixer.Info[] mixerInfos = AudioSystem.getMixerInfo();
@@ -85,14 +106,24 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
                 System.out.println("  - " + info.getName() + " (" + info.getDescription() + ")");
             }
 
-            audioLine = AudioDeviceEnumerator.getSourceDataLine(configuredDevice, decodedFormat);
+            // 检查设备是否支持目标格式
+            if (!isFormatSupported(configuredDevice, targetFormat)) {
+                this.lastError = "Selected device '" + configuredDevice + "' does not support format: " + targetFormat +
+                    ". Device may not support " + (int)targetFormat.getSampleRate() + "Hz " + targetFormat.getChannels() + "-channel PCM";
+                System.err.println("[BasicLocalPlaybackEngine] " + this.lastError);
+                cleanupAfterFailure();
+                System.out.println("[BasicLocalPlaybackEngine] ====== LOAD FAILED ======");
+                return;
+            }
+
+            audioLine = AudioDeviceEnumerator.getSourceDataLine(configuredDevice, targetFormat);
 
             // 获取实际使用的 mixer 名称
             Mixer actualMixer = AudioDeviceEnumerator.findMixerByName(configuredDevice);
             String actualMixerName = actualMixer != null ? actualMixer.getMixerInfo().getName() : "unknown";
             System.out.println("[BasicLocalPlaybackEngine] Selected mixer: " + actualMixerName);
 
-            audioLine.open(decodedFormat);
+            audioLine.open(targetFormat);
 
             // 成功打开后记录
             this.actualOpenedDevice = configuredDevice;
@@ -125,10 +156,96 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     }
 
     /**
+     * 格式协商：尝试多种格式，返回设备支持的第一个格式
+     */
+    private AudioFormat findSupportedFormat(String deviceName, AudioFormat sourceFormat) {
+        // 优先尝试源格式
+        if (isFormatSupported(deviceName, sourceFormat)) {
+            System.out.println("[BasicLocalPlaybackEngine] Source format supported: " + sourceFormat);
+            return sourceFormat;
+        }
+        
+        // 格式协商顺序
+        float[] sampleRates = { sourceFormat.getSampleRate(), 48000f, 44100f };
+        int[] bitDepths = { 16 };
+        int[] channels = { sourceFormat.getChannels(), 2, 1 };
+        
+        for (float sr : sampleRates) {
+            for (int bits : bitDepths) {
+                for (int ch : channels) {
+                    if (sr <= 0 || bits <= 0 || ch <= 0) continue;
+                    
+                    AudioFormat format = new AudioFormat(
+                        AudioFormat.Encoding.PCM_SIGNED,
+                        sr, bits, ch, ch * (bits / 8), sr, false
+                    );
+                    
+                    if (isFormatSupported(deviceName, format)) {
+                        System.out.println("[BasicLocalPlaybackEngine] Found supported format: " + format);
+                        return format;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 检查指定设备是否支持并能实际打开指定格式
+     * 注意：isLineSupported() 只检查格式是否被 mixer 支持，不检查 line 是否实际可用
+     */
+    private boolean isFormatSupported(String deviceName, AudioFormat format) {
+        SourceDataLine testLine = null;
+        try {
+            Mixer mixer = AudioDeviceEnumerator.findMixerByName(deviceName);
+            if (mixer == null) {
+                System.out.println("[BasicLocalPlaybackEngine] Mixer not found: " + deviceName);
+                return false;
+            }
+            
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+            
+            if (!mixer.isLineSupported(info)) {
+                System.out.println("[BasicLocalPlaybackEngine] Format NOT supported by " + deviceName + ": " + format);
+                return false;
+            }
+            
+            // 【关键】真正尝试打开 line 来验证可用性
+            testLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, format);
+            testLine.open(format);
+            testLine.close(); // 立即关闭，只是测试
+            
+            System.out.println("[BasicLocalPlaybackEngine] Format verified (can open): " + deviceName + ": " + format);
+            return true;
+            
+        } catch (LineUnavailableException e) {
+            System.out.println("[BasicLocalPlaybackEngine] Format available but line in use: " + deviceName + ": " + format + " - " + e.getMessage());
+            return false;
+        } catch (Exception e) {
+            System.out.println("[BasicLocalPlaybackEngine] Error verifying format: " + deviceName + ": " + format + " - " + e.getMessage());
+            return false;
+        } finally {
+            if (testLine != null) {
+                try { testLine.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    /**
      * 【根因修复】失败后的彻底清理，防止设备占用和状态污染
      */
     private void cleanupAfterFailure() {
         System.out.println("[BasicLocalPlaybackEngine] Cleaning up after failure...");
+
+        // 停止播放线程
+        if (playbackThread != null) {
+            playbackThread.interrupt();
+            try {
+                playbackThread.join(500);
+            } catch (InterruptedException ignored) {}
+            playbackThread = null;
+        }
 
         // 清理 audioStream
         if (audioStream != null) {
@@ -138,8 +255,14 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
             audioStream = null;
         }
 
-        // 清理 audioLine（即使半打开也要关闭）
+        // 清理 audioLine（先 stop 再 close）
         if (audioLine != null) {
+            try {
+                if (audioLine.isOpen()) {
+                    audioLine.stop();
+                    audioLine.flush();
+                }
+            } catch (Exception ignored) {}
             try {
                 audioLine.close();
             } catch (Exception ignored) {}
@@ -156,8 +279,56 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
         System.out.println("[BasicLocalPlaybackEngine] Cleanup completed");
     }
 
+    /**
+     * 【根因修复】强制彻底清理，防止设备占用残留
+     * 比 stop() 更激进，在加载新曲目前调用
+     */
+    private synchronized void forceCleanup() {
+        System.out.println("[BasicLocalPlaybackEngine] Force cleanup starting...");
+        
+        // 停止播放状态
+        currentState = PlaybackStatus.State.STOPPED;
+        
+        // 停止播放线程
+        if (playbackThread != null) {
+            playbackThread.interrupt();
+            try {
+                playbackThread.join(1000); // 等待最多1秒
+            } catch (InterruptedException ignored) {}
+            playbackThread = null;
+        }
+        
+        // 停止并关闭 audioLine
+        if (audioLine != null) {
+            try {
+                if (audioLine.isOpen()) {
+                    audioLine.stop();
+                    audioLine.flush();
+                    audioLine.close();
+                    System.out.println("[BasicLocalPlaybackEngine] Audio line force closed");
+                }
+            } catch (Exception e) {
+                System.err.println("[BasicLocalPlaybackEngine] Error force closing line: " + e.getMessage());
+            }
+            audioLine = null;
+        }
+        
+        // 关闭 audioStream
+        if (audioStream != null) {
+            try {
+                audioStream.close();
+                System.out.println("[BasicLocalPlaybackEngine] Audio stream force closed");
+            } catch (Exception e) {
+                System.err.println("[BasicLocalPlaybackEngine] Error force closing stream: " + e.getMessage());
+            }
+            audioStream = null;
+        }
+        
+        System.out.println("[BasicLocalPlaybackEngine] Force cleanup completed");
+    }
+
     @Override
-    public void play() {
+    public synchronized void play() {
         System.out.println("[BasicLocalPlaybackEngine] play() called, currentState=" + currentState + ", audioLine=" + audioLine + ", currentTrack=" + currentTrack);
 
         if (currentTrack == null) {
@@ -217,7 +388,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
      * 【修正】重新初始化音频（Stop 后 Play 使用）
      * 保留 currentTrack，只重新打开 audioLine 和 audioStream
      */
-    private boolean reinitializeAudio() {
+    private synchronized boolean reinitializeAudio() {
         return reinitializeAudioAtPositionMs(currentPositionMs);
     }
 
@@ -225,7 +396,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
      * 重新初始化音频并定位到目标毫秒位置。
      * 这是 seek 的底层核心：保证“显示位置”和“真实播放位置”一致。
      */
-    private boolean reinitializeAudioAtPositionMs(long targetPositionMs) {
+    private synchronized boolean reinitializeAudioAtPositionMs(long targetPositionMs) {
         if (currentTrack == null) {
             return false;
         }
@@ -248,27 +419,33 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
 
             AudioInputStream newStream = AudioSystem.getAudioInputStream(audioFile);
             AudioFormat baseFormat = newStream.getFormat();
-            AudioFormat decodedFormat = new AudioFormat(
-                AudioFormat.Encoding.PCM_SIGNED,
-                baseFormat.getSampleRate(),
-                16,
-                baseFormat.getChannels(),
-                baseFormat.getChannels() * 2,
-                baseFormat.getSampleRate(),
-                false
-            );
-            if (!baseFormat.getEncoding().equals(AudioFormat.Encoding.PCM_SIGNED)) {
-                newStream = AudioSystem.getAudioInputStream(decodedFormat, newStream);
+            
+            // 使用格式协商找到支持的格式
+            AudioFormat targetFormat = findSupportedFormat(deviceName, baseFormat);
+            if (targetFormat == null) {
+                System.out.println("[BasicLocalPlaybackEngine] reinitializeAudio: no compatible format for device: " + deviceName);
+                return false;
+            }
+            
+            // 转换格式
+            if (!baseFormat.matches(targetFormat)) {
+                newStream = AudioSystem.getAudioInputStream(targetFormat, newStream);
+            }
+
+            // 检查设备是否支持目标格式
+            if (!isFormatSupported(deviceName, targetFormat)) {
+                System.out.println("[BasicLocalPlaybackEngine] reinitializeAudio: device does not support format: " + targetFormat);
+                return false;
             }
 
             // 重新打开音频线
-            this.audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, decodedFormat);
-            this.audioLine.open(decodedFormat);
+            this.audioLine = AudioDeviceEnumerator.getSourceDataLine(deviceName, targetFormat);
+            this.audioLine.open(targetFormat);
             this.actualOpenedDevice = deviceName;
 
             // ===== seek 核心：毫秒 -> 字节偏移 =====
-            int frameSize = Math.max(1, decodedFormat.getFrameSize());
-            float sampleRate = decodedFormat.getSampleRate();
+            int frameSize = Math.max(1, targetFormat.getFrameSize());
+            float sampleRate = targetFormat.getSampleRate();
             long targetFrame = Math.max(0L, Math.round((targetPositionMs / 1000.0) * sampleRate));
             long targetBytes = targetFrame * frameSize;
 
@@ -307,7 +484,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     }
 
     @Override
-    public void pause() {
+    public synchronized void pause() {
         System.out.println("[BasicLocalPlaybackEngine] pause() called");
         if (currentState == PlaybackStatus.State.PLAYING) {
             currentState = PlaybackStatus.State.PAUSED;
@@ -318,7 +495,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     }
 
     @Override
-    public void stop() {
+    public synchronized void stop() {
         System.out.println("[BasicLocalPlaybackEngine] stop() called, currentState=" + currentState);
 
         if (currentState == PlaybackStatus.State.STOPPED && audioLine == null) {
@@ -375,7 +552,7 @@ public class BasicLocalPlaybackEngine implements PlaybackEngine {
     }
 
     @Override
-    public void seek(long positionMs) {
+    public synchronized void seek(long positionMs) {
         System.out.println("[BasicLocalPlaybackEngine] Seek to " + positionMs + "ms from state=" + currentState);
 
         // 【修正】Seek 语义：

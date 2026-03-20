@@ -13,6 +13,9 @@ public class Main {
         
         System.out.println("Starting DJ Link Server on port " + port + "...");
         
+        // 注册主程序 shutdown hook（确保 Carabiner 等子进程退出）
+        registerMainShutdownHook();
+        
         // Start unified Jetty server (HTTP + WebSocket on same port) first,
         // so UI remains reachable even if DJ Link startup is slow/flaky.
         JettyServer.start(port);
@@ -33,6 +36,21 @@ public class Main {
         
         // Keep server running
         JettyServer.join();
+    }
+    
+    private static void registerMainShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("[Main] Shutdown hook triggered, stopping all services...");
+            try {
+                // 停止 Jetty 服务器
+                JettyServer.stop();
+                System.out.println("[Main] Jetty server stopped");
+            } catch (Exception e) {
+                System.err.println("[Main] Error stopping Jetty: " + e.getMessage());
+            }
+            System.out.println("[Main] Shutdown complete");
+        }, "main-shutdown-hook"));
+        System.out.println("[Main] Shutdown hook registered");
     }
     
     private static void startDeviceManager() {

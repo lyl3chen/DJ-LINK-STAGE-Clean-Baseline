@@ -5,10 +5,14 @@ import dbclient.config.UserSettingsStore;
 import dbclient.input.LocalSourceInput;
 import dbclient.media.library.LocalLibraryService;
 import dbclient.media.model.AnalysisResult;
+import dbclient.media.model.BeatGrid;
 import dbclient.media.model.MarkerPoint;
 import dbclient.media.model.MarkerType;
 import dbclient.media.model.PlaybackStatus;
 import dbclient.media.model.TrackInfo;
+import dbclient.media.model.TrackLibraryEntry;
+import dbclient.media.model.WaveformPreview;
+import dbclient.media.library.TrackLibraryService;
 import dbclient.media.player.BasicLocalPlaybackEngine;
 import dbclient.media.player.PlaybackEngine;
 import dbclient.sync.SyncOutputManager;
@@ -58,21 +62,30 @@ public class JettyServer {
     private static final Set<Session> sessions = new CopyOnWriteArraySet<>();
     private static ScheduledExecutorService stateScheduler;
     private static Object playersStateCache;
-    private static final SyncOutputManager syncOutputManager = SyncOutputManager.getInstance();
+    // 延迟获取 SyncOutputManager，避免类加载时序问题
+    private static SyncOutputManager getSyncOutputManager() {
+        return SyncOutputManager.getInstance();
+    }
     private static final UserSettingsStore settingsStore = UserSettingsStore.getInstance();
     
     // Local player - 使用 SyncOutputManager 共享的实例（确保状态一致）
     private static LocalSourceInput getLocalSourceInput() {
-        return (LocalSourceInput) syncOutputManager.getSourceInputManager().getSource("local");
+        SyncOutputManager sm = getSyncOutputManager();
+        if (sm == null) return null;
+        return (LocalSourceInput) sm.getSourceInputManager().getSource("local");
     }
     private static LocalLibraryService getLocalLibraryService() {
-        return syncOutputManager.getSourceInputManager().getLocalLibraryService();
+        SyncOutputManager sm = getSyncOutputManager();
+        if (sm == null || sm.getSourceInputManager() == null) return null;
+        return sm.getSourceInputManager().getLocalLibraryService();
     }
     private static dbclient.media.library.TrackLibraryService getTrackLibraryService() {
-        return syncOutputManager.getSourceInputManager().getLocalLibraryService().getTrackLibraryService();
+        LocalLibraryService ll = getLocalLibraryService();
+        return ll != null ? ll.getTrackLibraryService() : null;
     }
     private static dbclient.media.analysis.AnalysisService getAnalysisService() {
         LocalLibraryService ll = getLocalLibraryService();
+        if (ll == null) return null;
         dbclient.media.library.TrackLibraryService tls = ll.getTrackLibraryService();
         if (tls != null) {
             return new dbclient.media.analysis.AnalysisService();
@@ -82,7 +95,7 @@ public class JettyServer {
     private static final AiAgentService aiAgentService = AiAgentService.getInstance();
     
     public static void start(int port) throws Exception {
-        syncOutputManager.applySettings();
+        getSyncOutputManager().applySettings();
         server = new Server(new java.net.InetSocketAddress("0.0.0.0", port));
         
         ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
@@ -123,7 +136,7 @@ public class JettyServer {
                         Map<String, Object> allSettings = settingsStore.getAll();
                         result = withRuntime(allSettings != null ? allSettings : new ConcurrentHashMap<>());
                     } else if (path.equals("/api/sync/state")) {
-                        result = syncOutputManager.getStatus();
+                        result = getSyncOutputManager().getStatus();
                     } else if (path.equals("/api/scan")) {
                         result = (Map<String, Object>) dmClass.getMethod("getScanStatus").invoke(dm);
                     } else if (path.equals("/api/scan/toggle")) {
@@ -141,7 +154,7 @@ public class JettyServer {
                         result = (Map<String, Object>) dmClass.getMethod("getPlayersState").invoke(dm);
                         if (result != null && result.get("players") != null) {
                             updateState(result.get("players"));
-                            syncOutputManager.onPlayersState(result);
+                            getSyncOutputManager().onPlayersState(result);
                         }
                     } else if (path.equals("/api/mixer/state")) {
                         result = (Map<String, Object>) dmClass.getMethod("getMixerState").invoke(dm);
@@ -315,6 +328,61 @@ public class JettyServer {
                         statusMap.put("currentTrack", track);
                         statusMap.put("sourceBpm", bpm);
                         statusMap.put("sourceType", localSource.getType());
+                        
+                        // 获取分析信息（BeatGrid + WaveformPreview + Markers）
+                        // 从 LocalLibraryService 读取（分析结果保存在 TrackRepository）
+                        Map<String, Object> analysisInfo = new HashMap<>();
+                        if (track != null && track.getTrackId() != null) {
+                            LocalLibraryService ll = getLocalLibraryService();
+                            if (ll != null) {
+                                Optional<AnalysisResult> ar = ll.getAnalysis(track.getTrackId());
+                                if (ar.isPresent()) {
+                                    AnalysisResult analysis = ar.get();
+                                    analysisInfo.put("bpm", analysis.getBpm());
+                                    analysisInfo.put("bpmConfidence", analysis.getBpmConfidence());
+                                    analysisInfo.put("durationMs", analysis.getDurationMs());
+                                    analysisInfo.put("beatGridAvailable", analysis.isBeatGridAvailable());
+                                    BeatGrid bg = analysis.getBeatGrid();
+                                    if (bg != null) {
+                                        analysisInfo.put("beatGridBpm", bg.getBpm());
+                                        analysisInfo.put("beatGridBeatsPerMeasure", bg.getBeatsPerMeasure());
+                                    }
+                                    WaveformPreview wf = analysis.getWaveformPreview();
+                                    if (wf != null) {
+                                        analysisInfo.put("waveformPeaks", wf.getPeakCount());
+                                    }
+                                }
+                                // 获取 Markers（从 TrackLibraryService）
+                                TrackLibraryService tls = ll.getTrackLibraryService();
+                                if (tls != null) {
+                                    List<MarkerPoint> markers = tls.getMarkers(track.getTrackId());
+                                    analysisInfo.put("markerCount", markers != null ? markers.size() : 0);
+                                }
+                            }
+                        }
+                        statusMap.put("analysis", analysisInfo);
+                        
+                        // 获取当前播放位置的 Beat/Measure 信息
+                        if (status != null && track != null && track.getTrackId() != null) {
+                            long positionMs = status.getPositionMs();
+                            LocalLibraryService ll = getLocalLibraryService();
+                            if (ll != null) {
+                                Optional<AnalysisResult> ar = ll.getAnalysis(track.getTrackId());
+                                if (ar.isPresent()) {
+                                    BeatGrid bg = ar.get().getBeatGrid();
+                                    if (bg != null && bg.isValid()) {
+                                        Map<String, Object> beatInfo = new HashMap<>();
+                                        beatInfo.put("beatNumber", bg.timeToBeat(positionMs));
+                                        beatInfo.put("measureNumber", bg.getMeasureAtTime(positionMs));
+                                        beatInfo.put("phase", bg.getPhaseAtTime(positionMs));
+                                        beatInfo.put("nextBeatMs", bg.getNextBeatTime(positionMs));
+                                        beatInfo.put("nextMeasureMs", bg.getNextMeasureTime(positionMs));
+                                        statusMap.put("beatInfo", beatInfo);
+                                    }
+                                }
+                            }
+                        }
+                        
                         // 诊断信息（语义约定）
                         // configuredDevice: 配置目标设备（用户选择）
                         // actualOpenedDevice: 实际成功打开的设备（null 表示尚未成功打开）
@@ -363,7 +431,7 @@ public class JettyServer {
 
                     if (path.equals("/api/config")) {
                         settingsStore.patch(payload);
-                        syncOutputManager.applySettings();
+                        getSyncOutputManager().applySettings();
                         Map<String, Object> allSettings = settingsStore.getAll();
                         response.getWriter().print(gson.toJson(Map.of("ok", true, "settings", withRuntime(allSettings != null ? allSettings : new ConcurrentHashMap<>()))));
                         return;
@@ -379,13 +447,13 @@ public class JettyServer {
                     if (path.equals("/api/ma2/test-bpm")) {
                         Object bpmObj = payload.get("bpm");
                         double bpm = bpmObj instanceof Number ? ((Number) bpmObj).doubleValue() : 120.0;
-                        Map<String, Object> out = syncOutputManager.sendMa2TestBpm(bpm);
+                        Map<String, Object> out = getSyncOutputManager().sendMa2TestBpm(bpm);
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
                     if (path.equals("/api/ma2/test-command")) {
                         String cmd = String.valueOf(payload.getOrDefault("command", "")).trim();
-                        Map<String, Object> out = syncOutputManager.sendMa2TestCommand(cmd);
+                        Map<String, Object> out = getSyncOutputManager().sendMa2TestCommand(cmd);
                         response.getWriter().print(gson.toJson(out));
                         return;
                     }
@@ -399,7 +467,7 @@ public class JettyServer {
                         System.out.println("[JettyServer] Command: " + command);
                         
                         // 直接调用 SyncOutputManager 发送
-                        Map<String, Object> out = syncOutputManager.sendMa2TestCommand(command);
+                        Map<String, Object> out = getSyncOutputManager().sendMa2TestCommand(command);
                         
                         System.out.println("[JettyServer] Result: " + out);
                         System.out.println("[JettyServer] ============================");
@@ -415,21 +483,21 @@ public class JettyServer {
                     }
                     if (path.equals("/api/timecode/manual-test")) {
                         boolean enabled = Boolean.TRUE.equals(payload.get("enabled"));
-                        syncOutputManager.setTimecodeManualTestMode(enabled);
+                        getSyncOutputManager().setTimecodeManualTestMode(enabled);
                         String msg = enabled ? "手动测试模式已开启" : "手动测试模式已关闭";
                         response.getWriter().print(gson.toJson(Map.of(
                             "ok", true,
-                            "manualTestMode", syncOutputManager.isTimecodeManualTestMode(),
+                            "manualTestMode", getSyncOutputManager().isTimecodeManualTestMode(),
                             "message", msg
                         )));
                         return;
                     }
                     if (path.equals("/api/source/switch")) {
                         String sourceType = String.valueOf(payload.getOrDefault("sourceType", ""));
-                        boolean success = syncOutputManager.switchSource(sourceType);
+                        boolean success = getSyncOutputManager().switchSource(sourceType);
                         response.getWriter().print(gson.toJson(Map.of(
                             "ok", success,
-                            "sourceType", syncOutputManager.getActiveSourceType(),
+                            "sourceType", getSyncOutputManager().getActiveSourceType(),
                             "message", success ? "已切换到: " + sourceType : "切换失败"
                         )));
                         return;
@@ -653,21 +721,39 @@ public class JettyServer {
                         return;
                     }
                     if (path.equals("/api/local/load")) {
+                        // 检查 SyncOutputManager 是否就绪
+                        SyncOutputManager sm = getSyncOutputManager();
+                        if (sm == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "SyncOutputManager not initialized")));
+                            return;
+                        }
+                        
                         String trackId = String.valueOf(payload.getOrDefault("trackId", ""));
                         if (trackId.isEmpty()) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
                             return;
                         }
-                        Optional<TrackInfo> trackOpt = getLocalLibraryService().getTrack(trackId);
+                        
+                        // 检查 LocalLibraryService
+                        LocalLibraryService libraryService = getLocalLibraryService();
+                        if (libraryService == null) {
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "LocalLibraryService not initialized - try again later")));
+                            return;
+                        }
+                        
+                        Optional<TrackInfo> trackOpt = libraryService.getTrack(trackId);
                         if (trackOpt.isEmpty()) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Track not found")));
                             return;
                         }
+                        
+                        // 检查 LocalSourceInput
                         LocalSourceInput localSrc = getLocalSourceInput();
                         if (localSrc == null) {
                             response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "Local source not initialized")));
                             return;
                         }
+                        
                         System.out.println("[JettyServer] load() called on LocalSourceInput: " + System.identityHashCode(localSrc));
                         System.out.println("[JettyServer] load() called on PlaybackEngine: " + System.identityHashCode(localSrc.getPlaybackEngine()));
                         localSrc.load(trackOpt.get());
@@ -677,13 +763,13 @@ public class JettyServer {
                         PlaybackEngine engine = localSrc.getPlaybackEngine();
                         if (engine instanceof BasicLocalPlaybackEngine) {
                             BasicLocalPlaybackEngine.DeviceDiagnostics d = ((BasicLocalPlaybackEngine) engine).getDiagnostics();
-                            if (d.lastError() != null) {
-                                response.getWriter().print(gson.toJson(Map.of(
-                                    "ok", false,
-                                    "error", d.lastError(),
-                                    "configuredDevice", d.configuredDevice(),
-                                    "actualOpenedDevice", d.actualOpenedDevice()
-                                )));
+                            if (d != null && d.lastError() != null) {
+                                Map<String, Object> errorMap = new HashMap<>();
+                                errorMap.put("ok", false);
+                                errorMap.put("error", d.lastError());
+                                errorMap.put("configuredDevice", d.configuredDevice() != null ? d.configuredDevice() : "");
+                                errorMap.put("actualOpenedDevice", d.actualOpenedDevice() != null ? d.actualOpenedDevice() : "");
+                                response.getWriter().print(gson.toJson(errorMap));
                                 return;
                             }
                         }
@@ -916,6 +1002,14 @@ public class JettyServer {
         System.out.println("Server started on port " + port);
     }
     
+    public static void stop() throws Exception {
+        System.out.println("[JettyServer] Stopping server...");
+        if (server != null) {
+            server.stop();
+            System.out.println("[JettyServer] Server stopped");
+        }
+    }
+    
     public static void startStateBroadcast() {
         if (stateScheduler != null) return;
         stateScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -934,7 +1028,7 @@ public class JettyServer {
                     playersStateCache = players;
                     @SuppressWarnings("unchecked")
                     Map<String, Object> mapState = (Map<String, Object>) state;
-                    syncOutputManager.onPlayersState(mapState);
+                    getSyncOutputManager().onPlayersState(mapState);
                 }
             } catch (Exception e) {
                 // Ignore
@@ -948,7 +1042,7 @@ public class JettyServer {
     public static void updateState(Object players) { playersStateCache = players; }
     
     public static void pushEvent(String type, Integer player, Map<String, Object> data) {
-        syncOutputManager.onSemanticEvent(type, player, data);
+        getSyncOutputManager().onSemanticEvent(type, player, data);
         Map<String, Object> event = new ConcurrentHashMap<>();
         event.put("type", "EVENT");
         event.put("event", type);
@@ -964,7 +1058,7 @@ public class JettyServer {
             msg.put("type", "STATE");
             msg.put("time", System.currentTimeMillis() / 1000);
             msg.put("players", playersStateCache);
-            msg.put("sync", syncOutputManager.getStatus());
+            msg.put("sync", getSyncOutputManager().getStatus());
             broadcast(gson.toJson(msg));
         } catch (Exception e) {}
     }

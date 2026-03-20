@@ -18,6 +18,10 @@ import java.util.Map;
  * 4) 在断管（Broken pipe）或读异常时自动重连，避免界面长期报错。
  */
 public class CarabinerLinkEngine {
+    // 生命周期状态
+    private enum LifecycleState { STARTING, RUNNING, RECOVERING, FAILED, STOPPED }
+    private volatile LifecycleState lifecycleState = LifecycleState.STOPPED;
+    
     private final Runner runner = Runner.getInstance();
 
     private volatile boolean running = false;
@@ -51,6 +55,9 @@ public class CarabinerLinkEngine {
     private volatile BufferedWriter writer;
     private Thread readThread;
     private Thread pingThread;
+    
+    private final Object lifecycleLock = new Object();
+    private volatile boolean inReconnect = false; // 防止重入
 
     private int port = 17000;
     private int updateIntervalMs = 20;
@@ -68,6 +75,7 @@ public class CarabinerLinkEngine {
         supported = runner.canRunCarabiner();
         if (!supported) {
             running = false;
+            lifecycleState = LifecycleState.FAILED;
             error = "carabiner not supported on this platform";
             return;
         }
@@ -75,14 +83,11 @@ public class CarabinerLinkEngine {
         updateIntervalMs = intCfg(cfg, "updateIntervalMs", 20);
 
         try {
-            try {
-                runner.setPort(port);
-                runner.setUpdateInterval(updateIntervalMs);
-            } catch (IllegalStateException ignored) {
-                // Carabiner 可能尚在运行（或刚被停止尚未完全退出），沿用当前配置继续连接。
-            }
-            runner.start();
-            running = true; // 必须先置 true，读写线程的 while 才会进入
+            // 使用 CarabinerProcessManager 启动，确保单实例
+            CarabinerProcessManager.start(runner, port, updateIntervalMs);
+            
+            running = true;
+            lifecycleState = LifecycleState.STARTING;
             error = "";
             new Thread(() -> {
                 try {
@@ -101,6 +106,11 @@ public class CarabinerLinkEngine {
 
     public synchronized void stop() {
         running = false;
+        lifecycleState = LifecycleState.STOPPED;
+        
+        // 使用 CarabinerProcessManager 停止，确保完全退出
+        CarabinerProcessManager.stop(runner);
+        
         try { if (socket != null) socket.close(); } catch (Exception ignored) {}
         socket = null;
         reader = null;
@@ -108,7 +118,7 @@ public class CarabinerLinkEngine {
         statusSeen = false;
         versionSeen = false;
         startStopSyncEnabled = false;
-        try { runner.stop(); } catch (Exception ignored) {}
+        
         if (readThread != null) readThread.interrupt();
         if (pingThread != null) pingThread.interrupt();
     }
@@ -119,15 +129,15 @@ public class CarabinerLinkEngine {
      * - beatPosition：当前拍点位置（用于 beat/phase 同步）
      * - playing：统一播放态（用于避免 Carabiner 内部 start 字段和界面语义冲突）
      */
-    public synchronized void updateFromSource(Double bpm, Double beatPosition, Boolean playing) {
+    public synchronized void updateFromSource(Double bpm, Boolean playing) {
         if (bpm != null && bpm > 0 && Double.isFinite(bpm)) desiredTempo = bpm;
-        if (beatPosition != null && Double.isFinite(beatPosition) && beatPosition >= 0) desiredBeatPosition = beatPosition;
         if (playing != null) desiredPlaying = playing;
     }
 
     public synchronized Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("running", running);
+        m.put("lifecycleState", lifecycleState.toString());
         m.put("carabinerSupported", supported);
         m.put("carabinerRunning", running);
         m.put("carabinerEnabled", running && statusSeen);
@@ -150,6 +160,10 @@ public class CarabinerLinkEngine {
             m.put("linkNotice", "");
         }
         m.put("error", error);
+        // 连接诊断
+        m.put("socketConnected", socket != null && socket.isConnected() && !socket.isClosed());
+        m.put("readThreadAlive", readThread != null && readThread.isAlive());
+        m.put("inReconnect", inReconnect);
         return m;
     }
 
@@ -236,6 +250,12 @@ public class CarabinerLinkEngine {
                 reader = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
                 writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream(), StandardCharsets.UTF_8));
                 startThreads();
+                synchronized (lifecycleLock) {
+                    if (lifecycleState != LifecycleState.STOPPED) {
+                        lifecycleState = LifecycleState.RUNNING;
+                        System.out.println("[CarabinerLinkEngine] connectAndListen: CONNECTED, lifecycle -> RUNNING");
+                    }
+                }
                 return;
             } catch (IOException e) {
                 last = e;
@@ -254,12 +274,32 @@ public class CarabinerLinkEngine {
         readThread = new Thread(() -> {
             try {
                 String line;
-                while (running && reader != null && (line = reader.readLine()) != null) {
-                    onLine(line.trim());
+                while (running && reader != null) {
+                    try {
+                        line = reader.readLine();
+                        if (line == null) {
+                            // Socket closed by remote
+                            if (running) {
+                                error = "carabiner socket closed by remote";
+                                System.out.println("[CarabinerLinkEngine] readThread: socket closed by remote (readLine returned null), calling tryReconnect()");
+                                tryReconnect();
+                            }
+                            break;
+                        }
+                        onLine(line.trim());
+                    } catch (IOException e) {
+                        if (running) {
+                            error = "carabiner read failed: " + e.getMessage();
+                            System.out.println("[CarabinerLinkEngine] readThread: IOException=" + e.getMessage() + ", calling tryReconnect()");
+                            tryReconnect();
+                        }
+                        break;
+                    }
                 }
             } catch (Exception e) {
                 if (running) {
-                    error = "carabiner read failed: " + e.getMessage();
+                    error = "carabiner read thread exception: " + e.getMessage();
+                    System.out.println("[CarabinerLinkEngine] readThread: exception=" + e.getMessage() + ", calling tryReconnect()");
                     tryReconnect();
                 }
             }
@@ -321,6 +361,7 @@ public class CarabinerLinkEngine {
                 } catch (Exception e) {
                     if (running) {
                         error = "carabiner write failed: " + e.getMessage();
+                        System.out.println("[CarabinerLinkEngine] pingThread: write exception=" + e.getMessage() + ", calling tryReconnect()");
                         tryReconnect();
                     }
                 }
@@ -338,22 +379,57 @@ public class CarabinerLinkEngine {
      * - 失败则保留最新错误信息供 UI 诊断。
      */
     private synchronized void tryReconnect() {
-        long now = System.currentTimeMillis();
-        if (now - lastReconnectAttempt < 1000) return;
-        lastReconnectAttempt = now;
+        // 防止重入
+        if (inReconnect) {
+            System.out.println("[CarabinerLinkEngine] tryReconnect: SKIP (already in progress), lifecycle=" + lifecycleState);
+            return;
+        }
+        inReconnect = true;
+        
         try {
-            if (socket != null) socket.close();
-        } catch (Exception ignored) {}
-        socket = null;
-        reader = null;
-        writer = null;
+            long now = System.currentTimeMillis();
+            if (now - lastReconnectAttempt < 1000) {
+                System.out.println("[CarabinerLinkEngine] tryReconnect: SKIP (throttled 1s), lastAttempt=" + (now - lastReconnectAttempt) + "ms ago");
+                return;
+            }
+            lastReconnectAttempt = now;
+            
+            // 记录当前状态诊断信息
+            boolean socketWasConnected = socket != null && socket.isConnected() && !socket.isClosed();
+            boolean readThreadAlive = readThread != null && readThread.isAlive();
+            System.out.println("[CarabinerLinkEngine] tryReconnect: START, lifecycle=" + lifecycleState + ", socketWasConnected=" + socketWasConnected + ", readThreadAlive=" + readThreadAlive);
+            
+            // 设置状态为 RECOVERING
+            synchronized (lifecycleLock) {
+                if (lifecycleState == LifecycleState.RUNNING) {
+                    lifecycleState = LifecycleState.RECOVERING;
+                    System.out.println("[CarabinerLinkEngine] Lifecycle: RUNNING -> RECOVERING");
+                }
+            }
+            
+            try {
+                if (socket != null) socket.close();
+            } catch (Exception ignored) {}
+            socket = null;
+            reader = null;
+            writer = null;
 
-        try {
-            connectAndListen();
-            error = "";
-            connectRefusedSince = 0L;
-        } catch (Exception e) {
-            setConnectError("carabiner reconnect failed", e);
+            try {
+                connectAndListen();
+                error = "";
+                connectRefusedSince = 0L;
+                System.out.println("[CarabinerLinkEngine] tryReconnect: SUCCESS, lifecycle -> RUNNING");
+            } catch (Exception e) {
+                synchronized (lifecycleLock) {
+                    if (lifecycleState != LifecycleState.STOPPED) {
+                        lifecycleState = LifecycleState.FAILED;
+                    }
+                }
+                System.out.println("[CarabinerLinkEngine] tryReconnect: FAILED, lifecycle -> FAILED, error=" + e.getMessage());
+                setConnectError("carabiner reconnect failed", e);
+            }
+        } finally {
+            inReconnect = false;
         }
     }
 
@@ -361,22 +437,27 @@ public class CarabinerLinkEngine {
      * 对端 Link 反复关开后，主动重启一次 Runner 会话来恢复跨机会话可见性。
      */
     private synchronized void restartRunnerSession() {
+        System.out.println("[CarabinerLinkEngine] restartRunnerSession: restarting Carabiner...");
         try {
             if (socket != null) socket.close();
         } catch (Exception ignored) {}
         socket = null;
         reader = null;
         writer = null;
-        try { runner.stop(); } catch (Exception ignored) {}
-        try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+        
+        // 使用 CarabinerProcessManager 重启，确保单实例
         try {
-            runner.start();
+            CarabinerProcessManager.stop(runner);
+            Thread.sleep(500);
+            CarabinerProcessManager.start(runner, port, updateIntervalMs);
             connectAndListen();
             forceTempoPush = true;
             peersZeroSince = 0L;
             error = "";
+            System.out.println("[CarabinerLinkEngine] restartRunnerSession: success");
         } catch (Exception e) {
             error = "carabiner session restart failed: " + e.getMessage();
+            System.err.println("[CarabinerLinkEngine] restartRunnerSession: failed - " + e.getMessage());
         }
     }
 
