@@ -130,8 +130,8 @@ public class CarabinerLinkEngine {
     }
 
     // 纯 BPM 模式：禁用所有 beat/measure/start-stop（用于隔离测试）
-    // 首拍对齐模式：只启用 PLAY_START/SEEK/MANUAL_RESYNC 触发 request-beat-at-time
-    private static final boolean PURE_BPM_MODE = false;
+    // beat 对齐已禁用，只保留 tempo 同步
+    private static final boolean PURE_BPM_MODE = true;
 
     /**
      * 接收上游（SyncOutputManager）派生出来的播放源状态：
