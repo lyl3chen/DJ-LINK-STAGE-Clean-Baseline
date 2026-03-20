@@ -117,15 +117,29 @@ public class Ma2BpmDriver implements OutputDriver {
 
     public synchronized Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
+        // 主层字段
         m.put("enabled", enabled);
         m.put("running", running);
         m.put("connected", connected);
         m.put("lastSentBpm", lastSentBpm);
+        m.put("error", error);
+
+        // 兼容旧字段
         m.put("lastSendTs", lastSendTs);
         m.put("lastCommand", lastCommand);
         m.put("lastAck", lastAck);
         m.put("lastRawResponse", lastRawResponse);
-        m.put("error", error);
+
+        // 诊断层
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("connected", connected);
+        diagnostics.put("lastSentBpm", lastSentBpm);
+        diagnostics.put("lastSendTs", lastSendTs);
+        diagnostics.put("lastCommand", lastCommand);
+        diagnostics.put("lastAck", lastAck);
+        diagnostics.put("lastRawResponse", lastRawResponse);
+        m.put("diagnostics", diagnostics);
+
         return m;
     }
 

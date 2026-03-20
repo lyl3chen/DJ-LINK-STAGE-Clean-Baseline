@@ -5,6 +5,7 @@ import dbclient.sync.timecode.TimecodeConsumer;
 import dbclient.sync.timecode.TimecodeCore;
 
 import javax.sound.midi.*;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -210,12 +211,22 @@ public class MtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
 
     @Override
     public Map<String, Object> status() {
-        return Map.of(
-            "enabled", enabled,
-            "running", running.get(),
-            "currentState", currentState,
-            "nextFrameToWrite", nextFrameToWrite,
-            "fps", FRAME_RATE
-        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        // 主层字段
+        out.put("enabled", enabled);
+        out.put("running", running.get());
+        out.put("state", currentState);  // 统一为 state
+        // 兼容旧字段
+        out.put("currentState", currentState);
+        out.put("fps", FRAME_RATE);
+
+        // 诊断层
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("currentState", currentState);
+        diagnostics.put("nextFrameToWrite", nextFrameToWrite);
+        diagnostics.put("fps", FRAME_RATE);
+        out.put("diagnostics", diagnostics);
+
+        return out;
     }
 }

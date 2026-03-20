@@ -245,12 +245,23 @@ public class LtcDriver implements OutputDriver, TimecodeConsumer, TimecodeCore.T
     @Override
     public Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
+        // 主层字段
         out.put("enabled", enabled);
         out.put("running", running.get());
+        out.put("state", transportState.name());  // 统一为 state
+        // 兼容旧字段
         out.put("transportState", transportState.name());
-        out.put("nextFrameToWrite", nextFrameToWrite);
         out.put("sampleRate", SAMPLE_RATE);
         out.put("fps", FRAME_RATE);
+
+        // 诊断层
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("transportState", transportState.name());
+        diagnostics.put("nextFrameToWrite", nextFrameToWrite);
+        diagnostics.put("sampleRate", SAMPLE_RATE);
+        diagnostics.put("fps", FRAME_RATE);
+        out.put("diagnostics", diagnostics);
+
         return out;
     }
 }

@@ -101,18 +101,36 @@ public class TitanApiDriver implements OutputDriver {
     @Override
     public synchronized Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
+        // 主层字段
         m.put("enabled", enabled);
         m.put("running", running);
+        m.put("connected", !error.isEmpty() || lastHttpCode == 200);  // 统一为 connected
+        m.put("lastSentBpm", lastSentBpmInt);
+        m.put("error", error);
+
+        // 兼容旧字段
         m.put("ip", titanIp);
         m.put("baseUrl", baseUrl);
         m.put("versionMode", versionMode);
         m.put("versionDetected", versionDetected);
         m.put("masterIndices", new ArrayList<>(masterIndices));
         m.put("rateLimitMs", rateLimitMs);
-        m.put("lastSentBpm", lastSentBpmInt);
         m.put("lastSendTs", lastSendTs);
         m.put("lastHttpCode", lastHttpCode);
-        m.put("error", error);
+
+        // 诊断层
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("ip", titanIp);
+        diagnostics.put("baseUrl", baseUrl);
+        diagnostics.put("versionMode", versionMode);
+        diagnostics.put("versionDetected", versionDetected);
+        diagnostics.put("masterIndices", new ArrayList<>(masterIndices));
+        diagnostics.put("rateLimitMs", rateLimitMs);
+        diagnostics.put("lastSentBpm", lastSentBpmInt);
+        diagnostics.put("lastSendTs", lastSendTs);
+        diagnostics.put("lastHttpCode", lastHttpCode);
+        m.put("diagnostics", diagnostics);
+
         return m;
     }
 

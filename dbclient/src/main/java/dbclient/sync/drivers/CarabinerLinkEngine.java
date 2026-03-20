@@ -25,6 +25,7 @@ public class CarabinerLinkEngine {
     private final Runner runner = Runner.getInstance();
 
     private volatile boolean running = false;
+    private volatile boolean enabled = false;
     private volatile boolean supported = false;
     private volatile String error = "";
     private volatile String lastMessageType = "";
@@ -162,41 +163,65 @@ public class CarabinerLinkEngine {
 
     public synchronized Map<String, Object> status() {
         Map<String, Object> m = new LinkedHashMap<>();
+        // ========== 主层字段（公共状态） ==========
+        m.put("enabled", enabled);
         m.put("running", running);
         m.put("lifecycleState", lifecycleState.toString());
+        m.put("tempo", tempo);
+        m.put("playing", playing);
+        m.put("numPeers", numPeers);
+        m.put("socketConnected", socket != null && socket.isConnected() && !socket.isClosed());
+        m.put("error", error);
+
+        // ========== 兼容旧字段（不删除，保持前端兼容） ==========
         m.put("carabinerSupported", supported);
         m.put("carabinerRunning", running);
         m.put("carabinerEnabled", running && statusSeen);
         m.put("carabinerStatusSeen", statusSeen);
         m.put("carabinerVersionSeen", versionSeen);
         m.put("carabinerStartStopSyncEnabled", startStopSyncEnabled);
-        m.put("tempo", tempo);
         // 对外默认展示跟随源的 beat 位置，避免 Carabiner 内部时间轴（可能为负）造成误解。
         m.put("beatPosition", desiredBeatPosition);
         m.put("carabinerBeatPosition", carabinerBeatPosition);
-        m.put("playing", playing);
-        m.put("numPeers", numPeers);
         m.put("version", version);
         m.put("lastMessageType", lastMessageType);
         m.put("lastUpdateTs", lastUpdateTs);
         m.put("carabinerStartRaw", carabinerStartRaw);
-        
-        // Phase 1: Carabiner 观测值（Link 当前会话状态，只读不回写）
         m.put("carabinerBeat", carabinerBeat);
         m.put("carabinerPhase", carabinerPhase);
         m.put("carabinerStartTimeUs", carabinerStartTimeUs);
         m.put("carabinerQuantum", carabinerQuantum);
-        
         if (running && numPeers == 0) {
             m.put("linkNotice", "Carabiner is running, but no Link peers discovered yet.");
         } else {
             m.put("linkNotice", "");
         }
-        m.put("error", error);
-        // 连接诊断
-        m.put("socketConnected", socket != null && socket.isConnected() && !socket.isClosed());
         m.put("readThreadAlive", readThread != null && readThread.isAlive());
         m.put("inReconnect", inReconnect);
+
+        // ========== 新增诊断层（debug/diagnostics） ==========
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("supported", supported);
+        diagnostics.put("statusSeen", statusSeen);
+        diagnostics.put("versionSeen", versionSeen);
+        diagnostics.put("startStopSyncEnabled", startStopSyncEnabled);
+        diagnostics.put("desiredBeatPosition", desiredBeatPosition);
+        diagnostics.put("carabinerBeatPosition", carabinerBeatPosition);
+        diagnostics.put("carabinerBeat", carabinerBeat);
+        diagnostics.put("carabinerPhase", carabinerPhase);
+        diagnostics.put("carabinerStartRaw", carabinerStartRaw);
+        diagnostics.put("carabinerStartTimeUs", carabinerStartTimeUs);
+        diagnostics.put("carabinerQuantum", carabinerQuantum);
+        diagnostics.put("version", version);
+        diagnostics.put("lastMessageType", lastMessageType);
+        diagnostics.put("lastUpdateTs", lastUpdateTs);
+        diagnostics.put("socketConnected", socket != null && socket.isConnected() && !socket.isClosed());
+        diagnostics.put("readThreadAlive", readThread != null && readThread.isAlive());
+        diagnostics.put("inReconnect", inReconnect);
+        diagnostics.put("lifecycleState", lifecycleState.toString());
+        diagnostics.put("linkNotice", running && numPeers == 0 ? "Carabiner is running, but no Link peers discovered yet." : "");
+        m.put("diagnostics", diagnostics);
+
         return m;
     }
 
