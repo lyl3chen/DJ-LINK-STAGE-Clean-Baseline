@@ -204,7 +204,7 @@ public class DeviceManager {
                 // 真实 master 来自 Beat Link 协议
                 int masterDeviceNum = update.getDeviceNumber();
                 masterPlayer.set("" + masterDeviceNum);
-                System.out.println("🎚️ [BeatLink] Real master changed: device #" + masterDeviceNum);
+                System.out.println("🎚️ [BeatLink] MasterListener.masterChanged: device #" + masterDeviceNum);
             }
             
             @Override
@@ -715,14 +715,19 @@ public class DeviceManager {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> playerList = new ArrayList<>();
         
-        // 真实 master（来自 MasterListener），如果没有则用 activeBeatSource 作为 fallback
-        String currentMaster = masterPlayer.get();
-        if (currentMaster == null) {
-            currentMaster = activeBeatSource.get();  // fallback
+        // master = 真实 master（只来自 masterPlayer，不允许 fallback）
+        String realMaster = masterPlayer.get();
+        // effectiveSource = 真实 master 不存在时 fallback 到 activeBeatSource
+        String effectiveSource = realMaster != null ? realMaster : activeBeatSource.get();
+        if (realMaster == null && effectiveSource != null) {
+            System.out.println("[DeviceManager] master=null, effectiveSource fallback to: " + effectiveSource);
         }
-        Integer currentMasterNum = null;
+        
+        Integer realMasterNum = null;
+        Integer effectiveSourceNum = null;
         try {
-            if (currentMaster != null) currentMasterNum = Integer.parseInt(currentMaster);
+            if (realMaster != null) realMasterNum = Integer.parseInt(realMaster);
+            if (effectiveSource != null) effectiveSourceNum = Integer.parseInt(effectiveSource);
         } catch (Exception ignore) {}
         long now = System.currentTimeMillis() / 1000;
         long nowMs = System.currentTimeMillis();
@@ -738,8 +743,11 @@ public class DeviceManager {
             Map<String, Object> p = new HashMap<>();
             p.put("number", playerNum);
             p.put("active", true);
-            p.put("master", currentMasterNum != null && playerNum.intValue() == currentMasterNum.intValue());
-            p.put("activeBeatSource", activeBeatSource.get());  // 新增：当前发 beat 的设备
+            // master 字段只基于真实 master
+            p.put("master", realMasterNum != null && playerNum.intValue() == realMasterNum.intValue());
+            // effectiveSource 用于业务跟随
+            p.put("effectiveSource", effectiveSourceNum != null && playerNum.intValue() == effectiveSourceNum.intValue());
+            p.put("activeBeatSource", activeBeatSource.get());  // 当前发 beat 的设备
             
             // Real-time status
             if (ps.status != null) {
@@ -1056,11 +1064,11 @@ public class DeviceManager {
      * Unified player state - neutral endpoint for AI/rule/trigger systems
      */
     public Map<String, Object> getPlayersState() {
+        // 复用 getAiPlayers，它已经统一了 master/effectiveSource/activeBeatSource 逻辑
         Map<String, Object> result = getAiPlayers();
         
         // Transform summary to decision and add trigger-friendly fields
         List<Map<String, Object>> players = (List<Map<String, Object>>) result.get("players");
-        String currentMaster = masterPlayer.get();
 
         // Auto-stop scanning when idle for a while and no active devices
         long nowMs = System.currentTimeMillis();
@@ -1078,9 +1086,7 @@ public class DeviceManager {
             if (!p.containsKey("active")) p.put("active", true);
             p.put("triggerKey", "player-" + playerNum);
             
-            // Fix master calculation
-            boolean isMaster = currentMaster != null && playerNum == Integer.parseInt(currentMaster);
-            p.put("master", isMaster);
+            // master 字段已在 getAiPlayers 中正确设置（基于真实 master），无需重复设置
             
             // Transform summary to decision
             Map<String, Object> summary = (Map<String, Object>) p.get("summary");
