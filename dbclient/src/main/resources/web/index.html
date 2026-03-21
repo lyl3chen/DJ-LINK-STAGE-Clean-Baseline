@@ -898,6 +898,35 @@
     const playheadAnim = new Map();
     const zoomWindowAnchor = new Map();
 
+    // 按钮视觉反馈函数
+    function setButtonLoading(btnId, loading, originalText = null) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      if (loading) {
+        btn.dataset.originalText = btn.textContent;
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.textContent = '...';
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.textContent = btn.dataset.originalText || originalText || btn.textContent;
+      }
+    }
+
+    // 显示操作结果提示
+    function showButtonFeedback(btnId, success, msg) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const originalText = btn.dataset.originalText || btn.textContent;
+      btn.style.background = success ? 'linear-gradient(180deg,#1a4a1a,#0d2d0d)' : 'linear-gradient(180deg,#4a1a1a,#2d0d0d)';
+      btn.textContent = success ? '✓' : '✗';
+      setTimeout(() => {
+        btn.style.background = '';
+        btn.textContent = originalText;
+      }, 1000);
+    }
+
     function fmt(ms) {
       if (ms == null || isNaN(ms)) return '--:--';
       const s = Math.max(0, Math.floor(ms / 1000));
@@ -1407,6 +1436,7 @@
     }
 
     async function saveIoConfig() {
+      setButtonLoading('saveIoBtn', true);
       const masterPlayer = Number(document.getElementById('cfgManualPlayer').value || 1);
       
       // 切换输入源类型（djlink / local）
@@ -1477,16 +1507,21 @@
       }
       const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
       const j = await r.json();
+      setButtonLoading('saveIoBtn', false);
+      showButtonFeedback('saveIoBtn', j.ok, j.ok ? '已保存' : '保存失败');
       document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（Sync 输出已热重载）' : '保存失败';
       loadSettings();
     }
 
 
     async function generateAiRule() {
+      setButtonLoading('aiGenerateBtn', true);
       const prompt = document.getElementById('aiPrompt').value || '';
-      if (!prompt.trim()) return;
+      if (!prompt.trim()) { setButtonLoading('aiGenerateBtn', false); return; }
       const r = await fetch('/api/ai/command', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ prompt }) });
       const j = await r.json();
+      setButtonLoading('aiGenerateBtn', false);
+      showButtonFeedback('aiGenerateBtn', !!j.rule);
       if (j.rule) {
         const list = userSettings.aiRules || [];
         list.push(j.rule);
@@ -1496,6 +1531,7 @@
     }
 
     async function sendMa2Test() {
+      setButtonLoading('ma2SendTestBtn', true);
       try {
         const bpm = Number(document.getElementById('cfgMa2ManualBpm').value || 120);
         const r = await fetch('/api/ma2/test-bpm', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ bpm }) });
@@ -1511,6 +1547,7 @@
           }
         }
       } catch (e) {}
+      setButtonLoading('ma2SendTestBtn', false);
     }
 
     async function toggleTcManualTest() {
