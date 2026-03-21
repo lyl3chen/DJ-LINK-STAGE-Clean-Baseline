@@ -19,7 +19,7 @@ public class DeviceManager {
     private final Map<Integer, PlayerState> players = new ConcurrentHashMap<>();
     private final AtomicReference<String> masterPlayer = new AtomicReference<>(null);  // 真实 master（来自 MasterListener）
     private final AtomicReference<String> activeBeatSource = new AtomicReference<>(null);  // 当前发 beat 的播放器
-    private final AtomicReference<String> masterCache = new AtomicReference<>(null);  // 缓存的 master（避免每次遍历）
+    private final AtomicReference<String> onAirSource = new AtomicReference<>(null);  // onAir 兜底选出的设备
     private final AtomicInteger bpm = new AtomicInteger(0);
     private static final long PLAYER_STALE_MS = 15000;
     private static final long SCAN_AUTO_STOP_MS = 30000;
@@ -53,67 +53,92 @@ public class DeviceManager {
     }
 
     /**
-     * 统一获取真实 master（分层优先级策略，兼容所有设备）
+     * 获取真实 master（beat-link 通用方法）
      * 
      * 优先级：
-     * 1. 设备状态明确标记：CdjStatus.isTempoMaster()
-     * 2. MasterListener 事件：masterChanged 回调
-     * 3. 如果都拿不到，返回 null
+     * 1. CdjStatus.isTempoMaster()
+     * 2. MasterListener 事件
      * 
      * @return 真实 master player 编号，如果没有则返回 null
      */
-    public String resolveMaster() {
-        // 先检查缓存
-        String cached = masterCache.get();
-        if (cached != null) {
-            return cached;
-        }
-        
-        // 缓存为空时才遍历（只在初始或缓存失效时遍历）
+    public String resolveRealMaster() {
+        // 遍历查找 isTempoMaster
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             PlayerState ps = entry.getValue();
             if (ps.status != null && ps.status.isTempoMaster()) {
-                String resolved = String.valueOf(entry.getKey());
-                masterCache.set(resolved);  // 更新缓存
-                System.out.println("🎚️ [DeviceManager] resolveMaster from CdjStatus.isTempoMaster: device #" + resolved);
-                return resolved;
+                return String.valueOf(entry.getKey());
             }
         }
         
-        // 再检查 MasterListener 事件
-        String listenerMaster = masterPlayer.get();
-        if (listenerMaster != null) {
-            masterCache.set(listenerMaster);  // 更新缓存
-            return listenerMaster;
+        // 检查 MasterListener 事件
+        return masterPlayer.get();
+    }
+
+    /**
+     * 获取 onAir 兜底选出的设备
+     * - 只有一个 onAir：返回该设备
+     * - 多个 onAir：返回最后一个进入 onAir 的设备（通过 onAirSource 追踪）
+     * - 没有 onAir：返回 null
+     * 
+     * @return onAir 设备编号，如果没有则返回 null
+     */
+    public String resolveOnAirSource() {
+        // 先检查已记录的 onAirSource
+        String cached = onAirSource.get();
+        if (cached != null) {
+            // 确认该设备确实 onAir
+            try {
+                int num = Integer.parseInt(cached);
+                PlayerState ps = players.get(num);
+                if (ps != null && ps.status != null && ps.status.isOnAir()) {
+                    return cached;
+                }
+            } catch (Exception ignore) {}
         }
         
-        // 都拿不到，返回 null
+        // 重新遍历找 onAir
+        for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
+            PlayerState ps = entry.getValue();
+            if (ps.status != null && ps.status.isOnAir()) {
+                String result = String.valueOf(entry.getKey());
+                onAirSource.set(result);
+                return result;
+            }
+        }
         return null;
     }
 
     /**
-     * 统一获取业务实际应使用的主源
-     * 规则：
-     * - 有真实 master：返回真实 master
-     * - 没有真实 master：返回 null（不再 fallback 到 activeBeatSource）
+     * 获取业务实际使用的主源
      * 
-     * @return 实际应使用的主源 player 编号（如 "1", "2", "3"），如果没有则返回 null
+     * 规则：
+     * - realMaster 可用：effectiveSource = realMaster
+     * - realMaster 不可用：effectiveSource = onAirSource
+     * - 都没有：effectiveSource = null
+     * 
+     * @return 实际使用的主源 player 编号
      */
     public String getEffectiveSource() {
-        String realMaster = resolveMaster();
+        String realMaster = resolveRealMaster();
         if (realMaster != null) {
             return realMaster;
         }
-        System.out.println("[DeviceManager] getEffectiveSource: resolveMaster=null, returning null");
+        
+        // fallback 到 onAir
+        String onAir = resolveOnAirSource();
+        if (onAir != null) {
+            return onAir;
+        }
+        
         return null;
     }
 
     /**
-     * 获取真实 master（来自 resolveMaster）
-     * @return 真实 master player 编号，如果没有则返回 null
+     * 获取真实 master（用于 Dashboard 显示）
+     * @return 真实 master player 编号
      */
     public String getRealMaster() {
-        return resolveMaster();
+        return resolveRealMaster();
     }
 
     /**
@@ -250,7 +275,6 @@ public class DeviceManager {
                 // 真实 master 来自 Beat Link 协议
                 int masterDeviceNum = update.getDeviceNumber();
                 masterPlayer.set("" + masterDeviceNum);
-                masterCache.set("" + masterDeviceNum);  // 更新缓存
                 System.out.println("🎚️ [BeatLink] MasterListener.masterChanged: device #" + masterDeviceNum);
             }
             
@@ -297,21 +321,18 @@ public class DeviceManager {
         state.lastUpdate = System.currentTimeMillis();
         lastSignalMs = System.currentTimeMillis();
         
-        // ========== 增量更新 masterCache（避免每次遍历）==========
-        if (status.isTempoMaster()) {
-            masterCache.set(String.valueOf(deviceNumber));
-            System.out.println("🎚️ [DeviceManager] masterCache updated to: " + deviceNumber);
+        // ========== 追踪 onAir 状态 ==========
+        if (status.isOnAir()) {
+            onAirSource.set(String.valueOf(deviceNumber));
         } else {
-            // 如果当前设备不再是 master，需要重新遍历找到新的 master
-            String cached = masterCache.get();
-            if (cached != null && cached.equals(String.valueOf(deviceNumber))) {
-                masterCache.set(null);
-                // 立即重新遍历找到新 master
+            // 如果当前设备不再是 onAir，清除并找下一个
+            if (String.valueOf(deviceNumber).equals(onAirSource.get())) {
+                onAirSource.set(null);
+                // 找到下一个 onAir 设备
                 for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
                     PlayerState ps = entry.getValue();
-                    if (ps.status != null && ps.status.isTempoMaster()) {
-                        masterCache.set(String.valueOf(entry.getKey()));
-                        System.out.println("🎚️ [DeviceManager] master switched: " + cached + " -> " + entry.getKey());
+                    if (ps.status != null && ps.status.isOnAir()) {
+                        onAirSource.set(String.valueOf(entry.getKey()));
                         break;
                     }
                 }
@@ -783,10 +804,10 @@ public class DeviceManager {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> playerList = new ArrayList<>();
         
-        // 使用 resolveMaster() 统一入口（包含缓存优化 + 统一优先级策略）
-        String realMaster = resolveMaster();
-        // effectiveSource = 不再 fallback 到 activeBeatSource
-        String effectiveSource = realMaster;
+        // realMaster: beat-link 通用方法获取的真实 master
+        String realMaster = resolveRealMaster();
+        // effectiveSource: realMaster 不可用时 fallback 到 onAirSource
+        String effectiveSource = getEffectiveSource();
         
         Integer realMasterNum = null;
         Integer effectiveSourceNum = null;
