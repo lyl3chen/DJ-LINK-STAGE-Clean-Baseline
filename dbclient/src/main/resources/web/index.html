@@ -1742,7 +1742,9 @@
             players = msg.players || [];
             // DEBUG: log master status
             const masters = players.filter(p => p.master);
-            if (masters.length) console.log('[WS] STATE: master=', masters.map(p=>p.number));
+            // DEBUG: log all players master status
+            const allMasters = players.filter(p => p.number !== 4).map(p => `P${p.number}:${p.master}`);
+            console.log('[WS] STATE players:', allMasters.join(' '));
             const now = Date.now();
             scheduleRender();
             if (now - lastMixerPollAt > 2000) {
