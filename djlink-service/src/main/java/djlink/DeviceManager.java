@@ -57,33 +57,52 @@ public class DeviceManager {
      * 直接使用 VirtualCdj.getLatestStatus() 获取最新状态，与 BLT 思路一致
      *
      * @return 真实 master player 编号，如果没有则返回 null
+     * 
+     * 优先级：
+     * 1. VirtualCdj.getTempoMaster() - 直接获取当前 master
+     * 2. getLatestStatus() + isTempoMaster() - 遍历校验
+     * 3. MasterListener 事件 - 辅助参考
+     * 4. 以上都没有 → 返回 null
      */
     public String resolveRealMaster() {
-        // 直接从 VirtualCdj 获取最新状态，与 BLT 思路一致
+        // 1. 第一优先：VirtualCdj.getTempoMaster()
+        try {
+            DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
+            if (tempoMaster != null) {
+                System.out.println("[resolveRealMaster] getTempoMaster: device #" + tempoMaster.getDeviceNumber());
+                return String.valueOf(tempoMaster.getDeviceNumber());
+            }
+        } catch (Exception e) {
+            System.out.println("[resolveRealMaster] getTempoMaster Exception: " + e.getMessage());
+        }
+
+        // 2. 第二优先：getLatestStatus() + isTempoMaster()
         try {
             Set<DeviceUpdate> latestStatus = virtualCdj.getLatestStatus();
+            System.out.println("[resolveRealMaster] getLatestStatus count=" + latestStatus.size());
             for (DeviceUpdate update : latestStatus) {
                 if (update instanceof CdjStatus) {
                     CdjStatus status = (CdjStatus) update;
+                    System.out.println("[resolveRealMaster] Device #" + status.getDeviceNumber() + " isTempoMaster=" + status.isTempoMaster());
                     if (status.isTempoMaster()) {
                         return String.valueOf(status.getDeviceNumber());
                     }
                 }
             }
         } catch (Exception e) {
-            // fallback 到本地缓存
+            System.out.println("[resolveRealMaster] getLatestStatus Exception: " + e.getMessage());
         }
 
-        // fallback 到本地缓存的 players
-        for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
-            PlayerState ps = entry.getValue();
-            if (ps.status != null && ps.status.isTempoMaster()) {
-                return String.valueOf(entry.getKey());
-            }
+        // 3. 第三优先：MasterListener 事件（辅助参考）
+        String listenerMaster = masterPlayer.get();
+        if (listenerMaster != null) {
+            System.out.println("[resolveRealMaster] MasterListener: device #" + listenerMaster);
+            return listenerMaster;
         }
 
-        // 检查 MasterListener 事件
-        return masterPlayer.get();
+        // 4. 以上都没有 → 返回 null
+        System.out.println("[resolveRealMaster] No master found, returning null");
+        return null;
     }
 
     /**
@@ -220,7 +239,7 @@ public class DeviceManager {
         });
 
         // Beat listener - 只负责 bpm 和 activeBeatSource，不再负责 master 判定
-        beatFinder.addBeatListener(new BeatListener() {
+        beatFinder.addBeatListener(new org.deepsymmetry.beatlink.BeatListener() {
             @Override
             public void newBeat(Beat beat) {
                 bpm.set((int) beat.getBpm());
@@ -235,7 +254,12 @@ public class DeviceManager {
         });
 
         // Master listener - 从 Beat Link 获取真实 master
-        beatFinder.addMasterListener(new MasterListener() {
+        virtualCdj.addMasterListener(new org.deepsymmetry.beatlink.MasterListener() {
+            @Override
+            public void newBeat(Beat beat) {
+                // Ignore - not used for master detection
+            }
+
             @Override
             public void masterChanged(DeviceUpdate update) {
                 // 真实 master 来自 Beat Link 协议
