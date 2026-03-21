@@ -53,15 +53,28 @@ public class DeviceManager {
 
     /**
      * 获取真实 master（beat-link 通用方法）
-     *
-     * 优先级：
-     * 1. CdjStatus.isTempoMaster()
-     * 2. MasterListener 事件
+     * 
+     * 直接使用 VirtualCdj.getLatestStatus() 获取最新状态，与 BLT 思路一致
      *
      * @return 真实 master player 编号，如果没有则返回 null
      */
     public String resolveRealMaster() {
-        // 遍历查找 isTempoMaster
+        // 直接从 VirtualCdj 获取最新状态，与 BLT 思路一致
+        try {
+            Set<DeviceUpdate> latestStatus = virtualCdj.getLatestStatus();
+            for (DeviceUpdate update : latestStatus) {
+                if (update instanceof CdjStatus) {
+                    CdjStatus status = (CdjStatus) update;
+                    if (status.isTempoMaster()) {
+                        return String.valueOf(status.getDeviceNumber());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // fallback 到本地缓存
+        }
+
+        // fallback 到本地缓存的 players
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             PlayerState ps = entry.getValue();
             if (ps.status != null && ps.status.isTempoMaster()) {
@@ -75,11 +88,11 @@ public class DeviceManager {
 
     /**
      * 获取业务实际使用的主源
-     * 
+     *
      * 规则：
      * - realMaster 可用：effectiveSource = realMaster
      * - 拿不到：effectiveSource = null
-     * 
+     *
      * @return 实际使用的主源 player 编号
      */
     public String getEffectiveSource() {
