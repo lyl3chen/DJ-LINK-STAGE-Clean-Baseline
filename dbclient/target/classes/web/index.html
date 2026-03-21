@@ -613,7 +613,7 @@
       <div class="cfg-card">
         <h3>播放源</h3>
         <div class="cfg-row"><label>输入源类型</label><select id="cfgInputSourceType"><option value="djlink">DJ Link (CDJ)</option><option value="local">本地播放器</option></select></div>
-        <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
+        <div class="cfg-row"><label>播放源模式</label><select id="cfgSourceMode" onchange="updateManualPlayerUI()"><option value="master">跟随 Master</option><option value="manual">手动选择 Player</option></select></div>
         <div class="cfg-row"><label>手动 Player</label><select id="cfgManualPlayer"></select></div>
         <div class="cfg-row"><button id="saveIoBtn" class="scan-btn">保存配置</button><span id="ioSaveMsg"></span></div>
       </div>
@@ -711,6 +711,20 @@
   <!-- 本地播放器测试 Panel -->
   <section class="tab-panel" id="panel-localplayer">
     <div class="io-setup">
+      <!-- MA2 Trigger 测试区域（开发调试用） -->
+      <div class="cfg-card full" style="background:#1a2332; border:1px solid #3d5a80; margin-bottom:16px;">
+        <h3 style="color:#4da3ff; margin:0 0 8px;">🎯 MA2 Trigger 测试</h3>
+        <p style="margin:0 0 12px; color:#7f8ea8; font-size:11px;">
+          开发调试用：手动触发 MA2 命令
+        </p>
+        <div class="cfg-row">
+          <label>命令</label>
+          <input id="ma2TriggerCommand" type="text" value="Go Executor 1 Cue 1" style="flex:1; min-width:200px;" />
+          <button id="ma2TriggerBtn" class="scan-btn">发送测试</button>
+        </div>
+        <div id="ma2TriggerResult" style="margin-top:8px; padding:8px; background:#0d1422; border-radius:4px; font-family:monospace; font-size:11px; color:#2dff7a; white-space:pre-wrap;">等待发送...</div>
+      </div>
+
       <!-- 提示信息 -->
       <div class="cfg-card full" id="localPlayerWarning">
         <h3 style="color:#ffb347; margin:0 0 8px;">⚠️ 使用提示</h3>
@@ -771,7 +785,7 @@
 
       <!-- 状态显示 -->
       <div class="cfg-card">
-        <h3>📊 播放状态（诊断）</h3>
+        <h3>📊 播放状态</h3>
         <div id="localStatusDisplay" style="font-family:monospace; font-size:12px; line-height:1.6;">
           <div><span style="color:#7f8ea8;">Source Type:</span> <span id="localStatusSourceType">-</span></div>
           <div><span style="color:#7f8ea8;">Current Track:</span> <span id="localStatusTrack">-</span></div>
@@ -779,17 +793,77 @@
           <div><span style="color:#7f8ea8;">Position:</span> <span id="localStatusPosition">-</span></div>
           <div><span style="color:#7f8ea8;">Duration:</span> <span id="localStatusDuration">-</span></div>
           <div><span style="color:#7f8ea8;">Source BPM:</span> <span id="localStatusBpm">-</span></div>
-          <hr style="border-color:#2f425e; margin:8px 0;">
-          <div style="color:#ffb347; font-weight:bold;">=== 设备诊断 ===</div>
+        </div>
+        <div class="diag-card" id="localStatusMsg" style="margin-top:10px;">等待状态更新...</div>
+      </div>
+
+      <!-- 曲目分析测试区 -->
+      <div class="cfg-card">
+        <h3>🎵 曲目分析测试</h3>
+        
+        <!-- 当前曲目信息 -->
+        <div style="font-family:monospace; font-size:12px; line-height:1.8; margin-bottom:12px; border:1px solid #2f425e; padding:8px; border-radius:4px; background:#0a111b;">
+          <div style="color:#9fc0ef; font-weight:bold; margin-bottom:4px;">当前曲目信息</div>
+          <div><span style="color:#7f8ea8;">trackId:</span> <span id="analysisTestTrackId">-</span></div>
+          <div><span style="color:#7f8ea8;">title:</span> <span id="analysisTestTitle">-</span></div>
+          <div><span style="color:#7f8ea8;">path:</span> <span id="analysisTestPath" style="font-size:10px;">-</span></div>
+          <div><span style="color:#7f8ea8;">durationMs:</span> <span id="analysisTestDuration">-</span></div>
+        </div>
+        
+        <!-- 分析按钮 -->
+        <div class="cfg-row" style="margin-bottom:12px;">
+          <button id="analysisTestBtn" class="scan-btn" style="background:linear-gradient(180deg,#1a3a5c,#0f2338);">分析当前曲目</button>
+          <span id="analysisTestStatus" style="color:#7f8ea8; margin-left:8px;">等待操作...</span>
+        </div>
+        
+        <!-- 分析结果 -->
+        <div id="analysisTestResult" style="font-family:monospace; font-size:12px; line-height:1.8; display:none;">
+          <div style="color:#9fc0ef; font-weight:bold; margin-bottom:4px;">分析结果</div>
+          <div><span style="color:#7f8ea8;">状态:</span> <span id="analysisResultStatus">-</span></div>
+          <div><span style="color:#7f8ea8;">durationMs:</span> <span id="analysisResultDuration">-</span></div>
+          <div><span style="color:#7f8ea8;">BPM:</span> <span id="analysisResultBpm">-</span></div>
+          <div><span style="color:#7f8ea8;">置信度:</span> <span id="analysisResultConfidence">-</span></div>
+          <div><span style="color:#7f8ea8;">waveform 点数:</span> <span id="analysisResultWaveformPoints">-</span></div>
+          <div><span style="color:#7f8ea8;">beatGrid 点数:</span> <span id="analysisResultBeatGridPoints">-</span></div>
+          <div id="analysisResultErrorRow" style="display:none;"><span style="color:#7f8ea8;">错误:</span> <span id="analysisResultError" style="color:#ff4d6d;">-</span></div>
+        </div>
+        
+        <!-- 波形预览 -->
+        <div id="analysisWaveformContainer" style="margin-top:12px; display:none;">
+          <div style="color:#9fc0ef; font-weight:bold; margin-bottom:4px; font-size:12px;">波形预览</div>
+          <canvas id="analysisWaveformCanvas" style="width:100%; height:60px; background:#0a111b; border:1px solid #2f425e; border-radius:2px;"></canvas>
+        </div>
+        
+        <hr style="border-color:#2f425e; margin:12px 0;">
+        
+        <!-- 运行时分析状态（原有） -->
+        <div style="font-family:monospace; font-size:12px; line-height:1.8;">
+          <div style="color:#4dff88; font-weight:bold; margin-bottom:4px;">运行时状态</div>
+          <div><span style="color:#7f8ea8;">分析 BPM:</span> <span id="localStatusAnalysisBpm">-</span></div>
+          <div><span style="color:#7f8ea8;">置信度:</span> <span id="localStatusAnalysisConfidence">-</span></div>
+          <div><span style="color:#7f8ea8;">Beat Grid:</span> <span id="localStatusAnalysisBeatGrid">-</span></div>
+          <div><span style="color:#7f8ea8;">波形峰值:</span> <span id="localStatusAnalysisWaveform">-</span></div>
+          <div><span style="color:#7f8ea8;">Markers:</span> <span id="localStatusAnalysisMarkers">-</span></div>
+          <div style="color:#4dff88; font-weight:bold; margin-top:8px;">实时播放</div>
+          <div><span style="color:#7f8ea8;">Beat/Measure:</span> <span id="localStatusBeatInfo">-</span></div>
+        </div>
+      </div>
+
+      <!-- 设备诊断 -->
+      <div class="cfg-card">
+        <h3>🔧 设备诊断</h3>
+        <div style="font-family:monospace; font-size:12px; line-height:1.6;">
           <div><span style="color:#7f8ea8;">configuredDevice:</span> <span id="localStatusConfiguredDevice" style="color:#ff4d6d;">-</span></div>
           <div><span style="color:#7f8ea8;">actualOpenedDevice:</span> <span id="localStatusActualDevice" style="color:#2dff7a;">-</span></div>
           <div><span style="color:#7f8ea8;">lastError:</span> <span id="localStatusLastError" style="color:#ff4d6d;">-</span></div>
           <div><span style="color:#7f8ea8;">audioFormat:</span> <span id="localStatusAudioFormat">-</span></div>
         </div>
-        <div class="diag-card" id="localStatusMsg" style="margin-top:10px;">等待状态更新...</div>
       </div>
     </div>
   </section>
+
+  <!-- 曲目分析面板 (备用 - 当前整合到上方) -->
+  <section id="tab-local-analysis" class="tab-content" style="display:none;"></section>
 
   <script>
     // 这是前端总控制脚本：负责三Tab切换、配置读写、实时状态渲染。
@@ -812,6 +886,8 @@
     let localRuntimeState = 'STOPPED';
     let localSelectedTrackId = null;
     let localTrackListRenderKey = '';
+    // trackId -> analysis snapshot
+    const localAnalysisCache = new Map();
     // 统一错误状态管理（避免被状态刷新立刻覆盖）
     let localActiveError = null;      // 当前活跃错误
     let localActiveErrorTime = 0;     // 错误产生时间戳
@@ -821,6 +897,35 @@
     const waveCanvasCache = new Map();
     const playheadAnim = new Map();
     const zoomWindowAnchor = new Map();
+
+    // 按钮视觉反馈函数
+    function setButtonLoading(btnId, loading, originalText = null) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      if (loading) {
+        btn.dataset.originalText = btn.textContent;
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.textContent = '...';
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.textContent = btn.dataset.originalText || originalText || btn.textContent;
+      }
+    }
+
+    // 显示操作结果提示
+    function showButtonFeedback(btnId, success, msg) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      const originalText = btn.dataset.originalText || btn.textContent;
+      btn.style.background = success ? 'linear-gradient(180deg,#1a4a1a,#0d2d0d)' : 'linear-gradient(180deg,#4a1a1a,#2d0d0d)';
+      btn.textContent = success ? '✓' : '✗';
+      setTimeout(() => {
+        btn.style.background = '';
+        btn.textContent = originalText;
+      }, 1000);
+    }
 
     function fmt(ms) {
       if (ms == null || isNaN(ms)) return '--:--';
@@ -1105,6 +1210,38 @@
       sel.value = String(selected || uniq[0] || 1);
     }
 
+    // 根据 sourceType 更新 UI 状态
+    function updateSourceTypeUI(sourceType) {
+      const sourceModeSel = document.getElementById('cfgSourceMode');
+      const manualPlayerSel = document.getElementById('cfgManualPlayer');
+      if (!sourceModeSel || !manualPlayerSel) return;
+      
+      if (sourceType === 'local') {
+        // local 模式：禁用播放源模式和手动player
+        sourceModeSel.disabled = true;
+        manualPlayerSel.disabled = true;
+      } else {
+        // djlink 模式：根据 sourceMode 决定 manualPlayer 状态
+        sourceModeSel.disabled = false;
+        updateManualPlayerUI();
+      }
+    }
+
+    // 根据 sourceMode 更新 manualPlayer 状态
+    function updateManualPlayerUI() {
+      const sourceModeSel = document.getElementById('cfgSourceMode');
+      const manualPlayerSel = document.getElementById('cfgManualPlayer');
+      if (!sourceModeSel || !manualPlayerSel) return;
+      
+      const sourceMode = sourceModeSel.value;
+      if (sourceMode === 'manual') {
+        manualPlayerSel.disabled = false;
+      } else {
+        // follow master 模式：禁用手动player
+        manualPlayerSel.disabled = true;
+      }
+    }
+
     function refreshAudioDeviceOptions(devices, ltcSelected = 'default', localPlayerSelected = 'default') {
       // 更新 LTC 设备选择
       const ltcSel = document.getElementById('cfgLtcDevice');
@@ -1222,12 +1359,14 @@
           const stateJ = await stateR.json();
           const sourceType = stateJ.sourceType || 'djlink';
           document.getElementById('cfgInputSourceType').value = sourceType;
+          updateSourceTypeUI(sourceType);
         } catch (e) {
           console.error('Failed to load source type:', e);
         }
         
         document.getElementById('cfgSourceMode').value = String(sync.sourceMode || 'master');
         refreshManualPlayerOptions(Number(sync.masterPlayer || 1));
+        updateManualPlayerUI();
         // LTC/MTC 配置加载 - sourcePlayer 已统一使用 sync.masterPlayer
         const timecode = sync.timecode || {};
         const ltc = sync.ltc || {};
@@ -1297,6 +1436,7 @@
     }
 
     async function saveIoConfig() {
+      setButtonLoading('saveIoBtn', true);
       const masterPlayer = Number(document.getElementById('cfgManualPlayer').value || 1);
       
       // 切换输入源类型（djlink / local）
@@ -1309,6 +1449,8 @@
         });
         const j = await r.json();
         console.log('Source switch:', j);
+        // 更新 UI 状态
+        updateSourceTypeUI(sourceType);
       } catch (e) {
         console.error('Source switch failed:', e);
       }
@@ -1365,16 +1507,21 @@
       }
       const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(patch) });
       const j = await r.json();
+      setButtonLoading('saveIoBtn', false);
+      showButtonFeedback('saveIoBtn', j.ok, j.ok ? '已保存' : '保存失败');
       document.getElementById('ioSaveMsg').textContent = j.ok ? '已保存（Sync 输出已热重载）' : '保存失败';
       loadSettings();
     }
 
 
     async function generateAiRule() {
+      setButtonLoading('aiGenerateBtn', true);
       const prompt = document.getElementById('aiPrompt').value || '';
-      if (!prompt.trim()) return;
+      if (!prompt.trim()) { setButtonLoading('aiGenerateBtn', false); return; }
       const r = await fetch('/api/ai/command', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ prompt }) });
       const j = await r.json();
+      setButtonLoading('aiGenerateBtn', false);
+      showButtonFeedback('aiGenerateBtn', !!j.rule);
       if (j.rule) {
         const list = userSettings.aiRules || [];
         list.push(j.rule);
@@ -1384,6 +1531,7 @@
     }
 
     async function sendMa2Test() {
+      setButtonLoading('ma2SendTestBtn', true);
       try {
         const bpm = Number(document.getElementById('cfgMa2ManualBpm').value || 120);
         const r = await fetch('/api/ma2/test-bpm', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ bpm }) });
@@ -1399,6 +1547,7 @@
           }
         }
       } catch (e) {}
+      setButtonLoading('ma2SendTestBtn', false);
     }
 
     async function toggleTcManualTest() {
@@ -1934,6 +2083,47 @@
           data.status ? `${safeDur}ms (${formatMs(safeDur)}) | ${ratio.toFixed(1)}%` : '-';
         document.getElementById('localStatusBpm').textContent =
           data.sourceBpm || '-';
+        
+        // 当前播放位置的 Beat/Measure 信息
+        const beatInfo = data.beatInfo;
+        const beatInfoEl = document.getElementById('localStatusBeatInfo');
+        if (beatInfo) {
+          const beat = beatInfo.beatNumber;
+          const measure = beatInfo.measureNumber;
+          const phase = (beatInfo.phase * 100).toFixed(0);
+          beatInfoEl.textContent = `${measure}:${beat} (${phase}%)`;
+        } else {
+          beatInfoEl.textContent = '-';
+        }
+
+        // 分析信息显示
+        const analysis = data.analysis || {};
+        document.getElementById('localStatusAnalysisBpm').textContent =
+          analysis.bpm ? `${analysis.bpm}` : '未分析';
+        document.getElementById('localStatusAnalysisConfidence').textContent =
+          analysis.bpmConfidence ? analysis.bpmConfidence.toFixed(3) : '-';
+        document.getElementById('localStatusAnalysisBeatGrid').textContent =
+          analysis.beatGridAvailable 
+            ? `${analysis.beatGridBpm} BPM / ${analysis.beatGridBeatsPerMeasure}/4` 
+            : '无';
+        document.getElementById('localStatusAnalysisWaveform').textContent =
+          analysis.waveformPeaks ? `${analysis.waveformPeaks} peaks` : '无';
+        document.getElementById('localStatusAnalysisMarkers').textContent =
+          analysis.markerCount ? `${analysis.markerCount} 个` : '无';
+
+        // 更新分析测试区域 - 当前曲目信息
+        const currentTrack = data.currentTrack;
+        if (currentTrack) {
+          document.getElementById('analysisTestTrackId').textContent = currentTrack.trackId || '-';
+          document.getElementById('analysisTestTitle').textContent = currentTrack.title || '-';
+          document.getElementById('analysisTestPath').textContent = currentTrack.filePath || '-';
+          document.getElementById('analysisTestDuration').textContent = currentTrack.durationMs || '-';
+        } else {
+          document.getElementById('analysisTestTrackId').textContent = '-';
+          document.getElementById('analysisTestTitle').textContent = '未加载曲目';
+          document.getElementById('analysisTestPath').textContent = '-';
+          document.getElementById('analysisTestDuration').textContent = '-';
+        }
 
         // 更新 seek 输入范围提示
         const seekBoundsEl = document.getElementById('localSeekBounds');
@@ -2103,11 +2293,26 @@
           return;
         }
 
+        // 拉取每首曲目的分析结果（轻量：并发 GET）
+        await Promise.all((data.tracks || []).map(async (t) => {
+          try {
+            const r = await fetch(`/api/local/analysis?trackId=${encodeURIComponent(t.trackId)}`);
+            const j = await r.json();
+            localAnalysisCache.set(t.trackId, j && j.ok ? j.analysis : null);
+          } catch (_) {
+            localAnalysisCache.set(t.trackId, null);
+          }
+        }));
+
         const renderKey = JSON.stringify({
           ids: data.tracks.map(t => t.trackId),
           loaded: localRuntimeTrackId,
           state: localRuntimeState,
-          selected: localSelectedTrackId
+          selected: localSelectedTrackId,
+          analysis: data.tracks.map(t => {
+            const a = localAnalysisCache.get(t.trackId);
+            return a ? `${a.analysisStatus}:${a.bpm}:${a.bpmConfidence}` : 'none';
+          })
         });
         if (renderKey === localTrackListRenderKey) return;
         localTrackListRenderKey = renderKey;
@@ -2118,6 +2323,7 @@
           const isPaused = isLoaded && localRuntimeState === 'PAUSED';
           const isStopped = isLoaded && localRuntimeState === 'STOPPED';
           const isSelected = localSelectedTrackId && track.trackId === localSelectedTrackId;
+          const analysis = localAnalysisCache.get(track.trackId);
 
           const borderColor = isPlaying ? '#2dff7a' : (isLoaded ? '#4da3ff' : (isSelected ? '#7f8ea8' : '#2f425e'));
           const bg = isPlaying ? '#102016' : (isLoaded ? '#0f1b2a' : '#0d1422');
@@ -2130,6 +2336,12 @@
                 : isLoaded
                   ? '<span style="color:#4da3ff;font-weight:bold;">已加载</span>'
                   : '<span style="color:#7f8ea8;">未加载</span>';
+
+          const analysisText = analysis
+            ? (analysis.analysisStatus === 'COMPLETED'
+                ? `BPM: ${analysis.bpm ?? '-'} | Conf: ${analysis.bpmConfidence != null ? Number(analysis.bpmConfidence).toFixed(3) : '-'}`
+                : `分析状态: ${analysis.analysisStatus}`)
+            : '分析状态: 未分析';
 
           // 【修复】删除按钮策略：PLAYING/PAUSED 禁止删除，STOPPED 允许删除
           const canDelete = !isPlaying && !isPaused;
@@ -2145,9 +2357,11 @@
                   ${track.sampleRate || '-'}Hz
                 </div>
                 <div style="font-size:11px; margin-top:2px;">${badge}</div>
+                <div style="font-size:11px; margin-top:2px; color:#b9d8ff;">${analysisText}</div>
               </div>
               <div style="display:flex; gap:6px;">
                 <button class="scan-btn" onclick="loadLocalTrack('${track.trackId}')">加载</button>
+                <button class="scan-btn" onclick="analyzeLocalTrack('${track.trackId}')">分析</button>
                 <button class="scan-btn" 
                   style="background:linear-gradient(180deg,#4a1b1b,#2d1010);border-color:#6b2a2a;${!canDelete ? 'opacity:0.45;cursor:not-allowed;' : ''}" 
                   title="${!canDelete ? '播放/暂停中曲目不可删除，请先停止' : '删除曲目'}"
@@ -2190,6 +2404,28 @@
       }
     }
 
+    async function analyzeLocalTrack(trackId) {
+      try {
+        showLocalControlMsg('🔎 分析中...', false);
+        const res = await fetch('/api/local/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId })
+        });
+        const data = await res.json();
+        if (data.ok && data.analysis) {
+          const a = data.analysis;
+          localAnalysisCache.set(trackId, a);
+          showLocalControlMsg(`✅ 分析完成: BPM=${a.bpm ?? '-'} 置信度=${a.bpmConfidence != null ? Number(a.bpmConfidence).toFixed(3) : '-'}`, false);
+          await refreshLocalTracksList();
+        } else {
+          showLocalControlMsg('❌ 分析失败: ' + (data.error || data.analysis?.errorMessage || '未知错误'), true);
+        }
+      } catch (e) {
+        showLocalControlMsg('❌ 分析失败: ' + e.message, true);
+      }
+    }
+
     async function deleteLocalTrack(trackId) {
       if (!confirm('确认删除这首曲目吗？')) return;
       try {
@@ -2202,6 +2438,7 @@
         if (data.ok) {
           if (localSelectedTrackId === trackId) localSelectedTrackId = null;
           clearLocalActiveError();
+          localAnalysisCache.delete(trackId);
           showLocalControlMsg('🗑️ 已删除曲目', false);
           await refreshLocalTracksList();
           await refreshLocalPlayerStatus();
@@ -2215,6 +2452,173 @@
       } catch (e) {
         showLocalControlMsg('删除失败: ' + e.message, true);
       }
+    }
+
+    // ==================== 曲目分析测试功能 ====================
+    async function runAnalysisTest() {
+      // 优先使用当前加载的曲目，如果没有则使用曲目列表中的第一首
+      let trackId = localRuntimeTrackId;
+      
+      // 如果没有加载曲目，从曲目列表获取第一首
+      if (!trackId) {
+        try {
+          const res = await fetch('/api/local/tracks');
+          const data = await res.json();
+          if (data.tracks && data.tracks.length > 0) {
+            trackId = data.tracks[0].trackId;
+            document.getElementById('analysisTestTrackId').textContent = trackId;
+            document.getElementById('analysisTestTitle').textContent = data.tracks[0].title || '-';
+            document.getElementById('analysisTestPath').textContent = data.tracks[0].filePath || '-';
+            document.getElementById('analysisTestDuration').textContent = data.tracks[0].durationMs || '-';
+          } else {
+            document.getElementById('analysisTestStatus').textContent = '❌ 曲目列表为空';
+            document.getElementById('analysisTestStatus').style.color = '#ff4d6d';
+            return;
+          }
+        } catch (e) {
+          document.getElementById('analysisTestStatus').textContent = '❌ 获取曲目列表失败';
+          document.getElementById('analysisTestStatus').style.color = '#ff4d6d';
+          return;
+        }
+      }
+      
+      const btn = document.getElementById('analysisTestBtn');
+      const status = document.getElementById('analysisTestStatus');
+      const resultDiv = document.getElementById('analysisTestResult');
+      const waveformDiv = document.getElementById('analysisWaveformContainer');
+      
+      btn.disabled = true;
+      status.textContent = '🔍 分析中...';
+      status.style.color = '#ffb347';
+      resultDiv.style.display = 'none';
+      waveformDiv.style.display = 'none';
+      
+      try {
+        console.log('[AnalysisTest] Starting analysis for track:', trackId);
+        
+        // 调用分析 API
+        const res = await fetch('/api/local/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId })
+        });
+        
+        const data = await res.json();
+        console.log('[AnalysisTest] Analysis response:', data);
+        
+        // 显示结果
+        resultDiv.style.display = 'block';
+        
+        const ar = data.analysis;
+        if (!ar) {
+          document.getElementById('analysisResultStatus').textContent = '❌ 无分析结果';
+          document.getElementById('analysisResultStatus').style.color = '#ff4d6d';
+          status.textContent = '❌ 分析失败';
+          status.style.color = '#ff4d6d';
+          return;
+        }
+        
+        // 状态
+        const isSuccess = ar.success && ar.analysisStatus === 'COMPLETED';
+        document.getElementById('analysisResultStatus').textContent = isSuccess ? '✅ 成功' : '❌ 失败';
+        document.getElementById('analysisResultStatus').style.color = isSuccess ? '#2dff7a' : '#ff4d6d';
+        
+        // 基础信息
+        document.getElementById('analysisResultDuration').textContent = ar.durationMs || '-';
+        document.getElementById('analysisResultBpm').textContent = ar.bpm || 'N/A';
+        document.getElementById('analysisResultConfidence').textContent = ar.bpmConfidence ? ar.bpmConfidence.toFixed(3) : 'N/A';
+        
+        // Waveform 点数
+        const waveformPoints = ar.waveformPreview?.peaks?.length || 0;
+        document.getElementById('analysisResultWaveformPoints').textContent = waveformPoints;
+        
+        // BeatGrid 点数
+        const beatGridPoints = ar.beatGrid?.beatPositionsMs?.length || 0;
+        document.getElementById('analysisResultBeatGridPoints').textContent = beatGridPoints;
+        
+        // 错误信息
+        const errorRow = document.getElementById('analysisResultErrorRow');
+        if (ar.errorMessage) {
+          errorRow.style.display = 'block';
+          document.getElementById('analysisResultError').textContent = ar.errorMessage;
+        } else {
+          errorRow.style.display = 'none';
+        }
+        
+        // 显示波形预览
+        if (isSuccess && ar.waveformPreview?.peaks?.length > 0) {
+          waveformDiv.style.display = 'block';
+          drawAnalysisWaveform(ar.waveformPreview.peaks);
+        }
+        
+        status.textContent = isSuccess ? '✅ 分析完成' : '❌ 分析失败';
+        status.style.color = isSuccess ? '#2dff7a' : '#ff4d6d';
+        
+        // 刷新运行时状态显示
+        await refreshLocalPlayerStatus();
+        
+      } catch (e) {
+        console.error('[AnalysisTest] Error:', e);
+        resultDiv.style.display = 'block';
+        document.getElementById('analysisResultStatus').textContent = '❌ 异常';
+        document.getElementById('analysisResultStatus').style.color = '#ff4d6d';
+        document.getElementById('analysisResultErrorRow').style.display = 'block';
+        document.getElementById('analysisResultError').textContent = e.message;
+        status.textContent = '❌ 请求失败';
+        status.style.color = '#ff4d6d';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    
+    function drawAnalysisWaveform(peaks) {
+      const canvas = document.getElementById('analysisWaveformCanvas');
+      if (!canvas || !peaks || peaks.length === 0) return;
+      
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      
+      const w = rect.width;
+      const h = rect.height;
+      const center = h / 2;
+      
+      // 清空
+      ctx.fillStyle = '#0a111b';
+      ctx.fillRect(0, 0, w, h);
+      
+      // 绘制波形
+      ctx.strokeStyle = '#46b8ff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      
+      const step = w / peaks.length;
+      for (let i = 0; i < peaks.length; i++) {
+        const x = i * step;
+        const peak = peaks[i];
+        const amp = peak * (h / 2 - 2);
+        
+        if (i === 0) {
+          ctx.moveTo(x, center - amp);
+        } else {
+          ctx.lineTo(x, center - amp);
+        }
+        ctx.lineTo(x, center + amp);
+      }
+      
+      ctx.stroke();
+      
+      // 绘制中心线
+      ctx.strokeStyle = '#2f425e';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, center);
+      ctx.lineTo(w, center);
+      ctx.stroke();
     }
 
     async function localPlayerPlay() {
@@ -2353,11 +2757,28 @@
 
     document.getElementById('localImportBtn')?.addEventListener('click', importLocalFile);
     document.getElementById('localUploadBtn')?.addEventListener('click', uploadAndImportFile);
+    document.getElementById('ma2TriggerBtn')?.addEventListener('click', async () => {
+      const command = document.getElementById('ma2TriggerCommand').value.trim();
+      const resultEl = document.getElementById('ma2TriggerResult');
+      resultEl.textContent = '发送中...';
+      try {
+        const res = await fetch('/api/trigger/manual-fire', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command })
+        });
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        resultEl.textContent = '错误: ' + e.message;
+      }
+    });
     document.getElementById('localRefreshTracksBtn')?.addEventListener('click', refreshLocalTracksList);
     document.getElementById('localPlayBtn')?.addEventListener('click', localPlayerPlay);
     document.getElementById('localPauseBtn')?.addEventListener('click', localPlayerPause);
     document.getElementById('localStopBtn')?.addEventListener('click', localPlayerStop);
     document.getElementById('localSeekBtn')?.addEventListener('click', localPlayerSeek);
+    document.getElementById('analysisTestBtn')?.addEventListener('click', runAnalysisTest);
     
     document.getElementById('cfgLtcDevice')?.addEventListener('mousedown', () => loadAvailableDevices());
     document.getElementById('cfgMtcPort')?.addEventListener('mousedown', () => loadAvailableDevices());
