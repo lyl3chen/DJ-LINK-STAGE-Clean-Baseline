@@ -827,26 +827,33 @@ public class DeviceManager {
                     p.put("pitch", null);
                 }
 
-                // beatTimeMs comes from beat-grid timeline (not true transport clock)
-                Integer beatTimeMs = null;
+                // currentTimeMs: 优先使用 TimeFinder 真实传输时间，其次用 beat grid 推导
+                Integer currentTimeMs = null;
+                
+                // 1. 优先：TimeFinder.getTimeFor() - 真实传输时间
                 try {
-                    BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
-                    if (grid != null) {
-                        int beatNum = ps.status.getBeatNumber();
-                        if (beatNum > 0 && beatNum <= grid.beatCount) {
-                            // getTimeWithinTrack already returns milliseconds
-                            beatTimeMs = (int) grid.getTimeWithinTrack(beatNum);
-                            p.put("beatTimeMs", beatTimeMs);
+                    if (timeFinder != null && timeFinder.isRunning()) {
+                        Long trueTime = timeFinder.getTimeFor(playerNum);
+                        if (trueTime != null) {
+                            currentTimeMs = trueTime.intValue();
+                            p.put("currentTimeMs", currentTimeMs);
                         }
                     }
-                } catch (Exception e) {
-                    // ignore
-                }
-
-                // currentTimeMs: currently derived from beat grid time (best available)
-                // NOTE: this is approximate when grid/transport diverges.
-                if (beatTimeMs != null) {
-                    p.put("currentTimeMs", beatTimeMs);
+                } catch (Exception ignored) {}
+                
+                // 2. 次选：beat grid 推导时间（fallback）
+                if (currentTimeMs == null) {
+                    try {
+                        BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
+                        if (grid != null) {
+                            int beatNum = ps.status.getBeatNumber();
+                            if (beatNum > 0 && beatNum <= grid.beatCount) {
+                                currentTimeMs = (int) grid.getTimeWithinTrack(beatNum);
+                                p.put("currentTimeMs", currentTimeMs);
+                                p.put("beatTimeMs", currentTimeMs);
+                            }
+                        }
+                    } catch (Exception ignored) {}
                 }
             } else {
                 p.put("playing", false);
