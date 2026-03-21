@@ -1740,6 +1740,9 @@
           const msg = JSON.parse(ev.data);
           if (msg.type === 'STATE') {
             players = msg.players || [];
+            // DEBUG: log master status
+            const masters = players.filter(p => p.master);
+            if (masters.length) console.log('[WS] STATE: master=', masters.map(p=>p.number));
             const now = Date.now();
             scheduleRender();
             if (now - lastMixerPollAt > 2000) {
