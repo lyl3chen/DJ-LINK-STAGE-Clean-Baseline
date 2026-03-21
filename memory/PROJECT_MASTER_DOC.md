@@ -1,8 +1,24 @@
 # DJ LINK STAGE - 当前项目主文档
 
-> 更新时间：2026-03-17  
-> 当前运行版本：b11e0d7  
+> 更新时间：2026-03-22  
+> 当前运行版本：11c7bd2  
 > 项目根目录：~/agents/dev/workspace/dj-link-stage/
+
+---
+
+## 2026-03-22 重要更新
+
+### Master 判定对齐 BLT
+- **方式**: TimeFinder.getLatestUpdateFor(playerNum) + isTempoMaster()
+- **优先级**: TimeFinder > VirtualCdj.getTempoMaster() > MasterListener
+- **效果**: WebUI MASTER 标签实时跟随 CDJ 切换
+
+### 统一时间基准修复
+- **方式**: TimeFinder.getTimeFor(playerNum) 获取真实传输时间
+- **效果**: LTC/MTC/Dashboard 时间与 CDJ 真实时间一致
+
+### WebUI 改进
+- 添加按钮视觉反馈（saveIoBtn, aiGenerateBtn, ma2SendTestBtn）
 
 ---
 
