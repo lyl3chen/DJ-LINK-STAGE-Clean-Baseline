@@ -7,7 +7,7 @@
     "enabled": true,
     "sourceMode": "master",
     "timecodeSource": 2.0,
-    "masterPlayer": 2.0,
+    "masterPlayer": 1.0,
     "ltc": {
       "enabled": true,
       "fps": 25.0,
@@ -18,8 +18,8 @@
       "frameRate": 25.0
     },
     "mtc": {
-      "enabled": true,
-      "midiPort": "CH345 [hw:1,0,0]",
+      "enabled": false,
+      "midiPort": "default",
       "frameRate": 25.0
     },
     "abletonLink": {
@@ -32,9 +32,9 @@
     },
     "titanApi": {
       "versionMode": "auto",
-      "enabled": true,
+      "enabled": false,
       "rateLimitMs": 500.0,
-      "ip": "192.168.100.127",
+      "ip": "127.0.0.1",
       "masterIndices": [
         0.0
       ]
@@ -45,11 +45,11 @@
       "integerOnly": true,
       "rateLimitMs": 500.0,
       "port": 30000.0,
-      "enabled": true,
-      "host": "192.168.100.134",
+      "enabled": false,
+      "host": "127.0.0.1",
       "commandTemplate": "SpecialMaster 3.{index} At {bpm}",
       "maxBpm": 240.0,
-      "user": "sl",
+      "user": "remote",
       "pass": "",
       "onlyWhenPlaying": true
     },
