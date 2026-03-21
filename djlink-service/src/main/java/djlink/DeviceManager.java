@@ -66,8 +66,6 @@ public class DeviceManager {
      * 4. 以上都没有 → 返回 null
      */
     public String resolveRealMaster() {
-        String debugInfo = "[resolveRealMaster] ";
-        
         // 1. 第一优先：TimeFinder.getLatestUpdateFor(playerNum) + isTempoMaster()（与 BLT 一致）
         try {
             if (timeFinder != null && timeFinder.isRunning()) {
@@ -76,81 +74,30 @@ public class DeviceManager {
                     DeviceUpdate update = timeFinder.getLatestUpdateFor(playerNum);
                     if (update instanceof CdjStatus) {
                         CdjStatus status = (CdjStatus) update;
-                        boolean isMaster = status.isTempoMaster();
-                        System.err.println(debugInfo + "TimeFinder Player #" + playerNum + " isTempoMaster=" + isMaster);
-                        if (isMaster) {
-                            String result = String.valueOf(playerNum);
-                            System.err.println(debugInfo + "TimeFinder found master: " + result);
-                            return result;
+                        if (status.isTempoMaster()) {
+                            return String.valueOf(playerNum);
                         }
                     }
                 }
             }
-        } catch (Exception e) {
-            System.err.println(debugInfo + "TimeFinder Exception: " + e.getMessage());
-        }
+        } catch (Exception ignored) {}
 
         // 2. 第二优先：VirtualCdj.getTempoMaster()（辅助）
         try {
             DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
             if (tempoMaster != null) {
-                String result = String.valueOf(tempoMaster.getDeviceNumber());
-                System.err.println(debugInfo + "getTempoMaster -> " + result);
-                return result;
+                return String.valueOf(tempoMaster.getDeviceNumber());
             }
-        } catch (Exception e) {
-            System.err.println(debugInfo + "getTempoMaster Exception: " + e.getMessage());
-        }
+        } catch (Exception ignored) {}
 
         // 3. 第三优先：MasterListener 事件（辅助参考）
         String listenerMaster = masterPlayer.get();
         if (listenerMaster != null) {
-            System.err.println(debugInfo + "MasterListener -> " + listenerMaster);
             return listenerMaster;
         }
 
         // 4. 以上都没有 → 返回 null
-        System.err.println(debugInfo + "No master found, returning null");
         return null;
-    }
-    
-    /**
-     * Debug: 返回 master 检测详情
-     */
-    public Map<String, Object> getMasterDebugInfo() {
-        Map<String, Object> info = new HashMap<>();
-        
-        // getTempoMaster
-        try {
-            DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
-            info.put("getTempoMaster", tempoMaster != null ? tempoMaster.getDeviceNumber() : null);
-        } catch (Exception e) {
-            info.put("getTempoMaster", "error: " + e.getMessage());
-        }
-        
-        // getLatestStatus
-        try {
-            Map<Integer, Boolean> statusMap = new HashMap<>();
-            Set<DeviceUpdate> latestStatus = virtualCdj.getLatestStatus();
-            info.put("getLatestStatusCount", latestStatus.size());
-            for (DeviceUpdate update : latestStatus) {
-                if (update instanceof CdjStatus) {
-                    CdjStatus status = (CdjStatus) update;
-                    statusMap.put(status.getDeviceNumber(), status.isTempoMaster());
-                }
-            }
-            info.put("getLatestStatusDetails", statusMap);
-        } catch (Exception e) {
-            info.put("getLatestStatus", "error: " + e.getMessage());
-        }
-        
-        // MasterListener
-        info.put("masterListener", masterPlayer.get());
-        
-        // 最终结果
-        info.put("resolveRealMasterResult", resolveRealMaster());
-        
-        return info;
     }
 
     /**

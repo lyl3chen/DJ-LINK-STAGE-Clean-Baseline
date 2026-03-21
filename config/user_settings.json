@@ -7,7 +7,7 @@
     "enabled": true,
     "sourceMode": "master",
     "timecodeSource": 2.0,
-    "masterPlayer": 1.0,
+    "masterPlayer": 2.0,
     "ltc": {
       "enabled": true,
       "fps": 25.0,
@@ -32,9 +32,9 @@
     },
     "titanApi": {
       "versionMode": "auto",
-      "enabled": false,
+      "enabled": true,
       "rateLimitMs": 500.0,
-      "ip": "127.0.0.1",
+      "ip": "192.168.100.127",
       "masterIndices": [
         0.0
       ]
@@ -45,11 +45,11 @@
       "integerOnly": true,
       "rateLimitMs": 500.0,
       "port": 30000.0,
-      "enabled": false,
-      "host": "127.0.0.1",
+      "enabled": true,
+      "host": "192.168.100.134",
       "commandTemplate": "SpecialMaster 3.{index} At {bpm}",
       "maxBpm": 240.0,
-      "user": "remote",
+      "user": "sl",
       "pass": "",
       "onlyWhenPlaying": true
     },
@@ -57,7 +57,7 @@
       "sourcePlayer": 2.0
     },
     "localPlayer": {
-      "audioDevice": "Device [plughw:0,0]"
+      "audioDevice": "default"
     }
   },
   "ai": {
@@ -65,5 +65,6 @@
     "api_key": "",
     "model": ""
   },
-  "aiRules": []
+  "aiRules": [],
+  "scanning": true
 }
