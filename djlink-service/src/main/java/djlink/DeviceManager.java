@@ -12,21 +12,20 @@ import java.util.concurrent.atomic.*;
  * Provides: online devices, player status, BPM, track metadata
  */
 public class DeviceManager {
-    
+
     private static DeviceManager instance;
-    
+
     // Device state
     private final Map<Integer, PlayerState> players = new ConcurrentHashMap<>();
     private final AtomicReference<String> masterPlayer = new AtomicReference<>(null);  // 真实 master（来自 MasterListener）
     private final AtomicReference<String> activeBeatSource = new AtomicReference<>(null);  // 当前发 beat 的播放器
-    private final AtomicReference<String> onAirSource = new AtomicReference<>(null);  // onAir 兜底选出的设备
     private final AtomicInteger bpm = new AtomicInteger(0);
     private static final long PLAYER_STALE_MS = 15000;
     private static final long SCAN_AUTO_STOP_MS = 30000;
     private volatile boolean running = false;
     private volatile boolean listenersAdded = false;
     private volatile long lastSignalMs = System.currentTimeMillis();
-    
+
     // beat-link components
     private DeviceFinder deviceFinder;
     private VirtualCdj virtualCdj;
@@ -42,9 +41,9 @@ public class DeviceManager {
     // 最近一次曲目元数据查询结果（用于前端显示实时 HIT/MISS）
     private volatile String metadataLastLookup = "UNKNOWN";
     private volatile long metadataLastLookupTs = 0L;
-    
+
     private DeviceManager() {}
-    
+
     public static DeviceManager getInstance() {
         if (instance == null) {
             instance = new DeviceManager();
@@ -54,11 +53,11 @@ public class DeviceManager {
 
     /**
      * 获取真实 master（beat-link 通用方法）
-     * 
+     *
      * 优先级：
      * 1. CdjStatus.isTempoMaster()
      * 2. MasterListener 事件
-     * 
+     *
      * @return 真实 master player 编号，如果没有则返回 null
      */
     public String resolveRealMaster() {
@@ -69,43 +68,9 @@ public class DeviceManager {
                 return String.valueOf(entry.getKey());
             }
         }
-        
+
         // 检查 MasterListener 事件
         return masterPlayer.get();
-    }
-
-    /**
-     * 获取 onAir 兜底选出的设备
-     * - 只有一个 onAir：返回该设备
-     * - 多个 onAir：返回最后一个进入 onAir 的设备（通过 onAirSource 追踪）
-     * - 没有 onAir：返回 null
-     * 
-     * @return onAir 设备编号，如果没有则返回 null
-     */
-    public String resolveOnAirSource() {
-        // 先检查已记录的 onAirSource
-        String cached = onAirSource.get();
-        if (cached != null) {
-            // 确认该设备确实 onAir
-            try {
-                int num = Integer.parseInt(cached);
-                PlayerState ps = players.get(num);
-                if (ps != null && ps.status != null && ps.status.isOnAir()) {
-                    return cached;
-                }
-            } catch (Exception ignore) {}
-        }
-        
-        // 重新遍历找 onAir
-        for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
-            PlayerState ps = entry.getValue();
-            if (ps.status != null && ps.status.isOnAir()) {
-                String result = String.valueOf(entry.getKey());
-                onAirSource.set(result);
-                return result;
-            }
-        }
-        return null;
     }
 
     /**
@@ -113,24 +78,12 @@ public class DeviceManager {
      * 
      * 规则：
      * - realMaster 可用：effectiveSource = realMaster
-     * - realMaster 不可用：effectiveSource = onAirSource
-     * - 都没有：effectiveSource = null
+     * - 拿不到：effectiveSource = null
      * 
      * @return 实际使用的主源 player 编号
      */
     public String getEffectiveSource() {
-        String realMaster = resolveRealMaster();
-        if (realMaster != null) {
-            return realMaster;
-        }
-        
-        // fallback 到 onAir
-        String onAir = resolveOnAirSource();
-        if (onAir != null) {
-            return onAir;
-        }
-        
-        return null;
+        return resolveRealMaster();
     }
 
     /**
@@ -148,20 +101,20 @@ public class DeviceManager {
     public String getActiveBeatSource() {
         return activeBeatSource.get();
     }
-    
+
     /**
      * Start all beat-link components
      */
     public void start() throws Exception {
         if (running) return;
-        
+
         System.out.println("=== Starting DJ Link Service ===");
-        
+
         // Start DeviceFinder (discovers devices on network)
         deviceFinder = DeviceFinder.getInstance();
         deviceFinder.start();
         System.out.println("DeviceFinder started");
-        
+
         // Start VirtualCdj (becomes a CDJ on network)
         // Use device number in range 1-4 to allow MetadataFinder to query all players
         // When VirtualCdj is 1-4, the ConnectionManager will use our number directly to query
@@ -170,27 +123,27 @@ public class DeviceManager {
         virtualCdj.setDeviceNumber((byte) 4);  // Changed from 7 to 4
         virtualCdj.start();
         System.out.println("VirtualCdj started (device 4) - allows metadata queries");
-        
+
         // Start BeatFinder (monitors beat/ tempo)
         beatFinder = BeatFinder.getInstance();
         beatFinder.start();
         System.out.println("BeatFinder started");
-        
+
         // Start MetadataFinder (for track metadata)
         metadataFinder = MetadataFinder.getInstance();
         metadataFinder.start();
         System.out.println("MetadataFinder started, isRunning=" + metadataFinder.isRunning());
-        
+
         // Start BeatGridFinder (for beat grid data)
         beatGridFinder = BeatGridFinder.getInstance();
         beatGridFinder.start();
         System.out.println("BeatGridFinder started, isRunning=" + beatGridFinder.isRunning());
-        
+
         // Start WaveformFinder (for waveform data)
         waveformFinder = WaveformFinder.getInstance();
         waveformFinder.start();
         System.out.println("WaveformFinder started, isRunning=" + waveformFinder.isRunning());
-        
+
         // Start AnalysisTagFinder (for song structure/phrase data)
         analysisTagFinder = AnalysisTagFinder.getInstance();
         analysisTagFinder.start();
@@ -201,7 +154,7 @@ public class DeviceManager {
         artFinder.setRequestHighResolutionArt(false);
         artFinder.start();
         System.out.println("ArtFinder started, isRunning=" + artFinder.isRunning());
-        
+
         // Add listeners only once (singletons keep listeners)
         if (!listenersAdded) {
             addListeners();
@@ -212,7 +165,7 @@ public class DeviceManager {
         running = true;
         System.out.println("=== DJ Link Service Running ===");
     }
-    
+
     /**
      * Add listeners for device updates
      */
@@ -229,7 +182,7 @@ public class DeviceManager {
                 lastSignalMs = System.currentTimeMillis();
                 System.out.println("📱 Device found: #" + dn + " " + announcement.getDeviceName());
             }
-            
+
             @Override
             public void deviceLost(DeviceAnnouncement announcement) {
                 int dn = announcement.getDeviceNumber();
@@ -241,7 +194,7 @@ public class DeviceManager {
                 System.out.println("📱 Device lost: #" + dn + " (removed from active players)");
             }
         });
-        
+
         // Virtual CDJ update listener - THIS IS WHERE STATUS COMES FROM
         virtualCdj.addUpdateListener(new DeviceUpdateListener() {
             @Override
@@ -252,7 +205,7 @@ public class DeviceManager {
                 }
             }
         });
-        
+
         // Beat listener - 只负责 bpm 和 activeBeatSource，不再负责 master 判定
         beatFinder.addBeatListener(new BeatListener() {
             @Override
@@ -262,12 +215,12 @@ public class DeviceManager {
                 String oldSource = activeBeatSource.get();
                 activeBeatSource.set("" + beat.getDeviceNumber());
                 if (!Objects.equals(oldSource, activeBeatSource.get())) {
-                    System.out.println("🎵 [BeatLink] Beat from device #" + beat.getDeviceNumber() + 
+                    System.out.println("🎵 [BeatLink] Beat from device #" + beat.getDeviceNumber() +
                         ", activeBeatSource: " + oldSource + " -> " + activeBeatSource.get());
                 }
             }
         });
-        
+
         // Master listener - 从 Beat Link 获取真实 master
         beatFinder.addMasterListener(new MasterListener() {
             @Override
@@ -277,18 +230,18 @@ public class DeviceManager {
                 masterPlayer.set("" + masterDeviceNum);
                 System.out.println("🎚️ [BeatLink] MasterListener.masterChanged: device #" + masterDeviceNum);
             }
-            
+
             @Override
             public void tempoChanged(double tempo) {
                 // 可以选择记录或忽略
             }
         });
-        
+
         // Track metadata listener
         metadataFinder.addTrackMetadataListener(new TrackMetadataListener() {
             @Override
             public void metadataChanged(TrackMetadataUpdate update) {
-                System.out.println("🎵 Metadata update received: player=" + update.player + 
+                System.out.println("🎵 Metadata update received: player=" + update.player +
                     " metadata=" + (update.metadata != null ? update.metadata.getTitle() : "null"));
             }
         });
@@ -308,47 +261,29 @@ public class DeviceManager {
             }
         });
     }
-    
+
     private void updatePlayerState(int deviceNumber, CdjStatus status) {
         // Check previous playing state BEFORE updating
         PlayerState state = players.getOrDefault(deviceNumber, new PlayerState());
         boolean wasPlaying = state.status != null && state.status.isPlaying();
         boolean isPlaying = status.isPlaying();
-        
+
         // Update state
         state.deviceNumber = deviceNumber;
         state.status = status;
         state.lastUpdate = System.currentTimeMillis();
         lastSignalMs = System.currentTimeMillis();
-        
-        // ========== 追踪 onAir 状态 ==========
-        if (status.isOnAir()) {
-            onAirSource.set(String.valueOf(deviceNumber));
-        } else {
-            // 如果当前设备不再是 onAir，清除并找下一个
-            if (String.valueOf(deviceNumber).equals(onAirSource.get())) {
-                onAirSource.set(null);
-                // 找到下一个 onAir 设备
-                for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
-                    PlayerState ps = entry.getValue();
-                    if (ps.status != null && ps.status.isOnAir()) {
-                        onAirSource.set(String.valueOf(entry.getKey()));
-                        break;
-                    }
-                }
-            }
-        }
-        
+
         // If transitioned from not playing to playing, record start time
         if (!wasPlaying && isPlaying) {
             state.playStartTimeMs = System.currentTimeMillis();
             System.out.println("▶ Play started for Deck " + deviceNumber + " at " + state.playStartTimeMs);
         }
-        
+
         // DEBUG: Print status info
-        System.out.println("🔍 Player " + deviceNumber + " status: playing=" + status.isPlaying() + 
+        System.out.println("🔍 Player " + deviceNumber + " status: playing=" + status.isPlaying() +
             " trackType=" + status.getTrackType() + " sourceSlot=" + status.getTrackSourceSlot());
-        
+
         boolean validTrackRef = status.getTrackType() != null
                 && status.getTrackSourceSlot() != null
                 && status.getTrackType() != CdjStatus.TrackType.NO_TRACK
@@ -398,26 +333,26 @@ public class DeviceManager {
         } catch (Exception e) {
             System.out.println("❌ Error getting metadata for player " + deviceNumber + ": " + e.getMessage());
         }
-        
+
         players.put(deviceNumber, state);
     }
-    
+
     /**
      * Get player status
      */
     public Map<String, Object> getPlayerStatus() {
         Map<String, Object> result = new HashMap<>();
-        
+
         List<Map<String, Object>> playerList = new ArrayList<>();
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             PlayerState ps = entry.getValue();
             Map<String, Object> p = new HashMap<>();
             p.put("number", ps.deviceNumber);
-            
+
             if (ps.status != null) {
                 p.put("playing", ps.status.isPlaying());
                 p.put("beat", ps.status.getBeatNumber());
-                
+
                 // getBpm() returns display BPM directly, no division needed
                 int bpm = (int) ps.status.getBpm();
                 if (bpm != 65535 && bpm > 0) {
@@ -425,7 +360,7 @@ public class DeviceManager {
                 } else {
                     p.put("bpm", null);
                 }
-                
+
                 // Add pitch - raw pitch 1048576 = 0%
                 int rawPitch = (int) ps.status.getPitch();
                 if (rawPitch != 0) {
@@ -434,12 +369,12 @@ public class DeviceManager {
                     p.put("pitch", null);  // rawPitch 0 means no track loaded or invalid
                 }
             }
-            
+
             playerList.add(p);
         }
-        
+
         result.put("players", playerList);
-        
+
         // Calculate global BPM - average of all playing players
         int playingBpm = 0;
         int playingCount = 0;
@@ -457,40 +392,40 @@ public class DeviceManager {
         result.put("online", players.size());
         // 预热缓存可视化：用于前端直接判断 metadata 预热是否在工作。
         result.put("metadataWarmupCacheSize", metadataWarmup.size());
-        
+
         return result;
     }
-    
+
     /**
      * Get track info - with detailed debugging
      */
     public Map<String, Object> getTrackInfo() {
         Map<String, Object> result = new HashMap<>();
-        
+
         System.out.println("=== getTrackInfo() called ===");
         System.out.println("Players in map: " + players.keySet());
-        
+
         List<Map<String, Object>> trackList = new ArrayList<>();
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             PlayerState ps = entry.getValue();
             Map<String, Object> t = new HashMap<>();
             t.put("number", ps.deviceNumber);
             t.put("playing", ps.status != null ? ps.status.isPlaying() : false);
-            
+
             // Debug info
-            String sourceSlot = (ps.status != null && ps.status.getTrackSourceSlot() != null) 
+            String sourceSlot = (ps.status != null && ps.status.getTrackSourceSlot() != null)
                 ? ps.status.getTrackSourceSlot().name() : null;
             String trackType = (ps.status != null && ps.status.getTrackType() != null)
                 ? ps.status.getTrackType().name() : null;
-            
+
             t.put("sourceSlot", sourceSlot);
             t.put("trackType", trackType);
-            
+
             // Check if we have metadata in state
             boolean hasMeta = ps.trackMeta != null;
             t.put("metadataFound", hasMeta);
-            
+
             // Try to get fresh metadata
             try {
                 TrackMetadata meta = metadataFinder.getLatestMetadataFor(ps.deviceNumber);
@@ -499,7 +434,7 @@ public class DeviceManager {
                     String title = meta.getTitle();
                     String artist = (meta.getArtist() != null) ? meta.getArtist().label : null;
                     String album = (meta.getAlbum() != null) ? meta.getAlbum().label : null;
-                    
+
                     t.put("title", title);
                     t.put("artist", artist);
                     t.put("album", album);
@@ -509,13 +444,13 @@ public class DeviceManager {
                     // Also try using the status to get metadata
                     if (ps.status != null) {
                         // Try querying by device number through VirtualCdj's status
-                        System.out.println("⚠️ No cached metadata for player " + ps.deviceNumber + 
+                        System.out.println("⚠️ No cached metadata for player " + ps.deviceNumber +
                             ", trying different approaches...");
-                        
+
                         // List what we know from status
                         System.out.println("   sourceSlot=" + sourceSlot + " trackType=" + trackType);
                     }
-                    
+
                     t.put("title", null);
                     t.put("artist", null);
                     t.put("album", null);
@@ -528,39 +463,39 @@ public class DeviceManager {
                 t.put("album", null);
                 t.put("duration", null);
             }
-            
+
             trackList.add(t);
         }
-        
+
         result.put("players", trackList);
-        
+
         return result;
     }
-    
+
     /**
      * Get beat grid data for all players
      */
     public Map<String, Object> getBeatGrid() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> gridList = new ArrayList<>();
-        
+
         System.out.println("🔍 Querying BeatGrid for online players...");
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum == 4) continue; // Skip VirtualCdj
-            
+
             PlayerState ps = entry.getValue();
             Map<String, Object> g = new HashMap<>();
             g.put("number", playerNum);
-            
+
             try {
                 BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
                 if (grid != null) {
                     System.out.println("✅ Player " + playerNum + " beat grid found: " + grid.beatCount + " beats");
                     g.put("beatGridFound", true);
                     g.put("beatCount", grid.beatCount);
-                    
+
                     // Build beat list (limit to first 16 for debugging)
                     // Note: time values from BeatGrid are in 1/1000 of a frame (0.5ms resolution)
                     List<Map<String, Object>> beats = new ArrayList<>();
@@ -589,31 +524,31 @@ public class DeviceManager {
                 g.put("beatGridFound", false);
                 g.put("error", e.getMessage());
             }
-            
+
             gridList.add(g);
         }
-        
+
         result.put("players", gridList);
         return result;
     }
-    
+
     /**
      * Get cue points for all players
      */
     public Map<String, Object> getCuePoints() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> cueList = new ArrayList<>();
-        
+
         System.out.println("🔍 Querying CueList for online players...");
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum == 4) continue; // Skip VirtualCdj
-            
+
             PlayerState ps = entry.getValue();
             Map<String, Object> c = new HashMap<>();
             c.put("number", playerNum);
-            
+
             try {
                 // Try to get CueList from metadata
                 TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNum);
@@ -621,7 +556,7 @@ public class DeviceManager {
                     CueList cues = meta.getCueList();
                     System.out.println("✅ Player " + playerNum + " cue list found: " + cues.entries.size() + " entries");
                     c.put("cueFound", true);
-                    
+
                     List<Map<String, Object>> cuesData = new ArrayList<>();
                     for (CueList.Entry cue : cues.entries) {
                         Map<String, Object> cueEntry = new HashMap<>();
@@ -647,31 +582,31 @@ public class DeviceManager {
                 c.put("cueFound", false);
                 c.put("error", e.getMessage());
             }
-            
+
             cueList.add(c);
         }
-        
+
         result.put("players", cueList);
         return result;
     }
-    
+
     /**
      * Get waveform data for all players
      */
     public Map<String, Object> getWaveform() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> waveList = new ArrayList<>();
-        
+
         System.out.println("🔍 Querying Waveform for online players...");
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum == 4) continue; // Skip VirtualCdj
-            
+
             PlayerState ps = entry.getValue();
             Map<String, Object> w = new HashMap<>();
             w.put("number", playerNum);
-            
+
             try {
                 // Get preview waveform
                 WaveformPreview preview = waveformFinder.getLatestPreviewFor(playerNum);
@@ -679,7 +614,7 @@ public class DeviceManager {
                     System.out.println("✅ Player " + playerNum + " preview waveform found: " + preview.segmentCount + " segments");
                     w.put("previewWaveformFound", true);
                     w.put("previewLength", preview.segmentCount);
-                    
+
                     // Limit samples for debugging
                     int limit = Math.min(preview.segmentCount, 20);
                     int[] previewSamples = new int[limit];
@@ -696,7 +631,7 @@ public class DeviceManager {
                     w.put("previewLength", 0);
                     w.put("previewSample", new int[]{});
                 }
-                
+
                 // Get detailed waveform
                 WaveformDetail detail = waveformFinder.getLatestDetailFor(playerNum);
                 if (detail != null) {
@@ -706,30 +641,30 @@ public class DeviceManager {
                     w.put("detailedWaveformFound", false);
                     w.put("detailLength", 0);
                 }
-                
+
             } catch (Exception e) {
                 System.out.println("❌ Player " + playerNum + " waveform error: " + e.getMessage());
                 w.put("previewWaveformFound", false);
                 w.put("detailedWaveformFound", false);
                 w.put("error", e.getMessage());
             }
-            
+
             waveList.add(w);
         }
-        
+
         result.put("players", waveList);
         return result;
     }
-    
+
     /**
      * Get phrase/song structure data for all players
      */
     public Map<String, Object> getPhrase() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> phraseList = new ArrayList<>();
-        
+
         System.out.println("🔍 Querying Song Structure (Phrase) for online players...");
-        
+
         // First, let's check what analysis tags are actually loaded
         try {
             Map loaded = analysisTagFinder.getLoadedAnalysisTags();
@@ -737,31 +672,31 @@ public class DeviceManager {
         } catch (Exception e) {
             System.out.println("⚠️ Could not get loaded analysis tags: " + e.getMessage());
         }
-        
+
         // Song structure is stored in analysis tags - try different extensions
         String[] extensions = {"PNAV", "ANALYZZ", "ZXML", ""};
         String[] typeTags = {"SSTR", "SONG", "STRUCTURE", ""};
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum == 4) continue; // Skip VirtualCdj
-            
+
             PlayerState ps = entry.getValue();
             Map<String, Object> p = new HashMap<>();
             p.put("number", playerNum);
-            
+
             // First get track info for debugging
             try {
                 TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNum);
                 if (meta != null) {
-                    System.out.println("   Player " + playerNum + " track: " + meta.getTitle() + 
-                        ", source: " + ps.status.getTrackSourceSlot() + 
+                    System.out.println("   Player " + playerNum + " track: " + meta.getTitle() +
+                        ", source: " + ps.status.getTrackSourceSlot() +
                         ", type: " + ps.status.getTrackType());
                 }
             } catch (Exception e) {
                 // ignore
             }
-            
+
             // Try different combinations to find song structure
             boolean found = false;
             for (String ext : extensions) {
@@ -784,31 +719,31 @@ public class DeviceManager {
                 }
                 if (found) break;
             }
-            
+
             if (!found) {
                 System.out.println("⚠️ Player " + playerNum + " no song structure found");
                 p.put("phraseFound", false);
             }
-            
+
             phraseList.add(p);
         }
-        
+
         result.put("players", phraseList);
         return result;
     }
-    
+
     /**
      * Unified AI interface - aggregates all player data for AI/lighting decision making
      */
     public Map<String, Object> getAiPlayers() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> playerList = new ArrayList<>();
-        
+
         // realMaster: beat-link 通用方法获取的真实 master
         String realMaster = resolveRealMaster();
-        // effectiveSource: realMaster 不可用时 fallback 到 onAirSource
+        // effectiveSource: 直接使用 realMaster，拿不到时为 null
         String effectiveSource = getEffectiveSource();
-        
+
         Integer realMasterNum = null;
         Integer effectiveSourceNum = null;
         try {
@@ -817,11 +752,11 @@ public class DeviceManager {
         } catch (Exception ignore) {}
         long now = System.currentTimeMillis() / 1000;
         long nowMs = System.currentTimeMillis();
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum < 1 || playerNum > 4 || playerNum == 4) continue; // Keep only real decks 1-3, skip VirtualCdj(4) and non-deck devices
-            
+
             PlayerState ps = entry.getValue();
             boolean active = ps != null && (nowMs - ps.lastUpdate) <= PLAYER_STALE_MS;
             if (!active) continue; // treat stale players as offline
@@ -834,7 +769,7 @@ public class DeviceManager {
             // effectiveSource 用于业务跟随
             p.put("effectiveSource", effectiveSourceNum != null && playerNum.intValue() == effectiveSourceNum.intValue());
             p.put("activeBeatSource", activeBeatSource.get());  // 当前发 beat 的设备
-            
+
             // Real-time status
             if (ps.status != null) {
                 p.put("playing", ps.status.isPlaying());
@@ -883,7 +818,7 @@ public class DeviceManager {
                 p.put("bpm", null);
                 p.put("pitch", null);
             }
-            
+
             // Track metadata
             Map<String, Object> track = new HashMap<>();
             try {
@@ -922,10 +857,10 @@ public class DeviceManager {
                     p.put("remainingTimeMs", Math.max(0, durationMs - currentTimeMs));
                 }
             }
-            
+
             // Analysis data summary
             Map<String, Object> analysis = new HashMap<>();
-            
+
             // Beat grid
             try {
                 BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
@@ -947,7 +882,7 @@ public class DeviceManager {
                 analysis.put("beatGridFound", false);
                 analysis.put("beatCount", 0);
             }
-            
+
             // Cues
             boolean cueFound = false;
             int cueCount = 0;
@@ -975,13 +910,13 @@ public class DeviceManager {
             analysis.put("hasHotCues", hasHotCues);
             analysis.put("hotCueCount", hotCueCount);
             analysis.put("hotCueTimesMs", hotCueTimesMs);
-            
+
             // Waveform
             try {
                 WaveformPreview preview = waveformFinder.getLatestPreviewFor(playerNum);
                 analysis.put("previewWaveformFound", preview != null);
                 analysis.put("previewLength", preview != null ? preview.segmentCount : 0);
-                
+
                 // Add lightweight preview sample (max 60 points)
                 if (preview != null) {
                     List<Integer> previewSample = new ArrayList<>();
@@ -996,7 +931,7 @@ public class DeviceManager {
                 analysis.put("previewWaveformFound", false);
                 analysis.put("previewLength", 0);
             }
-            
+
             try {
                 WaveformDetail detail = waveformFinder.getLatestDetailFor(playerNum);
                 analysis.put("detailedWaveformFound", detail != null);
@@ -1029,9 +964,9 @@ public class DeviceManager {
                 analysis.put("detailedWaveformFound", false);
                 analysis.put("detailLength", 0);
             }
-            
+
             p.put("analysis", analysis);
-            
+
             // Current section
             try {
                 BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
@@ -1039,16 +974,16 @@ public class DeviceManager {
                     int sectionSize = 32;
                     int sectionCount = (int) Math.ceil((double) grid.beatCount / sectionSize);
                     int currentBeat = ps.status != null ? ps.status.getBeatNumber() : -1;
-                    
+
                     // Find current section
                     for (int si = 0; si < sectionCount; si++) {
                         int startBeat = si * sectionSize + 1;
                         int endBeat = Math.min((si + 1) * sectionSize, grid.beatCount);
-                        
+
                         if (currentBeat > 0 && currentBeat >= startBeat && currentBeat <= endBeat) {
                             long startTimeMs = grid.getTimeWithinTrack(startBeat);
                             long endTimeMs = grid.getTimeWithinTrack(endBeat);
-                            
+
                             // Calculate energy
                             WaveformPreview wave = waveformFinder.getLatestPreviewFor(playerNum);
                             double energy = 0.0;
@@ -1065,7 +1000,7 @@ public class DeviceManager {
                                     energy = Math.min(1.0, (sampleSum / sampleCount) / 127.0);
                                 }
                             }
-                            
+
                             Map<String, Object> currentSection = new HashMap<>();
                             currentSection.put("index", si + 1);
                             currentSection.put("startBeat", startBeat);
@@ -1076,7 +1011,7 @@ public class DeviceManager {
                             currentSection.put("type", "UNKNOWN");
                             currentSection.put("confidence", 0.5);
                             currentSection.put("reason", "calculated from beatgrid+waveform");
-                            
+
                             p.put("currentSection", currentSection);
                             break;
                         }
@@ -1085,7 +1020,7 @@ public class DeviceManager {
             } catch (Exception e) {
                 // ignore
             }
-            
+
             // AI Summary
             Map<String, Object> summary = new HashMap<>();
             boolean isPlaying = Boolean.TRUE.equals(p.get("playing"));
@@ -1093,7 +1028,7 @@ public class DeviceManager {
             boolean hasBeatGrid = Boolean.TRUE.equals(analysis.get("beatGridFound"));
             boolean hasWaveform = Boolean.TRUE.equals(analysis.get("previewWaveformFound"));
             boolean hasSection = p.containsKey("currentSection");
-            
+
             if (!isPlaying) {
                 summary.put("readiness", "IDLE");
             } else if (hasBpm && hasBeatGrid && hasWaveform && hasSection) {
@@ -1103,7 +1038,7 @@ public class DeviceManager {
             } else {
                 summary.put("readiness", "INSUFFICIENT");
             }
-            
+
             // Energy level
             Map<String, Object> currentSection = (Map<String, Object>) p.get("currentSection");
             if (currentSection != null) {
@@ -1125,34 +1060,34 @@ public class DeviceManager {
                 summary.put("energyLevel", "UNKNOWN");
                 summary.put("sectionType", "UNKNOWN");
             }
-            
+
             summary.put("hasHotCues", hasHotCues);
             p.put("summary", summary);
-            
+
             playerList.add(p);
         }
-        
+
         // Sort by player number
         playerList.sort((a, b) -> ((Integer)a.get("number")).compareTo((Integer)b.get("number")));
-        
+
         result.put("players", playerList);
         result.put("online", playerList.size());
-        result.put("master", masterPlayer.get());  // 真实 master（来自 Beat Link）
-        result.put("effectiveSource", currentMaster != null ? currentMaster : activeBeatSource.get());  // 实际可用源
+        result.put("master", masterPlayer.get());  // 真实 master
+        result.put("effectiveSource", getEffectiveSource());  // 实际使用源
         result.put("activeBeatSource", activeBeatSource.get());
         result.put("updatedAt", now);
         result.put("ruleVersion", "sections-mvp-v2");
-        
+
         return result;
     }
-    
+
     /**
      * Unified player state - neutral endpoint for AI/rule/trigger systems
      */
     public Map<String, Object> getPlayersState() {
         // 复用 getAiPlayers，它已经统一了 master/effectiveSource/activeBeatSource 逻辑
         Map<String, Object> result = getAiPlayers();
-        
+
         // Transform summary to decision and add trigger-friendly fields
         List<Map<String, Object>> players = (List<Map<String, Object>>) result.get("players");
 
@@ -1164,20 +1099,20 @@ public class DeviceManager {
             result = getAiPlayers();
             players = (List<Map<String, Object>>) result.get("players");
         }
-        
+
         for (Map<String, Object> p : players) {
             Integer playerNum = (Integer) p.get("number");
-            
+
             // Add trigger-friendly fields
             if (!p.containsKey("active")) p.put("active", true);
             p.put("triggerKey", "player-" + playerNum);
-            
+
             // master 字段已在 getAiPlayers 中正确设置（基于真实 master），无需重复设置
-            
+
             // Transform summary to decision
             Map<String, Object> summary = (Map<String, Object>) p.get("summary");
             Map<String, Object> decision = new HashMap<>();
-            
+
             if (summary != null) {
                 decision.put("energyLevel", summary.get("energyLevel"));
                 decision.put("sectionType", summary.get("sectionType"));
@@ -1185,7 +1120,7 @@ public class DeviceManager {
                 decision.put("ready", "READY".equals(summary.get("readiness")));
                 decision.put("mode", summary.get("readiness"));
             }
-            
+
             p.put("decision", decision);
             p.put("canTrigger", decision.get("ready"));
             p.remove("summary");
@@ -1195,7 +1130,7 @@ public class DeviceManager {
         result.put("metadataWarmupCacheSize", metadataWarmup.size());
         result.put("metadataLastLookup", metadataLastLookup);
         result.put("metadataLastLookupTs", metadataLastLookupTs);
-        
+
         return result;
     }
 
@@ -1245,7 +1180,7 @@ public class DeviceManager {
         }
         return null;
     }
-    
+
     /**
      * Get trigger events based on state changes
      */
@@ -1253,21 +1188,21 @@ public class DeviceManager {
         Map<String, Object> state = getPlayersState();
         List<Map<String, Object>> players = (List<Map<String, Object>>) state.get("players");
         String master = (String) state.get("master");
-        
+
         TriggerEngine engine = TriggerEngine.getInstance();
         List<Map<String, Object>> events = engine.processStates(players, master);
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("engineVersion", "trigger-mvp-v2");
         result.put("updatedAt", System.currentTimeMillis() / 1000);
         result.put("eventCount", events.size());
         result.put("events", events);
-        
+
         return result;
     }
 
 
-    
+
     /**
      * Get inferred sections based on beat grid and waveform analysis
      * This is a heuristic-based approach since native phrase data is not available
@@ -1275,17 +1210,17 @@ public class DeviceManager {
     public Map<String, Object> getSections() {
         Map<String, Object> result = new HashMap<>();
         List<Map<String, Object>> sectionList = new ArrayList<>();
-        
+
         System.out.println("🔍 Inferring sections for online players...");
-        
+
         for (Map.Entry<Integer, PlayerState> entry : players.entrySet()) {
             Integer playerNum = entry.getKey();
             if (playerNum == 4) continue; // Skip VirtualCdj
-            
+
             PlayerState ps = entry.getValue();
             Map<String, Object> s = new HashMap<>();
             s.put("number", playerNum);
-            
+
             try {
                 // Get beat grid
                 BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
@@ -1303,43 +1238,43 @@ public class DeviceManager {
                 } catch (Exception e) {
                     // ignore cue errors
                 }
-                
+
                 // Get current playing position
                 int currentBeat = -1;
                 if (ps.status != null) {
                     currentBeat = ps.status.getBeatNumber();
                 }
-                
+
                 if (grid != null) {
                     System.out.println("✅ Player " + playerNum + " inferring sections from beat grid (" + grid.beatCount + " beats)");
                     String inferenceMethod = (cueTimes.size() > 0) ? "beatgrid+waveform+cues" : "beatgrid+waveform";
                     s.put("sectionsFound", true);
                     s.put("inference", inferenceMethod);
                     s.put("ruleVersion", "sections-mvp-v2");
-                    
+
                     // Section size: 32 beats per section (standard for 8-bar blocks)
                     int sectionSize = 32;
                     int sectionCount = (int) Math.ceil((double) grid.beatCount / sectionSize);
-                    
+
                     // First find the actual starting beat (grid may not start at beat 1)
                     int firstBeat = 1;
                     long firstBeatTime = grid.getTimeWithinTrack(firstBeat);
-                    
+
                     List<Map<String, Object>> sections = new ArrayList<>();
                     double prevEnergy = -1;
                     int currentSectionIdx = -1;
-                    
+
                     for (int si = 0; si < sectionCount; si++) {
                         int startBeat = si * sectionSize + firstBeat;
                         int endBeat = Math.min((si + 1) * sectionSize, grid.beatCount);
-                        
+
                         // Apply cue-based boundary correction if nearby
                         // If cue is within ±8 beats of boundary, snap to cue
                         for (Long cueTime : cueTimes) {
                             long cueBeatMs = cueTime;
                             long startBeatMs = grid.getTimeWithinTrack(startBeat);
                             long endBeatMs = grid.getTimeWithinTrack(endBeat);
-                            
+
                             // Check if cue is near start boundary
                             if (Math.abs(cueBeatMs - startBeatMs) < 2000) { // within 2 seconds
                                 startBeatMs = cueBeatMs;
@@ -1349,11 +1284,11 @@ public class DeviceManager {
                                 endBeatMs = cueBeatMs;
                             }
                         }
-                        
+
                         // Calculate time boundaries
                         long startTimeMs = grid.getTimeWithinTrack(startBeat);
                         long endTimeMs = grid.getTimeWithinTrack(endBeat);
-                        
+
                         // Calculate energy from waveform
                         double energy = 0.0;
                         if (wave != null) {
@@ -1369,24 +1304,24 @@ public class DeviceManager {
                                 energy = Math.min(1.0, (sampleSum / sampleCount) / 127.0);
                             }
                         }
-                        
+
                         // Calculate energy delta (current - previous, positive = rising)
                         Double energyDelta = null;
                         if (prevEnergy >= 0) {
                             energyDelta = Math.round((energy - prevEnergy) * 100.0) / 100.0;
                         }
-                        
+
                         // Determine section type based on energy and trends - MUST match reason
                         String type;
                         String reason;
                         double confidence = 0.5;
-                        
+
                         // Priority 1: First section
                         if (si == 0) {
                             type = "INTRO";
                             reason = "first section";
                             confidence = 0.9;
-                        } 
+                        }
                         // Priority 2: Last section
                         else if (si == sectionCount - 1) {
                             type = "OUTRO";
@@ -1429,14 +1364,14 @@ public class DeviceManager {
                             reason = "insufficient evidence";
                             confidence = 0.3;
                         }
-                        
+
                         prevEnergy = energy;
-                        
+
                         // Check if this is the current section
                         if (currentBeat > 0 && currentBeat >= startBeat && currentBeat <= endBeat) {
                             currentSectionIdx = si;
                         }
-                        
+
                         Map<String, Object> section = new HashMap<>();
                         section.put("index", si + 1);
                         section.put("type", type);
@@ -1450,16 +1385,16 @@ public class DeviceManager {
                         section.put("reason", reason);
                         sections.add(section);
                     }
-                    
+
                     s.put("sections", sections);
-                    
+
                     // Current section based on playback position
                     if (currentSectionIdx >= 0) {
                         Map<String, Object> currentSection = sections.get(currentSectionIdx);
                         s.put("currentSection", currentSection);
                         s.put("currentBeat", currentBeat);
                     }
-                    
+
                 } else {
                     System.out.println("⚠️ Player " + playerNum + " no beat grid for section inference");
                     s.put("sectionsFound", false);
@@ -1470,14 +1405,14 @@ public class DeviceManager {
                 s.put("sectionsFound", false);
                 s.put("error", e.getMessage());
             }
-            
+
             sectionList.add(s);
         }
-        
+
         result.put("players", sectionList);
         return result;
     }
-    
+
     /**
      * Stop all components
      */
@@ -1508,7 +1443,7 @@ public class DeviceManager {
 
     public void stop() {
         running = false;
-        
+
         try {
             if (virtualCdj != null) virtualCdj.stop();
             if (deviceFinder != null) deviceFinder.stop();
@@ -1527,7 +1462,7 @@ public class DeviceManager {
         metadataWarmup.shutdown();
         System.out.println("=== DJ Link Service Stopped ===");
     }
-    
+
     /**
      * Player state container
      */
