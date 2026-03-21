@@ -35,6 +35,7 @@ public class DeviceManager {
     private WaveformFinder waveformFinder;
     private AnalysisTagFinder analysisTagFinder;
     private ArtFinder artFinder;
+    private TimeFinder timeFinder;  // BLT 方式：用于获取单个 player 最新状态
 
     // 轻量预热缓存层：用于提前拉取并缓存当前曲目 metadata，降低播放瞬间 miss。
     private final MetadataWarmupService metadataWarmup = new MetadataWarmupService();
@@ -58,51 +59,98 @@ public class DeviceManager {
      *
      * @return 真实 master player 编号，如果没有则返回 null
      * 
-     * 优先级：
-     * 1. VirtualCdj.getTempoMaster() - 直接获取当前 master
-     * 2. getLatestStatus() + isTempoMaster() - 遍历校验
-     * 3. MasterListener 事件 - 辅助参考
+     * 优先级（与 BLT 一致）：
+     * 1. TimeFinder.getLatestUpdateFor(playerNum) + isTempoMaster() - 逐个检查
+     * 2. VirtualCdj.getTempoMaster() - 辅助
+     * 3. MasterListener 事件 - 辅助
      * 4. 以上都没有 → 返回 null
      */
     public String resolveRealMaster() {
-        // 1. 第一优先：VirtualCdj.getTempoMaster()
+        String debugInfo = "[resolveRealMaster] ";
+        
+        // 1. 第一优先：TimeFinder.getLatestUpdateFor(playerNum) + isTempoMaster()（与 BLT 一致）
         try {
-            DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
-            if (tempoMaster != null) {
-                System.out.println("[resolveRealMaster] getTempoMaster: device #" + tempoMaster.getDeviceNumber());
-                return String.valueOf(tempoMaster.getDeviceNumber());
-            }
-        } catch (Exception e) {
-            System.out.println("[resolveRealMaster] getTempoMaster Exception: " + e.getMessage());
-        }
-
-        // 2. 第二优先：getLatestStatus() + isTempoMaster()
-        try {
-            Set<DeviceUpdate> latestStatus = virtualCdj.getLatestStatus();
-            System.out.println("[resolveRealMaster] getLatestStatus count=" + latestStatus.size());
-            for (DeviceUpdate update : latestStatus) {
-                if (update instanceof CdjStatus) {
-                    CdjStatus status = (CdjStatus) update;
-                    System.out.println("[resolveRealMaster] Device #" + status.getDeviceNumber() + " isTempoMaster=" + status.isTempoMaster());
-                    if (status.isTempoMaster()) {
-                        return String.valueOf(status.getDeviceNumber());
+            if (timeFinder != null && timeFinder.isRunning()) {
+                // 遍历 player 1-4，逐个检查
+                for (int playerNum = 1; playerNum <= 4; playerNum++) {
+                    DeviceUpdate update = timeFinder.getLatestUpdateFor(playerNum);
+                    if (update instanceof CdjStatus) {
+                        CdjStatus status = (CdjStatus) update;
+                        boolean isMaster = status.isTempoMaster();
+                        System.err.println(debugInfo + "TimeFinder Player #" + playerNum + " isTempoMaster=" + isMaster);
+                        if (isMaster) {
+                            String result = String.valueOf(playerNum);
+                            System.err.println(debugInfo + "TimeFinder found master: " + result);
+                            return result;
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            System.out.println("[resolveRealMaster] getLatestStatus Exception: " + e.getMessage());
+            System.err.println(debugInfo + "TimeFinder Exception: " + e.getMessage());
+        }
+
+        // 2. 第二优先：VirtualCdj.getTempoMaster()（辅助）
+        try {
+            DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
+            if (tempoMaster != null) {
+                String result = String.valueOf(tempoMaster.getDeviceNumber());
+                System.err.println(debugInfo + "getTempoMaster -> " + result);
+                return result;
+            }
+        } catch (Exception e) {
+            System.err.println(debugInfo + "getTempoMaster Exception: " + e.getMessage());
         }
 
         // 3. 第三优先：MasterListener 事件（辅助参考）
         String listenerMaster = masterPlayer.get();
         if (listenerMaster != null) {
-            System.out.println("[resolveRealMaster] MasterListener: device #" + listenerMaster);
+            System.err.println(debugInfo + "MasterListener -> " + listenerMaster);
             return listenerMaster;
         }
 
         // 4. 以上都没有 → 返回 null
-        System.out.println("[resolveRealMaster] No master found, returning null");
+        System.err.println(debugInfo + "No master found, returning null");
         return null;
+    }
+    
+    /**
+     * Debug: 返回 master 检测详情
+     */
+    public Map<String, Object> getMasterDebugInfo() {
+        Map<String, Object> info = new HashMap<>();
+        
+        // getTempoMaster
+        try {
+            DeviceUpdate tempoMaster = virtualCdj.getTempoMaster();
+            info.put("getTempoMaster", tempoMaster != null ? tempoMaster.getDeviceNumber() : null);
+        } catch (Exception e) {
+            info.put("getTempoMaster", "error: " + e.getMessage());
+        }
+        
+        // getLatestStatus
+        try {
+            Map<Integer, Boolean> statusMap = new HashMap<>();
+            Set<DeviceUpdate> latestStatus = virtualCdj.getLatestStatus();
+            info.put("getLatestStatusCount", latestStatus.size());
+            for (DeviceUpdate update : latestStatus) {
+                if (update instanceof CdjStatus) {
+                    CdjStatus status = (CdjStatus) update;
+                    statusMap.put(status.getDeviceNumber(), status.isTempoMaster());
+                }
+            }
+            info.put("getLatestStatusDetails", statusMap);
+        } catch (Exception e) {
+            info.put("getLatestStatus", "error: " + e.getMessage());
+        }
+        
+        // MasterListener
+        info.put("masterListener", masterPlayer.get());
+        
+        // 最终结果
+        info.put("resolveRealMasterResult", resolveRealMaster());
+        
+        return info;
     }
 
     /**
@@ -186,6 +234,11 @@ public class DeviceManager {
         artFinder.setRequestHighResolutionArt(false);
         artFinder.start();
         System.out.println("ArtFinder started, isRunning=" + artFinder.isRunning());
+
+        // Start TimeFinder (BLT 方式：用于获取单个 player 最新状态)
+        timeFinder = TimeFinder.getInstance();
+        timeFinder.start();
+        System.out.println("TimeFinder started, isRunning=" + timeFinder.isRunning());
 
         // Add listeners only once (singletons keep listeners)
         if (!listenersAdded) {
