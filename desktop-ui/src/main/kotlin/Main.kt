@@ -274,7 +274,6 @@ private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifi
 
 @Composable
 private fun LiveChannelRow(p: DashboardPlayer) {
-    var showDebug by remember(p.number) { mutableStateOf(false) }
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
         "PAUSED" -> C_PAUSE
@@ -363,20 +362,7 @@ private fun LiveChannelRow(p: DashboardPlayer) {
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { showDebug = !showDebug }) {
-                Text(if (showDebug) UiText.HIDE else UiText.DEBUG, color = C_MUTED)
-            }
-            if (showDebug) {
-                Text(
-                    "timeSource=${p.timeSource} | ${p.rawStateSummary}",
-                    color = C_MUTED,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
+        // 调试按钮移除（按当前需求）
     }
 }
 
@@ -448,25 +434,64 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, modifier: Modifier = M
         "OFFLINE" -> C_OFFLINE
         else -> C_STOP
     }
+    val bpmTxt = p?.rawBpm?.let { "%.1f".format(it) } ?: "-"
+    val pitchTxt = p?.pitch?.let { "%+.2f".format(it) } ?: "-"
 
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .background(Color(0xFF111722))
-            .border(1.dp, C_BORDER)
-            .padding(5.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+            .background(Color(0xFF10141B))
+            .border(1.dp, Color(0xFF343B47))
+            .padding(4.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("P$index", color = C_TEXT, fontWeight = FontWeight.Bold)
+            Box(Modifier.background(Color(0xFF1A202A)).border(1.dp, C_BORDER).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                Text("PLAYER $index", color = C_TEXT, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
             Box(Modifier.background(stColor).padding(horizontal = 5.dp, vertical = 1.dp)) {
                 Text(st, color = Color.Black, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             }
+            Spacer(Modifier.weight(1f))
+            Text(fmtTime(p?.currentTimeMs ?: 0), color = C_TEXT, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         }
-        Text(p?.title ?: "-", color = C_MUTED, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(fmtTime(p?.currentTimeMs ?: 0), color = C_TEXT, style = MaterialTheme.typography.labelSmall)
-            Text(p?.rawBpm?.let { "%.1f".format(it) } ?: "-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            Box(Modifier.weight(1f).background(Color(0xFF171D27)).border(1.dp, C_BORDER).padding(horizontal = 4.dp, vertical = 2.dp)) {
+                Text(p?.title ?: "-", color = C_MUTED, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+            }
+            Box(Modifier.background(Color(0xFF171D27)).border(1.dp, C_BORDER).padding(horizontal = 4.dp, vertical = 2.dp)) {
+                Text("BPM $bpmTxt", color = C_TEXT, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        // 仿CDJ mini波形槽（占位）
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(16.dp)
+                .background(Color(0xFF0B1016))
+                .border(1.dp, Color(0xFF2A3340))
+        ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                repeat(24) { i ->
+                    val h = if (i % 5 == 0) 13 else if (i % 3 == 0) 10 else 7
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 1.dp)
+                            .align(Alignment.Bottom)
+                            .height(h.dp)
+                            .background(if (i % 6 == 0) Color(0xFF77A7FF) else Color(0xFF4C78B9))
+                    )
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("TEMPO $pitchTxt", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.weight(1f))
+            Text("MASTER ${if (p?.master == true) "ON" else "OFF"}", color = if (p?.master == true) C_PLAY else C_MUTED, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
