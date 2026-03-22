@@ -28,8 +28,23 @@ import kotlin.math.max
 private val httpClient: HttpClient = HttpClient.newBuilder().build()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
+private object UiText {
+    const val APP_TITLE = "DJ Link Stage - CDJ Dashboard"
+    const val DASHBOARD_TITLE = "CDJ Dashboard Monitor"
+    const val REFRESH = "刷新"
+    const val MASTER = "Master Player"
+    const val MASTER_BPM = "Master BPM"
+    const val DJ_LINK = "DJ Link"
+    const val SCAN = "Scan"
+    const val LAST_UPDATE = "Last Update"
+    const val FAIL_COUNT = "连续失败"
+    const val INTERRUPTED = "数据中断"
+    const val NO_DEVICE = "无设备"
+    const val CONNECTED = "已连接"
+}
+
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "DJ Link Stage - CDJ Dashboard") {
+    Window(onCloseRequest = ::exitApplication, title = UiText.APP_TITLE) {
         MaterialTheme {
             CDJDashboardApp()
         }
@@ -99,10 +114,10 @@ private fun TopStatusBar(
     onRefreshChange: (Int) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("CDJ Dashboard V1.2", fontWeight = FontWeight.Bold)
-                Text("刷新:")
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(UiText.DASHBOARD_TITLE, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text("${UiText.REFRESH}:")
                 listOf(200, 300, 500).forEach { ms ->
                     FilterChip(
                         selected = refreshMs == ms,
@@ -112,17 +127,15 @@ private fun TopStatusBar(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
             val updateText = if (state.updatedAtMs > 0) {
                 timeFmt.format(Instant.ofEpochMilli(state.updatedAtMs).atZone(ZoneId.systemDefault()))
             } else "-"
 
             val linkStateText = when {
-                state.error != null -> "数据中断"
-                state.stale -> "数据中断"
-                state.players.any { it.online } -> "已连接"
-                else -> "无设备"
+                state.error != null -> UiText.INTERRUPTED
+                state.stale -> UiText.INTERRUPTED
+                state.players.any { it.online } -> UiText.CONNECTED
+                else -> UiText.NO_DEVICE
             }
 
             val linkStateColor = when {
@@ -131,25 +144,23 @@ private fun TopStatusBar(
                 else -> Color(0xFFEF6C00)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                StatusPill("Master", state.masterPlayer?.toString() ?: "-")
-                StatusPill("Master BPM", state.masterBpm?.let { "%.2f".format(it) } ?: "-")
-                StatusPill("DJ Link", linkStateText, valueColor = linkStateColor)
-                StatusPill("Scan", when (state.scanEnabled) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                StatusPill(UiText.MASTER, state.masterPlayer?.toString() ?: "-")
+                StatusPill(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-")
+                StatusPill(UiText.DJ_LINK, linkStateText, valueColor = linkStateColor)
+                StatusPill(UiText.SCAN, when (state.scanEnabled) {
                     true -> "ON"
                     false -> "OFF"
                     null -> "UNKNOWN"
                 })
-                StatusPill("Last Update", updateText)
-                StatusPill("连续失败", state.consecutiveFailures.toString(), if (state.consecutiveFailures > 0) Color(0xFFD32F2F) else Color(0xFF2E7D32))
+                StatusPill(UiText.LAST_UPDATE, updateText)
+                StatusPill(UiText.FAIL_COUNT, state.consecutiveFailures.toString(), if (state.consecutiveFailures > 0) Color(0xFFD32F2F) else Color(0xFF2E7D32))
             }
 
             if (state.error != null) {
-                Spacer(Modifier.height(6.dp))
-                Text("错误: ${state.error}", color = Color(0xFFD32F2F))
+                Text("错误: ${state.error}", color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
             } else if (state.stale) {
-                Spacer(Modifier.height(6.dp))
-                Text("⚠ 数据超过 2 秒未刷新，可能断连", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
+                Text("⚠ 数据超过 2 秒未刷新，可能断连", color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -157,14 +168,14 @@ private fun TopStatusBar(
 
 @Composable
 private fun StatusPill(label: String, value: String, valueColor: Color = Color(0xFF0D47A1)) {
-    Row(
+    Column(
         modifier = Modifier
             .border(1.dp, Color(0xFFCFD8DC), shape = MaterialTheme.shapes.small)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .widthIn(min = 98.dp)
     ) {
-        Text("$label:", color = Color(0xFF546E7A))
-        Text(value, color = valueColor, fontWeight = FontWeight.Bold)
+        Text(label, color = Color(0xFF607D8B), style = MaterialTheme.typography.labelSmall)
+        Text(value, color = valueColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -207,34 +218,44 @@ private fun PlayerCard(p: DashboardPlayer) {
         "STOPPED", "STOP", "OFFLINE" -> Color(0xFF607D8B)
         else -> Color(0xFF455A64)
     }
+    var showDebug by remember(p.number) { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("PLAYER ${p.number}", fontWeight = FontWeight.Bold)
+                Text("PLAYER ${p.number}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 Chip(p.online, if (p.online) "ONLINE" else "OFFLINE")
                 Chip(p.onAir, "ON-AIR")
                 Chip(p.master, "MASTER")
                 Box(modifier = Modifier.background(stateColor, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp)) {
                     Text(p.stateText, color = Color.White, fontWeight = FontWeight.Bold)
                 }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showDebug = !showDebug }) {
+                    Text(if (showDebug) "隐藏调试" else "调试")
+                }
             }
 
-            Spacer(Modifier.height(8.dp))
-            Text("${p.title.ifBlank { "-" }}", fontWeight = FontWeight.SemiBold)
-            Text("Artist: ${p.artist.ifBlank { "-" }}", color = Color(0xFF546E7A))
-
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Current: ${fmtTime(p.currentTimeMs)}")
-                Text("Remain: ${fmtTime(max(0L, p.remainTimeMs))}")
-                Text("Raw BPM: ${p.rawBpm?.let { "%.2f".format(it) } ?: "-"}")
-                Text("Pitch: ${p.pitch?.let { "%+.2f%%".format(it) } ?: "-"}")
-                Text("Effective BPM: ${p.effectiveBpm?.let { "%.2f".format(it) } ?: "-"}", fontWeight = FontWeight.Bold)
+            Column {
+                Text(p.title.ifBlank { "-" }, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                Text(p.artist.ifBlank { "-" }, color = Color(0xFF546E7A), style = MaterialTheme.typography.bodySmall)
             }
 
-            Spacer(Modifier.height(6.dp))
-            Text("timeSource: ${p.timeSource} | raw: ${p.rawStateSummary}", color = Color(0xFF78909C))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricBlock("Current", fmtTime(p.currentTimeMs), modifier = Modifier.weight(1f))
+                MetricBlock("Remain", fmtTime(max(0L, p.remainTimeMs)), modifier = Modifier.weight(1f))
+                MetricBlock("BPM", p.rawBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f))
+                MetricBlock("Pitch", p.pitch?.let { "%+.2f%%".format(it) } ?: "-", modifier = Modifier.weight(1f))
+                MetricBlock("Effective", p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), emphasize = true)
+            }
+
+            if (showDebug) {
+                Text(
+                    "timeSource=${p.timeSource} | ${p.rawStateSummary}",
+                    color = Color(0xFF78909C),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 }
@@ -243,7 +264,24 @@ private fun PlayerCard(p: DashboardPlayer) {
 private fun Chip(active: Boolean, label: String) {
     val color = if (active) Color(0xFF2E7D32) else Color(0xFFB0BEC5)
     Box(modifier = Modifier.background(color, MaterialTheme.shapes.small).padding(horizontal = 7.dp, vertical = 2.dp)) {
-        Text(label, color = Color.White)
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun MetricBlock(label: String, value: String, modifier: Modifier = Modifier, emphasize: Boolean = false) {
+    Column(
+        modifier = modifier
+            .border(1.dp, Color(0xFFCFD8DC), shape = MaterialTheme.shapes.small)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF607D8B))
+        Text(
+            value,
+            style = if (emphasize) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+            color = if (emphasize) Color(0xFF0D47A1) else Color.Unspecified,
+            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }
 

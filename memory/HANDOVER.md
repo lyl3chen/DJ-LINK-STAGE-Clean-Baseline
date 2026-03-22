@@ -55,6 +55,11 @@ curl -s http://127.0.0.1:8080/api/sync/state | jq '.drivers'
 4. 明确未覆盖字段清单（如某些设备不回 artist/title 时的显示策略）
 5. V1.2 已加入最小调试信息：raw 状态摘要、timeSource、连续失败计数
 6. CUED 真值验证已接入：后端透传 isCued/isPaused/isTrackLoaded/isAtEnd/playState1~3/isPlaying 到 /api/players/state.debugState，desktop-ui 优先用真值字段判定 CUED
+7. desktop-ui 监看界面优化版已完成：
+   - 顶部全局状态栏信息层级优化（Master/Master BPM/Scan/Last Update/失败计数）
+   - Player 卡片结构化展示（状态标签、曲目信息、时间/BPM指标块）
+   - 调试信息收纳为可展开区域，默认不干扰主监看
+   - UI 文案开始抽离到 UiText 常量对象，便于后续国际化
 
 
 ### 2.1 LTC 停止态抖动修复（优先级 1）
