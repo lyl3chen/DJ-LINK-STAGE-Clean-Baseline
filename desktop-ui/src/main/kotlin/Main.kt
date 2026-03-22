@@ -1,7 +1,6 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -9,7 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -17,6 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.foundation.Image
@@ -259,30 +258,35 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifier) {
     val byNumber = players.associateBy { it.number }
-    val fixed = (1..4).map { idx ->
-        byNumber[idx] ?: DashboardPlayer(
-            number = idx,
-            online = false,
-            stateText = "OFFLINE",
-            rawStateSummary = "active=false",
-            onAir = false,
-            master = false,
-            title = "-",
-            artist = "-",
-            artworkUrl = null,
-            artworkAvailable = false,
-            currentTimeMs = 0,
-            durationMs = 0,
-            remainTimeMs = 0,
-            timeSource = "-",
-            rawBpm = null,
-            pitch = null,
-            effectiveBpm = null
-        )
-    }
+
+    fun placeholder(idx: Int) = DashboardPlayer(
+        number = idx,
+        online = false,
+        stateText = "OFFLINE",
+        rawStateSummary = "active=false",
+        onAir = false,
+        master = false,
+        title = "-",
+        artist = "-",
+        artworkUrl = null,
+        artworkAvailable = false,
+        currentTimeMs = 0,
+        durationMs = 0,
+        remainTimeMs = 0,
+        timeSource = "-",
+        rawBpm = null,
+        pitch = null,
+        effectiveBpm = null
+    )
+
+    val display = mutableListOf<DashboardPlayer>()
+    display += (byNumber[1] ?: placeholder(1))
+    display += (byNumber[2] ?: placeholder(2))
+    if (byNumber[3]?.online == true) display += byNumber[3]!!
+    if (byNumber[4]?.online == true) display += byNumber[4]!!
 
     LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(fixed) { p ->
+        items(display) { p ->
             LiveChannelRow(p)
         }
     }
@@ -353,16 +357,16 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                             }
                         }
                     }
-
-                    // 圆形封面位（真实artwork优先）
-                    ArtworkCircle(
-                        artworkUrl = p.artworkUrl,
-                        sizeDp = 34
-                    )
                 }
             }
 
-            // CENTER: 大号数码时间 + BPM/Pitch 次级
+            // Artwork: 等高正方形封面容器
+            ArtworkSquare(
+                artworkUrl = p.artworkUrl,
+                sizeDp = 98
+            )
+
+            // CENTER: 大号电子段码时间 + BPM/Pitch 次级
             Column(
                 modifier = Modifier
                     .weight(0.33f)
@@ -372,12 +376,9 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                     .padding(6.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    fmtTimeDigital(p.currentTimeMs),
-                    color = if (p.stateText.uppercase() == "PLAYING") C_PLAY else C_CUED,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.headlineLarge
+                DigitalTimeReadout(
+                    time = fmtTimeDigital(p.currentTimeMs),
+                    color = if (p.stateText.uppercase() == "PLAYING") C_PLAY else C_CUED
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     SmallMetric(UiText.REMAIN, fmtTimeDigital(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
@@ -465,7 +466,28 @@ private fun SmallMetric(label: String, value: String, modifier: Modifier, emphas
 }
 
 @Composable
-private fun ArtworkCircle(artworkUrl: String?, sizeDp: Int) {
+private fun DigitalTimeReadout(time: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .background(Color(0xFF0B1118))
+            .border(1.dp, Color(0xFF2E3A48)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            time,
+            color = color,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.headlineLarge,
+            letterSpacing = 1.2.sp
+        )
+    }
+}
+
+@Composable
+private fun ArtworkSquare(artworkUrl: String?, sizeDp: Int) {
     var bitmap by remember(artworkUrl) { mutableStateOf<ImageBitmap?>(null) }
 
     LaunchedEffect(artworkUrl) {
@@ -482,20 +504,19 @@ private fun ArtworkCircle(artworkUrl: String?, sizeDp: Int) {
     Box(
         modifier = Modifier
             .size(sizeDp.dp)
-            .clip(CircleShape)
             .background(Color(0xFF0B1016))
-            .border(1.dp, Color(0xFF3A4656), CircleShape),
+            .border(1.dp, Color(0xFF3A4656)),
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap!!,
                 contentDescription = "artwork",
-                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
         } else {
-            Text("♪", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+            Text("ART", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
