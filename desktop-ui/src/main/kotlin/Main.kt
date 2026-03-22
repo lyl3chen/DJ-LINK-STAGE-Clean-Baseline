@@ -315,7 +315,7 @@ private fun LiveChannelRow(p: DashboardPlayer) {
             // LEFT: 状态条 + 曲目信息 + 波形 + 封面位（showkontrol风格）
             Column(
                 modifier = Modifier
-                    .weight(0.52f)
+                    .weight(0.45f)
                     .height(98.dp)
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
@@ -331,45 +331,39 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                 Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, style = MaterialTheme.typography.labelSmall, maxLines = 1)
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(34.dp)
+                        .background(Color(0xFF0C1117))
+                        .border(1.dp, Color(0xFF25303C)),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(34.dp)
-                            .background(Color(0xFF0C1117))
-                            .border(1.dp, Color(0xFF25303C)),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            repeat(36) { i ->
-                                val h = if (i % 7 == 0) 20 else if (i % 4 == 0) 14 else 8
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 0.6.dp)
-                                        .height(h.dp)
-                                        .background(if (i % 8 == 0) Color(0xFF6E86FF) else Color(0xFF4A5FA8))
-                                )
-                            }
+                    Row(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        repeat(36) { i ->
+                            val h = if (i % 7 == 0) 20 else if (i % 4 == 0) 14 else 8
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 0.6.dp)
+                                    .height(h.dp)
+                                    .background(if (i % 8 == 0) Color(0xFF6E86FF) else Color(0xFF4A5FA8))
+                            )
                         }
                     }
-
-                    // 封面：与行高保持一致的正方形
-                    ArtworkSquare(
-                        artworkUrl = p.artworkUrl,
-                        sizeDp = 34
-                    )
                 }
             }
+
+            // Artwork: 改回原位并放大（可见性优先）
+            ArtworkSquare(
+                artworkUrl = p.artworkUrl,
+                sizeDp = 98
+            )
 
             // CENTER: 大号电子段码时间 + BPM/Pitch 次级
             Column(
                 modifier = Modifier
-                    .weight(0.33f)
+                    .weight(0.30f)
                     .height(98.dp)
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
@@ -467,22 +461,37 @@ private fun SmallMetric(label: String, value: String, modifier: Modifier, emphas
 
 @Composable
 private fun DigitalTimeReadout(time: String, color: Color) {
+    val parts = time.split(".")
+    val main = parts.getOrElse(0) { "00:00:00" }
+    val frac = parts.getOrElse(1) { "00" }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .background(Color(0xFF0B1118))
-            .border(1.dp, Color(0xFF2E3A48)),
+            .height(46.dp)
+            .background(Color(0xFF0A0F15))
+            .border(1.dp, Color(0xFF334050)),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            time,
-            color = color,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.displaySmall,
-            letterSpacing = 0.8.sp
-        )
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+            Text(
+                main,
+                color = color,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.displaySmall,
+                letterSpacing = 0.4.sp
+            )
+            Text(
+                ".${frac}",
+                color = Color(0xFFBFD3EA),
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.titleMedium,
+                letterSpacing = 0.2.sp,
+                modifier = Modifier.padding(start = 1.dp, bottom = 2.dp)
+            )
+        }
     }
 }
 
