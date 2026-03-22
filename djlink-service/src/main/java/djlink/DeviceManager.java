@@ -830,6 +830,15 @@ public class DeviceManager {
                 // 透传 CdjStatus 原始状态字段（用于 CUED 真值验证）
                 Map<String, Object> debugState = extractCdjDebugState(ps.status);
                 p.put("debugState", debugState);
+                // 同步平铺一份，避免前端路径误读导致字段丢失
+                p.put("isPlaying", debugState.get("isPlaying"));
+                p.put("isCued", debugState.get("isCued"));
+                p.put("isPaused", debugState.get("isPaused"));
+                p.put("isTrackLoaded", debugState.get("isTrackLoaded"));
+                p.put("isAtEnd", debugState.get("isAtEnd"));
+                p.put("playState1", debugState.get("playState1"));
+                p.put("playState2", debugState.get("playState2"));
+                p.put("playState3", debugState.get("playState3"));
 
                 // currentTimeMs: 优先使用 TimeFinder 真实传输时间，其次用 beat grid 推导
                 // 时间字段优先级（V1.1 校准版）：
@@ -1150,46 +1159,68 @@ public class DeviceManager {
      */
     private Map<String, Object> extractCdjDebugState(Object status) {
         Map<String, Object> d = new HashMap<>();
-        if (status == null) return d;
+        if (status == null) {
+            d.put("isPlaying", "N/A");
+            d.put("isCued", "N/A");
+            d.put("isPaused", "N/A");
+            d.put("isTrackLoaded", "N/A");
+            d.put("isAtEnd", "N/A");
+            d.put("playState1", "N/A");
+            d.put("playState2", "N/A");
+            d.put("playState3", "N/A");
+            return d;
+        }
 
-        d.put("isPlaying", invokeBool(status, "isPlaying"));
-        d.put("isCued", invokeBool(status, "isCued"));
-        d.put("isPaused", invokeBool(status, "isPaused"));
-        d.put("isTrackLoaded", invokeBool(status, "isTrackLoaded"));
-        d.put("isAtEnd", invokeBool(status, "isAtEnd"));
-        d.put("playState1", invokeObj(status, "getPlayState1"));
-        d.put("playState2", invokeObj(status, "getPlayState2"));
-        d.put("playState3", invokeObj(status, "getPlayState3"));
+        d.put("isPlaying", invokeBoolOrNA(status, "isPlaying"));
+        d.put("isCued", invokeBoolOrNA(status, "isCued"));
+        d.put("isPaused", invokeBoolOrNA(status, "isPaused"));
+        d.put("isTrackLoaded", invokeBoolOrNA(status, "isTrackLoaded"));
+        d.put("isAtEnd", invokeBoolOrNA(status, "isAtEnd"));
+        d.put("playState1", invokeObjOrNA(status, "getPlayState1"));
+        d.put("playState2", invokeObjOrNA(status, "getPlayState2"));
+        d.put("playState3", invokeObjOrNA(status, "getPlayState3"));
         return d;
     }
 
-    private Object invokeObj(Object obj, String methodName) {
+    private Object invokeObjOrNA(Object obj, String methodName) {
         try {
             Object v = obj.getClass().getMethod(methodName).invoke(obj);
-            return v == null ? null : String.valueOf(v);
+            return v == null ? "N/A" : String.valueOf(v);
         } catch (Exception e) {
-            return null;
+            return "N/A";
         }
     }
 
-    private Boolean invokeBool(Object obj, String methodName) {
+    private Object invokeBoolOrNA(Object obj, String methodName) {
         try {
             Object v = obj.getClass().getMethod(methodName).invoke(obj);
             if (v instanceof Boolean) return (Boolean) v;
-            return v == null ? null : Boolean.valueOf(String.valueOf(v));
+            return v == null ? "N/A" : Boolean.valueOf(String.valueOf(v));
         } catch (Exception e) {
-            return null;
+            return "N/A";
         }
+    }
+
+    private Boolean boolFrom(Map<String, Object> map, String key) {
+        if (map == null) return null;
+        Object v = map.get(key);
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof String) {
+            String s = ((String) v).trim();
+            if ("true".equalsIgnoreCase(s)) return true;
+            if ("false".equalsIgnoreCase(s)) return false;
+        }
+        return null;
     }
 
     private String resolvePlayerState(Map<String, Object> player, Map<String, Object> debugState, Map<String, Object> track) {
         boolean online = Boolean.TRUE.equals(player.get("active"));
         if (!online) return "OFFLINE";
 
-        Boolean isPlaying = debugState != null ? (Boolean) debugState.get("isPlaying") : null;
-        Boolean isCued = debugState != null ? (Boolean) debugState.get("isCued") : null;
-        Boolean isPaused = debugState != null ? (Boolean) debugState.get("isPaused") : null;
-        Boolean isTrackLoaded = debugState != null ? (Boolean) debugState.get("isTrackLoaded") : null;
+        Boolean isPlaying = boolFrom(debugState, "isPlaying");
+        Boolean isCued = boolFrom(debugState, "isCued");
+        Boolean isPaused = boolFrom(debugState, "isPaused");
+        Boolean isTrackLoaded = boolFrom(debugState, "isTrackLoaded");
 
         // 真值字段优先级：
         // 1. isPlaying

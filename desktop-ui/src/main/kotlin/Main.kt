@@ -370,9 +370,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
-                val dbgIsCued = dbg?.optBoolOrNull("isCued")
-                val dbgIsPaused = dbg?.optBoolOrNull("isPaused")
-                val dbgIsTrackLoaded = dbg?.optBoolOrNull("isTrackLoaded")
+                val dbgIsCued = dbg?.optBoolOrNull("isCued") ?: p.optBoolOrNull("isCued")
+                val dbgIsPaused = dbg?.optBoolOrNull("isPaused") ?: p.optBoolOrNull("isPaused")
+                val dbgIsTrackLoaded = dbg?.optBoolOrNull("isTrackLoaded") ?: p.optBoolOrNull("isTrackLoaded")
 
                 val stateText = when {
                     !online -> "OFFLINE"
@@ -391,10 +391,10 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     else -> "STOPPED"
                 }
 
-                val ps1 = dbg?.optString("playState1") ?: "-"
-                val ps2 = dbg?.optString("playState2") ?: "-"
-                val ps3 = dbg?.optString("playState3") ?: "-"
-                val rawSummary = "state=${explicitState ?: "-"},ps=[$ps1/$ps2/$ps3],isCued=$dbgIsCued,isPaused=$dbgIsPaused,isLoaded=$dbgIsTrackLoaded,playing=$playing,beat=$beat,time=$currentTimeMs"
+                val ps1 = friendly(dbg?.optString("playState1") ?: p.optString("playState1"))
+                val ps2 = friendly(dbg?.optString("playState2") ?: p.optString("playState2"))
+                val ps3 = friendly(dbg?.optString("playState3") ?: p.optString("playState3"))
+                val rawSummary = "state=${friendly(explicitState)},ps=[$ps1/$ps2/$ps3],isCued=${friendlyBool(dbgIsCued)},isPaused=${friendlyBool(dbgIsPaused)},isTrackLoaded=${friendlyBool(dbgIsTrackLoaded)},playing=${friendlyBool(playing)},beat=${friendlyNum(beat)},time=${friendlyNum(currentTimeMs)}"
 
                 players += DashboardPlayer(
                     number = number,
@@ -478,5 +478,26 @@ private fun JsonObject.optBool(key: String, default: Boolean): Boolean =
 private fun JsonObject.optDoubleOrNull(key: String): Double? =
     if (has(key) && !get(key).isJsonNull) runCatching { get(key).asDouble }.getOrNull() else null
 
-private fun JsonObject.optBoolOrNull(key: String): Boolean? =
-    if (has(key) && !get(key).isJsonNull) runCatching { get(key).asBoolean }.getOrNull() else null
+private fun JsonObject.optBoolOrNull(key: String): Boolean? {
+    if (!has(key) || get(key).isJsonNull) return null
+    val raw = get(key)
+    return runCatching { raw.asBoolean }.getOrElse {
+        val s = runCatching { raw.asString }.getOrNull()?.trim()?.lowercase()
+        when (s) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
+}
+
+private fun friendly(v: String?): String =
+    if (v.isNullOrBlank() || v.equals("null", true) || v.equals("n/a", true)) "-" else v
+
+private fun friendlyBool(v: Boolean?): String = v?.toString() ?: "-"
+
+private fun friendlyNum(v: Any?): String = when (v) {
+    null -> "-"
+    is Number -> v.toString()
+    else -> v.toString().takeIf { it.isNotBlank() } ?: "-"
+}
