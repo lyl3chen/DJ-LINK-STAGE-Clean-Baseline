@@ -294,20 +294,31 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
+                val dbg = p.optObj("debugState")
+                val dbgIsCued = dbg?.optBoolOrNull("isCued")
+                val dbgIsPaused = dbg?.optBoolOrNull("isPaused")
+                val dbgIsTrackLoaded = dbg?.optBoolOrNull("isTrackLoaded")
 
                 val stateText = when {
                     !online -> "OFFLINE"
+                    // CUED 真值优先：先吃 beat-link 原始字段
+                    dbgIsCued == true -> "CUED"
+                    playing -> "PLAYING"
+                    dbgIsPaused == true -> "PAUSED"
                     explicitState == "PLAYING" || explicitState == "PLAY" -> "PLAYING"
                     explicitState == "PAUSED" || explicitState == "PAUSE" -> "PAUSED"
                     explicitState == "STOPPED" || explicitState == "STOP" -> "STOPPED"
                     explicitState == "CUED" || explicitState == "CUE" -> "CUED"
-                    playing -> "PLAYING"
-                    hasTrack && currentTimeMs <= 120 && beat <= 0 -> "CUED"
-                    hasTrack && (currentTimeMs > 120 || beat > 0) -> "PAUSED"
+                    // 兜底推断：仅当真值字段不可用时使用
+                    (dbgIsTrackLoaded ?: hasTrack) && currentTimeMs <= 120 && beat <= 0 -> "CUED"
+                    (dbgIsTrackLoaded ?: hasTrack) && (currentTimeMs > 120 || beat > 0) -> "PAUSED"
                     else -> "STOPPED"
                 }
 
-                val rawSummary = "state=${explicitState ?: "-"},playing=$playing,beat=$beat,time=${currentTimeMs}"
+                val ps1 = dbg?.optString("playState1") ?: "-"
+                val ps2 = dbg?.optString("playState2") ?: "-"
+                val ps3 = dbg?.optString("playState3") ?: "-"
+                val rawSummary = "state=${explicitState ?: "-"},ps=[$ps1/$ps2/$ps3],isCued=$dbgIsCued,isPaused=$dbgIsPaused,isLoaded=$dbgIsTrackLoaded,playing=$playing,beat=$beat,time=$currentTimeMs"
 
                 players += DashboardPlayer(
                     number = number,
@@ -390,3 +401,6 @@ private fun JsonObject.optBool(key: String, default: Boolean): Boolean =
 
 private fun JsonObject.optDoubleOrNull(key: String): Double? =
     if (has(key) && !get(key).isJsonNull) runCatching { get(key).asDouble }.getOrNull() else null
+
+private fun JsonObject.optBoolOrNull(key: String): Boolean? =
+    if (has(key) && !get(key).isJsonNull) runCatching { get(key).asBoolean }.getOrNull() else null

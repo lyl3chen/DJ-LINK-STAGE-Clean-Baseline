@@ -827,6 +827,10 @@ public class DeviceManager {
                     p.put("pitch", null);
                 }
 
+                // 透传 CdjStatus 原始状态字段（用于 CUED 真值验证）
+                Map<String, Object> debugState = extractCdjDebugState(ps.status);
+                p.put("debugState", debugState);
+
                 // currentTimeMs: 优先使用 TimeFinder 真实传输时间，其次用 beat grid 推导
                 // 时间字段优先级（V1.1 校准版）：
                 // 1. TimeFinder.getTimeFor() - 真实传输时间（优先）
@@ -1139,6 +1143,40 @@ public class DeviceManager {
     /**
      * Unified player state - neutral endpoint for AI/rule/trigger systems
      */
+    private Map<String, Object> extractCdjDebugState(Object status) {
+        Map<String, Object> d = new HashMap<>();
+        if (status == null) return d;
+
+        d.put("isPlaying", invokeBool(status, "isPlaying"));
+        d.put("isCued", invokeBool(status, "isCued"));
+        d.put("isPaused", invokeBool(status, "isPaused"));
+        d.put("isTrackLoaded", invokeBool(status, "isTrackLoaded"));
+        d.put("isAtEnd", invokeBool(status, "isAtEnd"));
+        d.put("playState1", invokeObj(status, "getPlayState1"));
+        d.put("playState2", invokeObj(status, "getPlayState2"));
+        d.put("playState3", invokeObj(status, "getPlayState3"));
+        return d;
+    }
+
+    private Object invokeObj(Object obj, String methodName) {
+        try {
+            Object v = obj.getClass().getMethod(methodName).invoke(obj);
+            return v == null ? null : String.valueOf(v);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Boolean invokeBool(Object obj, String methodName) {
+        try {
+            Object v = obj.getClass().getMethod(methodName).invoke(obj);
+            if (v instanceof Boolean) return (Boolean) v;
+            return v == null ? null : Boolean.valueOf(String.valueOf(v));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public Map<String, Object> getPlayersState() {
         // 复用 getAiPlayers，它已经统一了 master/effectiveSource/activeBeatSource 逻辑
         Map<String, Object> result = getAiPlayers();
