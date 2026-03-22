@@ -124,13 +124,22 @@ data class DashboardState(
 @Composable
 private fun AppRoot() {
     val baseUrl = "http://127.0.0.1:8080"
-    var refreshMs by remember { mutableStateOf(300) }
+    var refreshMs by remember { mutableStateOf(500) }
     var state by remember { mutableStateOf(DashboardState()) }
+    var uiNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(refreshMs) {
         while (isActive) {
             state = fetchDashboardState(baseUrl, state)
             delay(refreshMs.toLong())
+        }
+    }
+
+    // 本地高频时钟：用于播放态时间线性推进（视觉平滑，不增加后端负载）
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            uiNowMs = System.currentTimeMillis()
+            delay(33)
         }
     }
 
@@ -143,8 +152,8 @@ private fun AppRoot() {
     ) {
         TopToolbar()
         TopStatusBar(state, refreshMs) { refreshMs = it }
-        LiveMain(state.players, modifier = Modifier.weight(1f))
-        MiniDeckOverview(state.players)
+        LiveMain(state.players, state.updatedAtMs, uiNowMs, modifier = Modifier.weight(1f))
+        MiniDeckOverview(state.players, state.updatedAtMs, uiNowMs)
     }
 }
 
@@ -256,7 +265,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 }
 
 @Composable
-private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifier) {
+private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
     val byNumber = players.associateBy { it.number }
 
     fun placeholder(idx: Int) = DashboardPlayer(
@@ -287,13 +296,13 @@ private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifi
 
     LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(display) { p ->
-            LiveChannelRow(p)
+            LiveChannelRow(p, sourceUpdatedAtMs, uiNowMs)
         }
     }
 }
 
 @Composable
-private fun LiveChannelRow(p: DashboardPlayer) {
+private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs: Long) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
         "PAUSED" -> C_PAUSE
@@ -302,6 +311,11 @@ private fun LiveChannelRow(p: DashboardPlayer) {
         "OFFLINE" -> C_OFFLINE
         else -> C_STOP
     }
+
+    val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
+    val elapsed = if (sourceUpdatedAtMs > 0) max(0L, uiNowMs - sourceUpdatedAtMs) else 0L
+    val displayedCurrentMs = if (isPlaying) p.currentTimeMs + elapsed else p.currentTimeMs
+    val displayedRemainMs = if (p.durationMs > 0) max(0L, p.durationMs - displayedCurrentMs) else p.remainTimeMs
 
     Column(
         modifier = Modifier
@@ -371,17 +385,17 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 DigitalTimeReadout(
-                    time = fmtTimeDigitalCs(p.currentTimeMs),
+                    time = fmtTimeDigitalCs(displayedCurrentMs),
                     color = if (p.stateText.uppercase() == "PLAYING") C_PLAY else C_CUED
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    SmallMetric(UiText.REMAIN, fmtTimeDigitalCs(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
+                    SmallMetric(UiText.REMAIN, fmtTimeDigitalCs(displayedRemainMs), Modifier.weight(1f), emphasize = true)
                     SmallMetric(UiText.BPM, p.rawBpm?.let { "%.1f".format(it) } ?: "-", Modifier.weight(1f))
                     SmallMetric(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", Modifier.weight(1f))
                 }
             }
 
-            // RIGHT: BPM + 状态按钮列（Deck位保留）
+            // RIGHT: 状态按钮列（按需求移除 ONLINE/BPM）
             Column(
                 modifier = Modifier
                     .weight(0.15f)
@@ -389,15 +403,8 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
                     .padding(5.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFF171F2A)).border(1.dp, C_BORDER).padding(vertical = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(p.effectiveBpm?.let { "%.1f".format(it) } ?: "-", color = C_TEXT, fontWeight = FontWeight.Bold)
-                }
-                RightStatusTag("ONLINE", p.online)
                 RightStatusTag("MASTER", p.master)
                 RightStatusTag("ON-AIR", p.onAir)
                 RightStatusTag(p.stateText.uppercase(), true, color = stateColor)
@@ -480,7 +487,8 @@ private fun DigitalTimeReadout(time: String, color: Color) {
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.displaySmall,
-                letterSpacing = 0.4.sp
+                letterSpacing = 0.4.sp,
+                modifier = Modifier.alignByBaseline()
             )
             Text(
                 ".${frac}",
@@ -489,7 +497,7 @@ private fun DigitalTimeReadout(time: String, color: Color) {
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.titleMedium,
                 letterSpacing = 0.2.sp,
-                modifier = Modifier.padding(start = 1.dp, bottom = 2.dp)
+                modifier = Modifier.alignByBaseline().padding(start = 1.dp)
             )
         }
     }
@@ -531,7 +539,7 @@ private fun ArtworkSquare(artworkUrl: String?, sizeDp: Int) {
 }
 
 @Composable
-private fun MiniDeckOverview(players: List<DashboardPlayer>) {
+private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long) {
     val byNumber = players.associateBy { it.number }
     Row(
         modifier = Modifier
@@ -544,13 +552,13 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>) {
     ) {
         (1..4).forEach { idx ->
             val p = byNumber[idx]
-            MiniDeckItem(idx, p, Modifier.weight(1f))
+            MiniDeckItem(idx, p, sourceUpdatedAtMs, uiNowMs, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun MiniDeckItem(index: Int, p: DashboardPlayer?, modifier: Modifier = Modifier) {
+private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
     val st = p?.stateText?.uppercase() ?: "OFFLINE"
     val stColor = when (st) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -561,6 +569,9 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, modifier: Modifier = M
     }
     val bpmTxt = p?.rawBpm?.let { "%.1f".format(it) } ?: "-"
     val pitchTxt = p?.pitch?.let { "%+.2f".format(it) } ?: "-"
+    val isPlaying = p?.stateText?.equals("PLAYING", true) == true || p?.stateText?.equals("PLAY", true) == true
+    val elapsed = if (sourceUpdatedAtMs > 0) max(0L, uiNowMs - sourceUpdatedAtMs) else 0L
+    val displayMs = if (p != null && isPlaying) p.currentTimeMs + elapsed else (p?.currentTimeMs ?: 0L)
 
     Column(
         modifier = modifier
@@ -578,7 +589,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, modifier: Modifier = M
                 Text(st, color = Color.Black, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.weight(1f))
-            Text(fmtTime(p?.currentTimeMs ?: 0), color = C_TEXT, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text(fmtTimeDigitalCs(displayMs), color = C_TEXT, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
