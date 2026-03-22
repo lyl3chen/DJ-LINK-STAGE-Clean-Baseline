@@ -1,10 +1,24 @@
 # DJ LINK STAGE - 当前项目主文档
 
-> 更新时间：2026-03-22  
-> 当前运行版本：11c7bd2  
+> 更新时间：2026-03-23  
+> 当前运行版本：0b635d6  
 > 项目根目录：~/agents/dev/workspace/dj-link-stage/
 
 ---
+
+## 2026-03-23 重要更新
+
+### 新增 desktop-ui 原生模块（Compose Desktop）
+- 新增 `desktop-ui/` 独立模块，作为商业原生桌面 UI 起点。
+- 完成 CDJ Dashboard V1 可运行版（实时监控优先，不做美化）：
+  - 固定展示 Player 1~4 卡片
+  - 实时显示：在线/离线、PLAY/PAUSE/STOP/CUED、On-Air、Master
+  - 每卡片字段：title、artist、current/remain、raw BPM、pitch、effective BPM
+  - 顶部全局栏：master player、master BPM、scan 状态、最近更新时间、数据中断提示
+  - 刷新间隔可切换：200/300/500ms（默认 300ms）
+- 复用真实接口：
+  - `/api/players/state`
+  - `/api/scan`
 
 ## 2026-03-22 重要更新
 

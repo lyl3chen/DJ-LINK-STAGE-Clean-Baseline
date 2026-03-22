@@ -1,7 +1,7 @@
 # 下一步开发建议与接力说明
 
 > 为新会话或新 agent 准备的接力说明  
-> 更新时间：2026-03-17
+> 更新时间：2026-03-23
 
 ---
 
@@ -32,6 +32,28 @@ curl -s http://127.0.0.1:8080/api/sync/state | jq '.drivers'
 ---
 
 ## 二、当前紧急任务
+
+### 2.0 原生桌面 UI 主线（当前优先）
+
+**当前阶段目标（已切换）**：
+先做 `CDJ Dashboard V1 可运行版`，优先实时 CDJ 状态，不做本地曲库/播放器相关桌面功能。
+
+**已完成**：
+- 新增 `desktop-ui/` Compose Desktop 模块
+- 启动可运行原生窗口
+- 接入实时 CDJ Dashboard V1：
+  - Player 1~4 卡片固定显示
+  - 在线/离线、PLAY/PAUSE/STOP/CUED、On-Air、Master
+  - title/artist/current/remain/raw BPM/pitch/effective BPM
+  - 顶部状态栏：master player、master BPM、scan 状态、最近更新时间、断连提示
+  - 刷新频率 200/300/500ms 可选（默认 300ms）
+
+**下一步（紧接）**：
+1. 用真实 CDJ 在线数据做现场验证（状态变化、BPM、时间推进）
+2. 校准 `CUED/PAUSE` 状态判定语义（按现场设备行为微调）
+3. 增加数据更新时间 watchdog 参数化（当前阈值 2s）
+4. 明确未覆盖字段清单（如某些设备不回 artist/title 时的显示策略）
+
 
 ### 2.1 LTC 停止态抖动修复（优先级 1）
 
