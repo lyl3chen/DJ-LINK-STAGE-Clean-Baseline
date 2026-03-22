@@ -1,6 +1,7 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -8,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -306,22 +308,25 @@ private fun LiveChannelRow(p: DashboardPlayer) {
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // LEFT
+            // LEFT: 状态条 + 曲目信息 + 波形 + 封面位（showkontrol风格）
             Column(
                 modifier = Modifier
-                    .weight(0.55f)
-                    .height(88.dp)
+                    .weight(0.52f)
+                    .height(98.dp)
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
-                    .padding(7.dp),
+                    .padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("${UiText.PLAYER} ${p.number}", color = C_TEXT, fontWeight = FontWeight.Bold)
                     StateTag(p.stateText.uppercase(), stateColor)
+                    TinyFlag("M", p.master)
+                    TinyFlag("A", p.onAir)
                 }
-                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -335,71 +340,68 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                             .border(1.dp, Color(0xFF25303C)),
                         contentAlignment = Alignment.CenterStart
                     ) {
-                        // ZOOM波形槽占位
-                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                            repeat(28) { i ->
-                                val h = if (i % 6 == 0) 18 else if (i % 3 == 0) 13 else 9
+                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            repeat(36) { i ->
+                                val h = if (i % 7 == 0) 20 else if (i % 4 == 0) 14 else 8
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .padding(horizontal = 0.8.dp)
+                                        .padding(horizontal = 0.6.dp)
                                         .height(h.dp)
-                                        .background(if (i % 7 == 0) Color(0xFF6EA3FF) else Color(0xFF3F6CA7))
+                                        .background(if (i % 8 == 0) Color(0xFF6E86FF) else Color(0xFF4A5FA8))
                                 )
                             }
                         }
-                        Text(
-                            UiText.ZOOM,
-                            color = Color(0xFF6F7D8F),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.align(Alignment.TopStart).padding(start = 6.dp, top = 1.dp)
-                        )
                     }
 
-                    // 正方形封面容器（真实 artwork 缩略图）
-                    ArtworkSquare(
+                    // 圆形封面位（真实artwork优先）
+                    ArtworkCircle(
                         artworkUrl = p.artworkUrl,
-                        artworkAvailable = p.artworkAvailable,
                         sizeDp = 34
                     )
                 }
             }
 
-            // CENTER
+            // CENTER: 大号数码时间 + BPM/Pitch 次级
             Column(
                 modifier = Modifier
-                    .weight(0.30f)
-                    .height(88.dp)
-                    .background(Color(0xFF0F141B))
-                    .border(1.dp, C_BORDER)
-                    .padding(7.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    fmtTime(p.currentTimeMs),
-                    color = C_TEXT,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    SmallMetric(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
-                    SmallMetric(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-", Modifier.weight(1f))
-                    SmallMetric(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", Modifier.weight(1f))
-                    SmallMetric(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", Modifier.weight(1f), emphasize = true)
-                }
-            }
-
-            // RIGHT
-            Column(
-                modifier = Modifier
-                    .weight(0.15f)
-                    .height(88.dp)
+                    .weight(0.33f)
+                    .height(98.dp)
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
                     .padding(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
+                Text(
+                    fmtTimeDigital(p.currentTimeMs),
+                    color = if (p.stateText.uppercase() == "PLAYING") C_PLAY else C_CUED,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.headlineLarge
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    SmallMetric(UiText.REMAIN, fmtTimeDigital(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
+                    SmallMetric(UiText.BPM, p.rawBpm?.let { "%.1f".format(it) } ?: "-", Modifier.weight(1f))
+                    SmallMetric(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", Modifier.weight(1f))
+                }
+            }
+
+            // RIGHT: BPM + 状态按钮列（Deck位保留）
+            Column(
+                modifier = Modifier
+                    .weight(0.15f)
+                    .height(98.dp)
+                    .background(Color(0xFF0F141B))
+                    .border(1.dp, C_BORDER)
+                    .padding(5.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF171F2A)).border(1.dp, C_BORDER).padding(vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(p.effectiveBpm?.let { "%.1f".format(it) } ?: "-", color = C_TEXT, fontWeight = FontWeight.Bold)
+                }
                 RightStatusTag("ONLINE", p.online)
                 RightStatusTag("MASTER", p.master)
                 RightStatusTag("ON-AIR", p.onAir)
@@ -419,6 +421,18 @@ private fun StateTag(text: String, color: Color) {
             .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         Text(text, color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun TinyFlag(text: String, on: Boolean) {
+    Box(
+        modifier = Modifier
+            .background(if (on) Color(0xFF263447) else Color(0xFF151D27))
+            .border(1.dp, if (on) Color(0xFF4C9BFF) else C_BORDER)
+            .padding(horizontal = 5.dp, vertical = 1.dp)
+    ) {
+        Text(text, color = if (on) C_TEXT else C_MUTED, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -451,12 +465,12 @@ private fun SmallMetric(label: String, value: String, modifier: Modifier, emphas
 }
 
 @Composable
-private fun ArtworkSquare(artworkUrl: String?, artworkAvailable: Boolean, sizeDp: Int) {
-    var bitmap by remember(artworkUrl, artworkAvailable) { mutableStateOf<ImageBitmap?>(null) }
+private fun ArtworkCircle(artworkUrl: String?, sizeDp: Int) {
+    var bitmap by remember(artworkUrl) { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(artworkUrl, artworkAvailable) {
+    LaunchedEffect(artworkUrl) {
         bitmap = null
-        if (!artworkAvailable || artworkUrl.isNullOrBlank()) return@LaunchedEffect
+        if (artworkUrl.isNullOrBlank()) return@LaunchedEffect
         bitmap = withContext(Dispatchers.IO) {
             runCatching {
                 val bytes = URL(artworkUrl).openStream().use { it.readBytes() }
@@ -468,19 +482,20 @@ private fun ArtworkSquare(artworkUrl: String?, artworkAvailable: Boolean, sizeDp
     Box(
         modifier = Modifier
             .size(sizeDp.dp)
+            .clip(CircleShape)
             .background(Color(0xFF0B1016))
-            .border(1.dp, Color(0xFF3A4656)),
+            .border(1.dp, Color(0xFF3A4656), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap!!,
                 contentDescription = "artwork",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
                 contentScale = ContentScale.Crop
             )
         } else {
-            Text("-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+            Text("♪", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -708,6 +723,14 @@ private fun fmtTime(ms: Long): String {
     val m = sec / 60
     val s = sec % 60
     return "%02d:%02d".format(m, s)
+}
+
+private fun fmtTimeDigital(ms: Long): String {
+    val totalSec = max(0L, ms / 1000)
+    val hours = totalSec / 3600
+    val minutes = (totalSec % 3600) / 60
+    val seconds = totalSec % 60
+    return "%02d:%02d:%02d".format(hours, minutes, seconds)
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
