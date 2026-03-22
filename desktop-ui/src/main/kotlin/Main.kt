@@ -357,14 +357,14 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                             }
                         }
                     }
+
+                    // 封面：与行高保持一致的正方形
+                    ArtworkSquare(
+                        artworkUrl = p.artworkUrl,
+                        sizeDp = 34
+                    )
                 }
             }
-
-            // Artwork: 等高正方形封面容器
-            ArtworkSquare(
-                artworkUrl = p.artworkUrl,
-                sizeDp = 98
-            )
 
             // CENTER: 大号电子段码时间 + BPM/Pitch 次级
             Column(
@@ -377,11 +377,11 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 DigitalTimeReadout(
-                    time = fmtTimeDigital(p.currentTimeMs),
+                    time = fmtTimeDigitalCs(p.currentTimeMs),
                     color = if (p.stateText.uppercase() == "PLAYING") C_PLAY else C_CUED
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                    SmallMetric(UiText.REMAIN, fmtTimeDigital(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
+                    SmallMetric(UiText.REMAIN, fmtTimeDigitalCs(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
                     SmallMetric(UiText.BPM, p.rawBpm?.let { "%.1f".format(it) } ?: "-", Modifier.weight(1f))
                     SmallMetric(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", Modifier.weight(1f))
                 }
@@ -478,10 +478,10 @@ private fun DigitalTimeReadout(time: String, color: Color) {
         Text(
             time,
             color = color,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.ExtraBold,
             fontFamily = FontFamily.Monospace,
-            style = MaterialTheme.typography.headlineLarge,
-            letterSpacing = 1.2.sp
+            style = MaterialTheme.typography.displaySmall,
+            letterSpacing = 0.8.sp
         )
     }
 }
@@ -746,12 +746,14 @@ private fun fmtTime(ms: Long): String {
     return "%02d:%02d".format(m, s)
 }
 
-private fun fmtTimeDigital(ms: Long): String {
-    val totalSec = max(0L, ms / 1000)
+private fun fmtTimeDigitalCs(ms: Long): String {
+    val safeMs = max(0L, ms)
+    val totalSec = safeMs / 1000
+    val cs = (safeMs % 1000) / 10
     val hours = totalSec / 3600
     val minutes = (totalSec % 3600) / 60
     val seconds = totalSec % 60
-    return "%02d:%02d:%02d".format(hours, minutes, seconds)
+    return "%02d:%02d:%02d.%02d".format(hours, minutes, seconds, cs)
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
