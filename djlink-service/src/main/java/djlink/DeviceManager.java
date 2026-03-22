@@ -1157,8 +1157,11 @@ public class DeviceManager {
     /**
      * Unified player state - neutral endpoint for AI/rule/trigger systems
      */
-    private Map<String, Object> extractCdjDebugState(Object status) {
+    private Map<String, Object> extractCdjDebugState(CdjStatus status) {
         Map<String, Object> d = new HashMap<>();
+        Map<String, Object> errors = new HashMap<>();
+        d.put("statusClass", status != null ? status.getClass().getName() : "null");
+
         if (status == null) {
             d.put("isPlaying", "N/A");
             d.put("isCued", "N/A");
@@ -1168,37 +1171,22 @@ public class DeviceManager {
             d.put("playState1", "N/A");
             d.put("playState2", "N/A");
             d.put("playState3", "N/A");
+            d.put("errors", errors);
             return d;
         }
 
-        d.put("isPlaying", invokeBoolOrNA(status, "isPlaying"));
-        d.put("isCued", invokeBoolOrNA(status, "isCued"));
-        d.put("isPaused", invokeBoolOrNA(status, "isPaused"));
-        d.put("isTrackLoaded", invokeBoolOrNA(status, "isTrackLoaded"));
-        d.put("isAtEnd", invokeBoolOrNA(status, "isAtEnd"));
-        d.put("playState1", invokeObjOrNA(status, "getPlayState1"));
-        d.put("playState2", invokeObjOrNA(status, "getPlayState2"));
-        d.put("playState3", invokeObjOrNA(status, "getPlayState3"));
+        try { d.put("isPlaying", status.isPlaying()); } catch (Exception e) { d.put("isPlaying", "N/A"); errors.put("isPlaying", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("isCued", status.isCued()); } catch (Exception e) { d.put("isCued", "N/A"); errors.put("isCued", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("isPaused", status.isPaused()); } catch (Exception e) { d.put("isPaused", "N/A"); errors.put("isPaused", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("isTrackLoaded", status.isTrackLoaded()); } catch (Exception e) { d.put("isTrackLoaded", "N/A"); errors.put("isTrackLoaded", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("isAtEnd", status.isAtEnd()); } catch (Exception e) { d.put("isAtEnd", "N/A"); errors.put("isAtEnd", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+
+        try { d.put("playState1", String.valueOf(status.getPlayState1())); } catch (Exception e) { d.put("playState1", "N/A"); errors.put("playState1", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("playState2", String.valueOf(status.getPlayState2())); } catch (Exception e) { d.put("playState2", "N/A"); errors.put("playState2", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+        try { d.put("playState3", String.valueOf(status.getPlayState3())); } catch (Exception e) { d.put("playState3", "N/A"); errors.put("playState3", e.getClass().getSimpleName() + ":" + e.getMessage()); }
+
+        d.put("errors", errors);
         return d;
-    }
-
-    private Object invokeObjOrNA(Object obj, String methodName) {
-        try {
-            Object v = obj.getClass().getMethod(methodName).invoke(obj);
-            return v == null ? "N/A" : String.valueOf(v);
-        } catch (Exception e) {
-            return "N/A";
-        }
-    }
-
-    private Object invokeBoolOrNA(Object obj, String methodName) {
-        try {
-            Object v = obj.getClass().getMethod(methodName).invoke(obj);
-            if (v instanceof Boolean) return (Boolean) v;
-            return v == null ? "N/A" : Boolean.valueOf(String.valueOf(v));
-        } catch (Exception e) {
-            return "N/A";
-        }
     }
 
     private Boolean boolFrom(Map<String, Object> map, String key) {
