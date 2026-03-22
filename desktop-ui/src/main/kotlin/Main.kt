@@ -31,16 +31,25 @@ private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 private object UiText {
     const val APP_TITLE = "DJ Link Stage - CDJ Dashboard"
     const val DASHBOARD_TITLE = "CDJ Dashboard Monitor"
-    const val REFRESH = "刷新"
+    const val REFRESH = "Refresh"
     const val MASTER = "Master Player"
     const val MASTER_BPM = "Master BPM"
     const val DJ_LINK = "DJ Link"
     const val SCAN = "Scan"
     const val LAST_UPDATE = "Last Update"
-    const val FAIL_COUNT = "连续失败"
-    const val INTERRUPTED = "数据中断"
-    const val NO_DEVICE = "无设备"
-    const val CONNECTED = "已连接"
+    const val FAIL_COUNT = "Fail Count"
+    const val INTERRUPTED = "Data Interrupted"
+    const val NO_DEVICE = "No Device"
+    const val CONNECTED = "Connected"
+    const val DEBUG = "Debug"
+    const val HIDE_DEBUG = "Hide"
+    const val PLAYER = "PLAYER"
+    const val ARTIST = "Artist"
+    const val CURRENT = "Current"
+    const val REMAIN = "Remain"
+    const val BPM = "BPM"
+    const val PITCH = "Pitch"
+    const val EFFECTIVE = "Effective"
 }
 
 fun main() = application {
@@ -144,10 +153,10 @@ private fun TopStatusBar(
                 else -> Color(0xFFEF6C00)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                StatusPill(UiText.MASTER, state.masterPlayer?.toString() ?: "-")
-                StatusPill(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-")
-                StatusPill(UiText.DJ_LINK, linkStateText, valueColor = linkStateColor)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                StatusPill(UiText.MASTER, state.masterPlayer?.toString() ?: "-", emphasize = true)
+                StatusPill(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-", emphasize = true)
+                StatusPill(UiText.DJ_LINK, linkStateText, valueColor = linkStateColor, emphasize = true)
                 StatusPill(UiText.SCAN, when (state.scanEnabled) {
                     true -> "ON"
                     false -> "OFF"
@@ -167,15 +176,29 @@ private fun TopStatusBar(
 }
 
 @Composable
-private fun StatusPill(label: String, value: String, valueColor: Color = Color(0xFF0D47A1)) {
+private fun StatusPill(
+    label: String,
+    value: String,
+    valueColor: Color = Color(0xFF0D47A1),
+    emphasize: Boolean = false
+) {
+    val borderColor = if (emphasize) Color(0xFF90A4AE) else Color(0xFFCFD8DC)
+    val bgColor = if (emphasize) Color(0xFFF7FAFC) else Color.Transparent
+
     Column(
         modifier = Modifier
-            .border(1.dp, Color(0xFFCFD8DC), shape = MaterialTheme.shapes.small)
+            .border(1.dp, borderColor, shape = MaterialTheme.shapes.small)
+            .background(bgColor, shape = MaterialTheme.shapes.small)
             .padding(horizontal = 8.dp, vertical = 6.dp)
-            .widthIn(min = 98.dp)
+            .widthIn(min = if (emphasize) 112.dp else 96.dp)
     ) {
         Text(label, color = Color(0xFF607D8B), style = MaterialTheme.typography.labelSmall)
-        Text(value, color = valueColor, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Text(
+            value,
+            color = valueColor,
+            fontWeight = FontWeight.Bold,
+            style = if (emphasize) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
@@ -211,42 +234,41 @@ private fun PlayersGrid(players: List<DashboardPlayer>) {
 
 @Composable
 private fun PlayerCard(p: DashboardPlayer) {
-    val stateColor = when (p.stateText) {
-        "PLAYING", "PLAY" -> Color(0xFF2E7D32)
-        "PAUSED" -> Color(0xFFEF6C00)
-        "CUED" -> Color(0xFF1565C0)
-        "STOPPED", "STOP", "OFFLINE" -> Color(0xFF607D8B)
-        else -> Color(0xFF455A64)
-    }
     var showDebug by remember(p.number) { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (p.master) Color(0xFFF8FBFF) else Color(0xFFFCFDFE)
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Layer 1: player identity + critical status
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("PLAYER ${p.number}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                Chip(p.online, if (p.online) "ONLINE" else "OFFLINE")
-                Chip(p.onAir, "ON-AIR")
-                Chip(p.master, "MASTER")
-                Box(modifier = Modifier.background(stateColor, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                    Text(p.stateText, color = Color.White, fontWeight = FontWeight.Bold)
-                }
+                Text("${UiText.PLAYER} ${p.number}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                StateBadge(p.stateText)
+                FlagBadge(p.online, if (p.online) "ONLINE" else "OFFLINE")
+                FlagBadge(p.master, "MASTER")
+                FlagBadge(p.onAir, "ON-AIR")
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { showDebug = !showDebug }) {
-                    Text(if (showDebug) "隐藏调试" else "调试")
+                    Text(if (showDebug) UiText.HIDE_DEBUG else UiText.DEBUG)
                 }
             }
 
-            Column {
+            // Layer 2: track info
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(p.title.ifBlank { "-" }, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                Text(p.artist.ifBlank { "-" }, color = Color(0xFF546E7A), style = MaterialTheme.typography.bodySmall)
+                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = Color(0xFF607D8B), style = MaterialTheme.typography.bodySmall)
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricBlock("Current", fmtTime(p.currentTimeMs), modifier = Modifier.weight(1f))
-                MetricBlock("Remain", fmtTime(max(0L, p.remainTimeMs)), modifier = Modifier.weight(1f))
-                MetricBlock("BPM", p.rawBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f))
-                MetricBlock("Pitch", p.pitch?.let { "%+.2f%%".format(it) } ?: "-", modifier = Modifier.weight(1f))
-                MetricBlock("Effective", p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), emphasize = true)
+            // Layer 3: metrics
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                MetricBlock(UiText.CURRENT, fmtTime(p.currentTimeMs), modifier = Modifier.weight(1f))
+                MetricBlock(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), modifier = Modifier.weight(1f))
+                MetricBlock(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f))
+                MetricBlock(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", modifier = Modifier.weight(1f))
+                MetricBlock(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), emphasize = true)
             }
 
             if (showDebug) {
@@ -261,10 +283,25 @@ private fun PlayerCard(p: DashboardPlayer) {
 }
 
 @Composable
-private fun Chip(active: Boolean, label: String) {
+private fun FlagBadge(active: Boolean, label: String) {
     val color = if (active) Color(0xFF2E7D32) else Color(0xFFB0BEC5)
     Box(modifier = Modifier.background(color, MaterialTheme.shapes.small).padding(horizontal = 7.dp, vertical = 2.dp)) {
         Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun StateBadge(state: String) {
+    val color = when (state.uppercase()) {
+        "PLAYING", "PLAY" -> Color(0xFF2E7D32)
+        "PAUSED" -> Color(0xFFEF6C00)
+        "CUED" -> Color(0xFF1565C0)
+        "STOPPED", "STOP" -> Color(0xFF607D8B)
+        "OFFLINE" -> Color(0xFF455A64)
+        else -> Color(0xFF546E7A)
+    }
+    Box(modifier = Modifier.background(color, MaterialTheme.shapes.small).padding(horizontal = 9.dp, vertical = 3.dp)) {
+        Text(state.uppercase(), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
     }
 }
 
