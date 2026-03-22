@@ -1,7 +1,7 @@
 package dbclient.media.analysis;
 
 import dbclient.media.library.TrackLibraryRepository;
-import dbclient.media.library.InMemoryTrackLibraryRepository;
+import dbclient.media.library.JsonFileTrackLibraryRepository;
 import dbclient.media.model.AnalysisResult;
 import dbclient.media.model.AnalysisStatus;
 import dbclient.media.model.BeatGrid;
@@ -10,6 +10,9 @@ import dbclient.media.model.TrackLibraryEntry;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 分析服务
@@ -29,9 +32,10 @@ public class AnalysisService {
 
     private final AudioAnalyzer audioAnalyzer;
     private final TrackLibraryRepository trackRepo;
+    private final Map<String, AnalysisProgress> progressMap = new ConcurrentHashMap<>();
 
     public AnalysisService() {
-        this(new BasicAudioAnalyzer(), new InMemoryTrackLibraryRepository());
+        this(new BasicAudioAnalyzer(), new JsonFileTrackLibraryRepository());
     }
 
     public AnalysisService(AudioAnalyzer audioAnalyzer, TrackLibraryRepository trackRepo) {
@@ -48,6 +52,7 @@ public class AnalysisService {
     public AnalysisResult analyzeTrack(String trackId) {
         Optional<TrackLibraryEntry> entryOpt = trackRepo.findByTrackId(trackId);
         if (entryOpt.isEmpty()) {
+            progressMap.put(trackId, AnalysisProgress.failed(trackId, "Track not found: " + trackId));
             return AnalysisResult.builder()
                 .success(false)
                 .analysisStatus(AnalysisStatus.FAILED)
@@ -57,7 +62,8 @@ public class AnalysisService {
 
         TrackLibraryEntry entry = entryOpt.get();
 
-        // 1. 设置分析状态为 ANALYZING
+        // 1. 设置分析状态为 ANALYZING (0%)
+        progressMap.put(trackId, AnalysisProgress.analyzing(trackId, 0, "开始分析"));
         AnalysisResult analyzingResult = AnalysisResult.builder()
             .success(false)
             .analysisStatus(AnalysisStatus.ANALYZING)
@@ -65,7 +71,7 @@ public class AnalysisService {
         entry.setAnalysis(analyzingResult);
         trackRepo.save(entry);
 
-        // 2. 执行分析
+        // 2. 执行分析（带进度更新）
         AnalysisResult result;
         try {
             // 构建临时 TrackInfo 传给分析器
@@ -78,8 +84,17 @@ public class AnalysisService {
                 .channels(entry.getChannels())
                 .build();
 
+            // 读取音频文件阶段 (0-30%)
+            progressMap.put(trackId, AnalysisProgress.analyzing(trackId, 10, "读取音频文件"));
+            
             result = audioAnalyzer.analyze(trackInfo);
+            
+            // BPM 检测完成 (30-60%)
+            if (result.isSuccess() && result.getBpm() != null) {
+                progressMap.put(trackId, AnalysisProgress.analyzing(trackId, 50, "检测到 BPM: " + result.getBpm()));
+            }
         } catch (Exception e) {
+            progressMap.put(trackId, AnalysisProgress.failed(trackId, e.getMessage()));
             result = AnalysisResult.builder()
                 .success(false)
                 .analysisStatus(AnalysisStatus.FAILED)
@@ -90,14 +105,25 @@ public class AnalysisService {
         // 3. 更新资产记录
         entry.setAnalysis(result);
         
-        // 4. 如果分析成功，生成 Beat Grid
+        // 4. 如果分析成功，生成 Beat Grid (60-100%)
         if (result.isSuccess() && result.getBpm() != null && result.getDurationMs() > 0) {
+            progressMap.put(trackId, AnalysisProgress.analyzing(trackId, 70, "生成 Waveform"));
+            
             BeatGrid beatGrid = generateBeatGrid(result.getBpm(), result.getDurationMs());
             result.setBeatGrid(beatGrid);
             result.setBeatGridAvailable(true);
+            
+            progressMap.put(trackId, AnalysisProgress.analyzing(trackId, 90, "生成 Beat Grid"));
         }
         
         trackRepo.save(entry);
+
+        // 5. 更新进度为完成或失败
+        if (result.isSuccess()) {
+            progressMap.put(trackId, AnalysisProgress.completed(trackId));
+        } else {
+            progressMap.put(trackId, AnalysisProgress.failed(trackId, result.getErrorMessage()));
+        }
 
         return result;
     }
@@ -192,6 +218,25 @@ public class AnalysisService {
     public Optional<AnalysisResult> getAnalysis(String trackId) {
         return trackRepo.findByTrackId(trackId)
             .map(TrackLibraryEntry::getAnalysis);
+    }
+
+    /**
+     * 获取分析进度
+     * 
+     * @param trackId 曲目 ID
+     * @return 分析进度，如果没有则返回 PENDING 状态
+     */
+    public AnalysisProgress getProgress(String trackId) {
+        return progressMap.getOrDefault(trackId, AnalysisProgress.pending(trackId));
+    }
+    
+    /**
+     * 清除进度记录
+     * 
+     * @param trackId 曲目 ID
+     */
+    public void clearProgress(String trackId) {
+        progressMap.remove(trackId);
     }
 
     /**

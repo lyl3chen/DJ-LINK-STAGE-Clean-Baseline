@@ -1,3 +1,4 @@
+dbclient/media/analysis/AnalysisProgress.class
 dbclient/sync/drivers/ConsoleApiDriver.class
 dbclient/media/trigger/TitanTriggerActionDriver.class
 dbclient/media/trigger/TriggerAction$ActionType.class
@@ -26,6 +27,7 @@ dbclient/core/SystemState.class
 dbclient/sync/timecode/TimecodeCore$1.class
 dbclient/web/WebServer$DjBeatHandler.class
 dbclient/sync/drivers/TitanAdapter$1.class
+dbclient/media/library/JsonFileTrackLibraryRepository$1.class
 dbclient/test/TestBuilder.class
 dbclient/parser/MetadataParser$TrackMetadata.class
 dbclient/sync/timecode/PlayerEventDetector.class
@@ -47,6 +49,7 @@ dbclient/media/model/WaveformPreview.class
 dbclient/media/model/MarkerType.class
 dbclient/sync/drivers/LtcFrameEncoder.class
 dbclient/sync/drivers/CarabinerLinkEngine.class
+dbclient/media/library/JsonFileTrackLibraryRepository.class
 dbclient/media/trigger/LocalTriggerContextAdapter.class
 dbclient/media/model/BeatGrid$Builder.class
 dbclient/websocket/JettyServer$WsServlet.class

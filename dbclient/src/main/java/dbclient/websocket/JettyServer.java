@@ -244,6 +244,18 @@ public class JettyServer {
                         response.setContentType("application/json");
                         response.getWriter().print(gson.toJson(Map.of("ok", ar.isPresent(), "analysis", ar.orElse(null))));
                         return;
+                    } else if (path.equals("/api/local/analysis-progress")) {
+                        // GET /api/local/analysis-progress?trackId=xxx - 获取分析进度
+                        String trackId = request.getParameter("trackId");
+                        if (trackId == null || trackId.isBlank()) {
+                            response.setContentType("application/json");
+                            response.getWriter().print(gson.toJson(Map.of("ok", false, "error", "trackId is required")));
+                            return;
+                        }
+                        dbclient.media.analysis.AnalysisProgress progress = getAnalysisService().getProgress(trackId);
+                        response.setContentType("application/json");
+                        response.getWriter().print(gson.toJson(Map.of("ok", true, "progress", progress)));
+                        return;
                     } else if (path.equals("/api/local/markers")) {
                         // GET /api/local/markers?trackId=xxx - 获取曲目所有 Markers（按 timeMs 升序）
                         String trackId = request.getParameter("trackId");

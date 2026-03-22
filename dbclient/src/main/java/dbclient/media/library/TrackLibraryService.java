@@ -25,7 +25,7 @@ public class TrackLibraryService {
     private final MarkerRepository markerRepo;
 
     public TrackLibraryService() {
-        this(new InMemoryTrackLibraryRepository(), new InMemoryMarkerRepository());
+        this(new JsonFileTrackLibraryRepository(), new InMemoryMarkerRepository());
     }
 
     public TrackLibraryService(TrackLibraryRepository trackRepo, MarkerRepository markerRepo) {
