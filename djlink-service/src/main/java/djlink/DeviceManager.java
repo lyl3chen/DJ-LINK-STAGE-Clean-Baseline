@@ -905,6 +905,11 @@ public class DeviceManager {
             }
             p.put("track", track);
 
+            // 统一状态判定（真值字段优先，time+beat 仅兜底）
+            Map<String, Object> debugState = (Map<String, Object>) p.get("debugState");
+            String normalizedState = resolvePlayerState(p, debugState, track);
+            p.put("state", normalizedState);
+
             // Time helpers for UI
             if (track.get("duration") instanceof Number) {
                 int durationSec = ((Number) track.get("duration")).intValue();
@@ -1175,6 +1180,43 @@ public class DeviceManager {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String resolvePlayerState(Map<String, Object> player, Map<String, Object> debugState, Map<String, Object> track) {
+        boolean online = Boolean.TRUE.equals(player.get("active"));
+        if (!online) return "OFFLINE";
+
+        Boolean isPlaying = debugState != null ? (Boolean) debugState.get("isPlaying") : null;
+        Boolean isCued = debugState != null ? (Boolean) debugState.get("isCued") : null;
+        Boolean isPaused = debugState != null ? (Boolean) debugState.get("isPaused") : null;
+        Boolean isTrackLoaded = debugState != null ? (Boolean) debugState.get("isTrackLoaded") : null;
+
+        // 真值字段优先级：
+        // 1. isPlaying
+        // 2. isCued
+        // 3. isPaused && !isCued
+        // 4. isTrackLoaded == false
+        if (Boolean.TRUE.equals(isPlaying)) return "PLAYING";
+        if (Boolean.TRUE.equals(isCued)) return "CUED";
+        if (Boolean.TRUE.equals(isPaused) && !Boolean.TRUE.equals(isCued)) return "PAUSED";
+        if (Boolean.FALSE.equals(isTrackLoaded)) return "STOPPED";
+
+        // 兜底：仅当真值字段不可用/异常时使用 time+beat
+        Number beat = (Number) player.get("beat");
+        Number timeMs = (Number) player.get("currentTimeMs");
+        double nowMs = timeMs != null ? timeMs.doubleValue() : 0;
+        double beatNum = beat != null ? beat.doubleValue() : 0;
+
+        boolean hasTrack = false;
+        if (track != null) {
+            Object title = track.get("title");
+            hasTrack = title instanceof String && !((String) title).trim().isEmpty();
+        }
+        boolean hasPosition = beatNum > 0 || nowMs > 100;
+
+        if (hasTrack && nowMs <= 100 && beatNum <= 0) return "CUED";
+        if (hasTrack && hasPosition) return "PAUSED";
+        return "STOPPED";
     }
 
     public Map<String, Object> getPlayersState() {

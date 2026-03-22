@@ -301,10 +301,11 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
 
                 val stateText = when {
                     !online -> "OFFLINE"
-                    // CUED 真值优先：先吃 beat-link 原始字段
+                    // 真值字段优先级（按要求）
+                    playing || dbg?.optBoolOrNull("isPlaying") == true -> "PLAYING"
                     dbgIsCued == true -> "CUED"
-                    playing -> "PLAYING"
-                    dbgIsPaused == true -> "PAUSED"
+                    dbgIsPaused == true && dbgIsCued != true -> "PAUSED"
+                    dbgIsTrackLoaded == false -> "STOPPED"
                     explicitState == "PLAYING" || explicitState == "PLAY" -> "PLAYING"
                     explicitState == "PAUSED" || explicitState == "PAUSE" -> "PAUSED"
                     explicitState == "STOPPED" || explicitState == "STOP" -> "STOPPED"
