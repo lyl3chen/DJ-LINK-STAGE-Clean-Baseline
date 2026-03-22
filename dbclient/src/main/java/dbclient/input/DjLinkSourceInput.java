@@ -59,15 +59,101 @@ public class DjLinkSourceInput implements SourceInput {
             return "PLAYING";
         }
 
+        // 播放中：playing=true
+        // 暂停：playing=false，但有有效曲目和时间（已加载曲目且未回到起点）
+        // 停止：playing=false，且没有曲目或时间在起点
+
         // 判断 STOPPED vs PAUSED
+        // 关键字段：
+        // - currentTimeMs: 当前时间（毫秒）
+        // - beat: 当前 beat 编号（>0 表示已启动）
+        // - trackId: 有曲目ID表示已加载
+
         Number beat = (Number) player.get("beat");
         Number timeMs = (Number) player.get("currentTimeMs");
-        double nowSec = timeMs != null ? timeMs.doubleValue() / 1000.0 : 0;
-
-        if (beat == null || beat.doubleValue() < 0 || nowSec <= 0.05) {
-            return "STOPPED";
+        String trackId = (String) player.get("trackId");
+        if (trackId == null || trackId.isEmpty()) {
+            Object trackObj = player.get("track");
+            if (trackObj instanceof Map) {
+                Map trackMap = (Map) trackObj;
+                Object nestedTrackId = trackMap.get("trackId");
+                if (nestedTrackId instanceof String) {
+                    trackId = (String) nestedTrackId;
+                }
+            }
         }
-        return "PAUSED";
+
+        double nowMs = timeMs != null ? timeMs.doubleValue() : 0;
+        double beatNum = beat != null ? beat.doubleValue() : 0;
+
+        // 有曲目 + (beat > 0 或 时间 > 100ms) = 暂停
+        // 否则 = 停止
+        boolean hasTrack = trackId != null && !trackId.isEmpty();
+        boolean hasPosition = beatNum > 0 || nowMs > 100;
+
+        if (hasTrack && hasPosition) {
+            return "PAUSED";
+        }
+        return "STOPPED";
+    }
+
+    /**
+     * 获取调试信息（供现场核对）
+     */
+    public Map<String, Object> getDebugInfo() {
+        Map<String, Object> player = getSelectedPlayer();
+        Map<String, Object> debug = new java.util.HashMap<>();
+
+        if (player == null) {
+            debug.put("status", "OFFLINE");
+            debug.put("reason", "player is null");
+            return debug;
+        }
+
+        boolean active = Boolean.TRUE.equals(player.get("active"));
+        boolean playing = Boolean.TRUE.equals(player.get("playing"));
+        Number beat = (Number) player.get("beat");
+        Number timeMs = (Number) player.get("currentTimeMs");
+        String trackId = (String) player.get("trackId");
+        Number bpm = (Number) player.get("bpm");
+        Number pitch = (Number) player.get("pitch");
+
+        debug.put("active", active);
+        debug.put("playing", playing);
+        debug.put("beat", beat);
+        debug.put("currentTimeMs", timeMs);
+        debug.put("trackId", trackId);
+        debug.put("bpm", bpm);
+        debug.put("pitch", pitch);
+
+        // 状态判定详情
+        if (!active) {
+            debug.put("status", "OFFLINE");
+            debug.put("reason", "!active");
+        } else if (playing) {
+            debug.put("status", "PLAYING");
+            debug.put("reason", "playing=true");
+        } else {
+            boolean hasTrack = trackId != null && !trackId.isEmpty();
+            double nowMs = timeMs != null ? timeMs.doubleValue() : 0;
+            double beatNum = beat != null ? beat.doubleValue() : 0;
+            boolean hasPosition = beatNum > 0 || nowMs > 100;
+
+            debug.put("hasTrack", hasTrack);
+            debug.put("hasPosition", hasPosition);
+            debug.put("beatNum", beatNum);
+            debug.put("timeMs", nowMs);
+
+            if (hasTrack && hasPosition) {
+                debug.put("status", "PAUSED");
+                debug.put("reason", "hasTrack && hasPosition");
+            } else {
+                debug.put("status", "STOPPED");
+                debug.put("reason", "!(hasTrack && hasPosition)");
+            }
+        }
+
+        return debug;
     }
 
     @Override
@@ -81,8 +167,40 @@ public class DjLinkSourceInput implements SourceInput {
         Map<String, Object> player = getSelectedPlayer();
         if (player == null) return 0.0;
 
+        // 时间字段优先级（与后端 DeviceManager.getAiPlayers 一致）：
+        // 1. currentTimeMs - TimeFinder 真实传输时间（优先）
+        // 2. beatTimeMs - BeatGrid 推导时间（兜底）
+
         Number timeMs = (Number) player.get("currentTimeMs");
-        return timeMs != null ? timeMs.doubleValue() / 1000.0 : 0.0;
+        if (timeMs != null && timeMs.doubleValue() > 0) {
+            return timeMs.doubleValue() / 1000.0;
+        }
+
+        // 兜底：用 beatTimeMs
+        Number beatTimeMs = (Number) player.get("beatTimeMs");
+        if (beatTimeMs != null && beatTimeMs.doubleValue() > 0) {
+            return beatTimeMs.doubleValue() / 1000.0;
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * 获取时间来源标记（供调试 UI 显示）
+     */
+    public String getTimeSource() {
+        Map<String, Object> player = getSelectedPlayer();
+        if (player == null) return "NONE";
+
+        Number timeMs = (Number) player.get("currentTimeMs");
+        Number beatTimeMs = (Number) player.get("beatTimeMs");
+
+        if (timeMs != null && timeMs.doubleValue() > 0) {
+            return "TimeFinder";
+        } else if (beatTimeMs != null && beatTimeMs.doubleValue() > 0) {
+            return "BeatGrid";
+        }
+        return "NONE";
     }
 
     @Override

@@ -828,21 +828,26 @@ public class DeviceManager {
                 }
 
                 // currentTimeMs: 优先使用 TimeFinder 真实传输时间，其次用 beat grid 推导
+                // 时间字段优先级（V1.1 校准版）：
+                // 1. TimeFinder.getTimeFor() - 真实传输时间（优先）
+                // 2. BeatGrid 推导时间 - 兜底（当 TimeFinder 不可用时）
                 Integer currentTimeMs = null;
+                String timeSource = "NONE";
                 
                 // 1. 优先：TimeFinder.getTimeFor() - 真实传输时间
                 try {
                     if (timeFinder != null && timeFinder.isRunning()) {
                         Long trueTime = timeFinder.getTimeFor(playerNum);
-                        if (trueTime != null) {
+                        if (trueTime != null && trueTime > 0) {
                             currentTimeMs = trueTime.intValue();
                             p.put("currentTimeMs", currentTimeMs);
+                            timeSource = "TimeFinder";
                         }
                     }
                 } catch (Exception ignored) {}
                 
                 // 2. 次选：beat grid 推导时间（fallback）
-                if (currentTimeMs == null) {
+                if (currentTimeMs == null || currentTimeMs == 0) {
                     try {
                         BeatGrid grid = beatGridFinder.getLatestBeatGridFor(playerNum);
                         if (grid != null) {
@@ -851,10 +856,16 @@ public class DeviceManager {
                                 currentTimeMs = (int) grid.getTimeWithinTrack(beatNum);
                                 p.put("currentTimeMs", currentTimeMs);
                                 p.put("beatTimeMs", currentTimeMs);
+                                if (timeSource.equals("NONE")) {
+                                    timeSource = "BeatGrid";
+                                }
                             }
                         }
                     } catch (Exception ignored) {}
                 }
+                
+                // 记录时间来源（供调试 UI 使用）
+                p.put("timeSource", timeSource);
             } else {
                 p.put("playing", false);
                 p.put("onAir", false);
