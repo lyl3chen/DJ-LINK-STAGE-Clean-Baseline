@@ -3,7 +3,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,18 +32,18 @@ private val httpClient: HttpClient = HttpClient.newBuilder().build()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 private object UiText {
-    const val APP_TITLE = "DJ Link Stage - CDJ Dashboard"
-    const val DASHBOARD_TITLE = "CDJ Dashboard Monitor"
+    const val APP_TITLE = "DJ Link Stage - CDJ Monitor"
+    const val DASHBOARD_TITLE = "SHOW MONITOR"
     const val REFRESH = "Refresh"
-    const val MASTER = "Master Player"
+    const val MASTER = "Master"
     const val MASTER_BPM = "Master BPM"
     const val DJ_LINK = "DJ Link"
     const val SCAN = "Scan"
     const val LAST_UPDATE = "Last Update"
-    const val FAIL_COUNT = "Fail Count"
-    const val INTERRUPTED = "Data Interrupted"
-    const val NO_DEVICE = "No Device"
-    const val CONNECTED = "Connected"
+    const val FAIL_COUNT = "Fail"
+    const val INTERRUPTED = "DATA INTERRUPTED"
+    const val NO_DEVICE = "NO DEVICE"
+    const val CONNECTED = "CONNECTED"
     const val DEBUG = "Debug"
     const val HIDE_DEBUG = "Hide"
     const val PLAYER = "PLAYER"
@@ -49,8 +52,21 @@ private object UiText {
     const val REMAIN = "Remain"
     const val BPM = "BPM"
     const val PITCH = "Pitch"
-    const val EFFECTIVE = "Effective"
+    const val EFFECTIVE = "Eff"
+    const val RESERVED_ZONE = "MINI DECK / WAVE OVERVIEW (RESERVED)"
 }
+
+private val C_BG = Color(0xFF0B0E12)
+private val C_PANEL = Color(0xFF11161D)
+private val C_BORDER = Color(0xFF2A313B)
+private val C_TEXT = Color(0xFFE9EEF5)
+private val C_MUTED = Color(0xFF8D99A8)
+private val C_PLAY = Color(0xFF34C759)
+private val C_PAUSE = Color(0xFFFFB020)
+private val C_CUED = Color(0xFF3B82F6)
+private val C_STOP = Color(0xFF7D8794)
+private val C_OFFLINE = Color(0xFF5B6470)
+private val C_ALERT = Color(0xFFFF4D4F)
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = UiText.APP_TITLE) {
@@ -91,7 +107,6 @@ data class DashboardState(
 
 @Composable
 private fun CDJDashboardApp() {
-    // 主线固定本机 API，不在主界面暴露 BaseURL
     val baseUrl = "http://127.0.0.1:8080"
     var refreshMs by remember { mutableStateOf(300) }
     var state by remember { mutableStateOf(DashboardState()) }
@@ -103,107 +118,98 @@ private fun CDJDashboardApp() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        TopStatusBar(
-            state = state,
-            refreshMs = refreshMs,
-            onRefreshChange = { refreshMs = it }
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        PlayersGrid(state.players)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(C_BG)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TopStatusBar(state, refreshMs) { refreshMs = it }
+        PlayersRows(state.players, modifier = Modifier.weight(1f))
+        BottomReservedZone()
     }
 }
 
 @Composable
-private fun TopStatusBar(
-    state: DashboardState,
-    refreshMs: Int,
-    onRefreshChange: (Int) -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(UiText.DASHBOARD_TITLE, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                Text("${UiText.REFRESH}:")
-                listOf(200, 300, 500).forEach { ms ->
-                    FilterChip(
-                        selected = refreshMs == ms,
-                        onClick = { onRefreshChange(ms) },
-                        label = { Text("${ms}ms") }
-                    )
-                }
-            }
+private fun TopStatusBar(state: DashboardState, refreshMs: Int, onRefreshChange: (Int) -> Unit) {
+    val updateText = if (state.updatedAtMs > 0) {
+        timeFmt.format(Instant.ofEpochMilli(state.updatedAtMs).atZone(ZoneId.systemDefault()))
+    } else "-"
 
-            val updateText = if (state.updatedAtMs > 0) {
-                timeFmt.format(Instant.ofEpochMilli(state.updatedAtMs).atZone(ZoneId.systemDefault()))
-            } else "-"
+    val linkStateText = when {
+        state.error != null -> UiText.INTERRUPTED
+        state.stale -> UiText.INTERRUPTED
+        state.players.any { it.online } -> UiText.CONNECTED
+        else -> UiText.NO_DEVICE
+    }
 
-            val linkStateText = when {
-                state.error != null -> UiText.INTERRUPTED
-                state.stale -> UiText.INTERRUPTED
-                state.players.any { it.online } -> UiText.CONNECTED
-                else -> UiText.NO_DEVICE
-            }
+    val linkStateColor = when {
+        state.error != null || state.stale -> C_ALERT
+        state.players.any { it.online } -> C_PLAY
+        else -> C_PAUSE
+    }
 
-            val linkStateColor = when {
-                state.error != null || state.stale -> Color(0xFFD32F2F)
-                state.players.any { it.online } -> Color(0xFF2E7D32)
-                else -> Color(0xFFEF6C00)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(C_PANEL)
+            .border(1.dp, C_BORDER)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(UiText.DASHBOARD_TITLE, color = C_TEXT, fontWeight = FontWeight.Bold)
+            Text("${UiText.REFRESH}:", color = C_MUTED)
+            listOf(200, 300, 500).forEach { ms ->
+                FilterChip(
+                    selected = refreshMs == ms,
+                    onClick = { onRefreshChange(ms) },
+                    label = { Text("${ms}ms") }
+                )
             }
+        }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatusPill(UiText.MASTER, state.masterPlayer?.toString() ?: "-", emphasize = true)
-                StatusPill(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-", emphasize = true)
-                StatusPill(UiText.DJ_LINK, linkStateText, valueColor = linkStateColor, emphasize = true)
-                StatusPill(UiText.SCAN, when (state.scanEnabled) {
-                    true -> "ON"
-                    false -> "OFF"
-                    null -> "UNKNOWN"
-                })
-                StatusPill(UiText.LAST_UPDATE, updateText)
-                StatusPill(UiText.FAIL_COUNT, state.consecutiveFailures.toString(), if (state.consecutiveFailures > 0) Color(0xFFD32F2F) else Color(0xFF2E7D32))
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            TopMetric(UiText.MASTER, state.masterPlayer?.toString() ?: "-", modifier = Modifier.weight(1f), highlight = true)
+            TopMetric(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), highlight = true)
+            TopMetric(UiText.DJ_LINK, linkStateText, modifier = Modifier.weight(1f), valueColor = linkStateColor, highlight = true)
+            TopMetric(UiText.SCAN, when (state.scanEnabled) {
+                true -> "ON"
+                false -> "OFF"
+                null -> "UNKNOWN"
+            }, modifier = Modifier.weight(1f))
+            TopMetric(UiText.LAST_UPDATE, updateText, modifier = Modifier.weight(1f))
+            TopMetric(UiText.FAIL_COUNT, state.consecutiveFailures.toString(), modifier = Modifier.weight(1f), valueColor = if (state.consecutiveFailures > 0) C_ALERT else C_PLAY)
+        }
 
-            if (state.error != null) {
-                Text("错误: ${state.error}", color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
-            } else if (state.stale) {
-                Text("⚠ 数据超过 2 秒未刷新，可能断连", color = Color(0xFFD32F2F), fontWeight = FontWeight.SemiBold)
-            }
+        if (state.error != null || state.stale) {
+            Text("⚠ ${state.error ?: UiText.INTERRUPTED}", color = C_ALERT, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-private fun StatusPill(
+private fun TopMetric(
     label: String,
     value: String,
-    valueColor: Color = Color(0xFF0D47A1),
-    emphasize: Boolean = false
+    modifier: Modifier = Modifier,
+    valueColor: Color = C_TEXT,
+    highlight: Boolean = false
 ) {
-    val borderColor = if (emphasize) Color(0xFF90A4AE) else Color(0xFFCFD8DC)
-    val bgColor = if (emphasize) Color(0xFFF7FAFC) else Color.Transparent
-
     Column(
-        modifier = Modifier
-            .border(1.dp, borderColor, shape = MaterialTheme.shapes.small)
-            .background(bgColor, shape = MaterialTheme.shapes.small)
+        modifier = modifier
+            .background(if (highlight) Color(0xFF151C24) else Color.Transparent)
+            .border(1.dp, if (highlight) Color(0xFF3A4656) else C_BORDER)
             .padding(horizontal = 8.dp, vertical = 6.dp)
-            .widthIn(min = if (emphasize) 112.dp else 96.dp)
     ) {
-        Text(label, color = Color(0xFF607D8B), style = MaterialTheme.typography.labelSmall)
-        Text(
-            value,
-            color = valueColor,
-            fontWeight = FontWeight.Bold,
-            style = if (emphasize) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium
-        )
+        Text(label.uppercase(), color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        Text(value, color = valueColor, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun PlayersGrid(players: List<DashboardPlayer>) {
+private fun PlayersRows(players: List<DashboardPlayer>, modifier: Modifier = Modifier) {
     val byNumber = players.associateBy { it.number }
     val fixed = (1..4).map { idx ->
         byNumber[idx] ?: DashboardPlayer(
@@ -225,100 +231,120 @@ private fun PlayersGrid(players: List<DashboardPlayer>) {
         )
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-        items(fixed) { p ->
-            PlayerCard(p)
-        }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = modifier) {
+        items(fixed) { p -> PlayerStrip(p) }
     }
 }
 
 @Composable
-private fun PlayerCard(p: DashboardPlayer) {
+private fun PlayerStrip(p: DashboardPlayer) {
     var showDebug by remember(p.number) { mutableStateOf(false) }
+    val stateColor = when (p.stateText.uppercase()) {
+        "PLAYING", "PLAY" -> C_PLAY
+        "PAUSED" -> C_PAUSE
+        "CUED" -> C_CUED
+        "STOPPED", "STOP" -> C_STOP
+        "OFFLINE" -> C_OFFLINE
+        else -> C_STOP
+    }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (p.master) Color(0xFFF8FBFF) else Color(0xFFFCFDFE)
-        )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(C_PANEL)
+            .border(1.dp, C_BORDER)
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Layer 1: player identity + critical status
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${UiText.PLAYER} ${p.number}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                StateBadge(p.stateText)
-                FlagBadge(p.online, if (p.online) "ONLINE" else "OFFLINE")
-                FlagBadge(p.master, "MASTER")
-                FlagBadge(p.onAir, "ON-AIR")
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showDebug = !showDebug }) {
-                    Text(if (showDebug) UiText.HIDE_DEBUG else UiText.DEBUG)
-                }
+        // single strip line like show monitors
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.width(72.dp)) {
+                Text("${UiText.PLAYER} ${p.number}", color = C_TEXT, fontWeight = FontWeight.Bold)
             }
 
-            // Layer 2: track info
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(p.title.ifBlank { "-" }, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = Color(0xFF607D8B), style = MaterialTheme.typography.bodySmall)
+            StateTag(p.stateText.uppercase(), stateColor)
+            TinyFlag("ON", p.online)
+            TinyFlag("AIR", p.onAir)
+            TinyFlag("MST", p.master)
+
+            Spacer(Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
+                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, maxLines = 1, style = MaterialTheme.typography.labelSmall)
             }
 
-            // Layer 3: metrics
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricBlock(UiText.CURRENT, fmtTime(p.currentTimeMs), modifier = Modifier.weight(1f))
-                MetricBlock(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), modifier = Modifier.weight(1f))
-                MetricBlock(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f))
-                MetricBlock(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", modifier = Modifier.weight(1f))
-                MetricBlock(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), emphasize = true)
-            }
+            MetricReadout(UiText.CURRENT, fmtTime(p.currentTimeMs), emphasis = true)
+            MetricReadout(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), emphasis = true)
+            MetricReadout(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-")
+            MetricReadout(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-")
+            MetricReadout(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", emphasis = true)
 
-            if (showDebug) {
-                Text(
-                    "timeSource=${p.timeSource} | ${p.rawStateSummary}",
-                    color = Color(0xFF78909C),
-                    style = MaterialTheme.typography.labelSmall
-                )
+            TextButton(onClick = { showDebug = !showDebug }) {
+                Text(if (showDebug) UiText.HIDE_DEBUG else UiText.DEBUG, color = C_MUTED)
             }
+        }
+
+        if (showDebug) {
+            Text(
+                "timeSource=${p.timeSource} | ${p.rawStateSummary}",
+                color = C_MUTED,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
     }
 }
 
 @Composable
-private fun FlagBadge(active: Boolean, label: String) {
-    val color = if (active) Color(0xFF2E7D32) else Color(0xFFB0BEC5)
-    Box(modifier = Modifier.background(color, MaterialTheme.shapes.small).padding(horizontal = 7.dp, vertical = 2.dp)) {
-        Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
-private fun StateBadge(state: String) {
-    val color = when (state.uppercase()) {
-        "PLAYING", "PLAY" -> Color(0xFF2E7D32)
-        "PAUSED" -> Color(0xFFEF6C00)
-        "CUED" -> Color(0xFF1565C0)
-        "STOPPED", "STOP" -> Color(0xFF607D8B)
-        "OFFLINE" -> Color(0xFF455A64)
-        else -> Color(0xFF546E7A)
-    }
-    Box(modifier = Modifier.background(color, MaterialTheme.shapes.small).padding(horizontal = 9.dp, vertical = 3.dp)) {
-        Text(state.uppercase(), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun MetricBlock(label: String, value: String, modifier: Modifier = Modifier, emphasize: Boolean = false) {
-    Column(
-        modifier = modifier
-            .border(1.dp, Color(0xFFCFD8DC), shape = MaterialTheme.shapes.small)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+private fun StateTag(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .background(color)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .widthIn(min = 76.dp)
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF607D8B))
-        Text(
-            value,
-            style = if (emphasize) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
-            color = if (emphasize) Color(0xFF0D47A1) else Color.Unspecified,
-            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal
-        )
+        Text(text, color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun TinyFlag(text: String, on: Boolean) {
+    Box(
+        modifier = Modifier
+            .background(if (on) Color(0xFF2A3542) else Color(0xFF1A212B))
+            .border(1.dp, if (on) C_PLAY else C_BORDER)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(text, color = if (on) C_TEXT else C_MUTED, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun MetricReadout(label: String, value: String, emphasis: Boolean = false) {
+    Column(
+        modifier = Modifier
+            .widthIn(min = 68.dp)
+            .background(if (emphasis) Color(0xFF18222E) else Color(0xFF131922))
+            .border(1.dp, C_BORDER)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Text(label.uppercase(), color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        Text(value, color = if (emphasis) C_TEXT else Color(0xFFD0D8E2), fontWeight = if (emphasis) FontWeight.Bold else FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun BottomReservedZone() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .background(Color(0xFF0F1319))
+            .border(1.dp, C_BORDER)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(UiText.RESERVED_ZONE, color = C_MUTED, style = MaterialTheme.typography.labelMedium)
+        Text("(layout only, no waveform in this phase)", color = Color(0xFF677485), style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -342,7 +368,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val master = p.optBool("master", false)
                 val beat = p.optInt("beat", -1)
 
-                // 时间优先级：currentTimeMs > beatTimeMs > 0
                 val currentTime = p.optLongOrNull("currentTimeMs")
                 val beatTime = p.optLongOrNull("beatTimeMs")
                 val currentTimeMs = when {
@@ -376,7 +401,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
 
                 val stateText = when {
                     !online -> "OFFLINE"
-                    // 真值字段优先级（按要求）
                     playing || dbg?.optBoolOrNull("isPlaying") == true -> "PLAYING"
                     dbgIsCued == true -> "CUED"
                     dbgIsPaused == true && dbgIsCued != true -> "PAUSED"
@@ -385,7 +409,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     explicitState == "PAUSED" || explicitState == "PAUSE" -> "PAUSED"
                     explicitState == "STOPPED" || explicitState == "STOP" -> "STOPPED"
                     explicitState == "CUED" || explicitState == "CUE" -> "CUED"
-                    // 兜底推断：仅当真值字段不可用时使用
                     (dbgIsTrackLoaded ?: hasTrack) && currentTimeMs <= 120 && beat <= 0 -> "CUED"
                     (dbgIsTrackLoaded ?: hasTrack) && (currentTimeMs > 120 || beat > 0) -> "PAUSED"
                     else -> "STOPPED"
@@ -433,7 +456,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
         old.copy(
             stale = true,
             consecutiveFailures = old.consecutiveFailures + 1,
-            error = e.message ?: "获取状态失败"
+            error = e.message ?: "fetch failed"
         )
     }
 }

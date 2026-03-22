@@ -60,6 +60,11 @@ curl -s http://127.0.0.1:8080/api/sync/state | jq '.drivers'
    - Player 卡片结构化展示（状态标签、曲目信息、时间/BPM指标块）
    - 调试信息收纳为可展开区域，默认不干扰主监看
    - UI 文案开始抽离到 UiText 常量对象，便于后续国际化
+8. V1.4 视觉定稿（showkontrol 风格方向）已完成：
+   - 深色工业风主界面（去浅色 SaaS 卡片感）
+   - Player 1~4 改为横向通道条（strip）
+   - 时间/状态最突出，BPM 次级，曲目信息再次级
+   - 底部预留 mini deck / wave overview 占位区（仅布局，不做功能）
 
 
 ### 2.1 LTC 停止态抖动修复（优先级 1）
