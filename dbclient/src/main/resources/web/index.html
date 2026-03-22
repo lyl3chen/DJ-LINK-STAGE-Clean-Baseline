@@ -2648,6 +2648,36 @@
         status.textContent = isSuccess ? '✅ 分析完成' : '❌ 分析失败';
         status.style.color = isSuccess ? '#2dff7a' : '#ff4d6d';
         
+        // 分析完成后，停止轮询并更新进度区域为最终状态
+        if (analysisProgressPollInterval) {
+          clearInterval(analysisProgressPollInterval);
+          analysisProgressPollInterval = null;
+        }
+        
+        // 更新进度区域显示最终状态
+        const progressStatus = document.getElementById('analysisProgressStatus');
+        const progressPercent = document.getElementById('analysisProgressPercent');
+        const progressBar = document.getElementById('analysisProgressBar');
+        const progressMessage = document.getElementById('analysisProgressMessage');
+        
+        if (isSuccess) {
+          progressStatus.textContent = '✅ 分析完成';
+          progressStatus.style.color = '#2dff7a';
+          progressPercent.textContent = '100%';
+          progressPercent.style.color = '#2dff7a';
+          progressBar.style.width = '100%';
+          progressBar.style.background = 'linear-gradient(90deg,#2dff7a,#39a4ff)';
+          progressMessage.textContent = '分析成功';
+        } else {
+          progressStatus.textContent = '❌ 分析失败';
+          progressStatus.style.color = '#ff4d6d';
+          progressPercent.textContent = '-';
+          progressPercent.style.color = '#ff4d6d';
+          progressBar.style.width = '0%';
+          progressBar.style.background = 'linear-gradient(90deg,#ff4d6d,#ffb347)';
+          progressMessage.textContent = ar.errorMessage || '未知错误';
+        }
+        
         // 刷新运行时状态显示
         await refreshLocalPlayerStatus();
         
@@ -2662,6 +2692,11 @@
         status.style.color = '#ff4d6d';
       } finally {
         btn.disabled = false;
+        // 确保轮询已停止
+        if (analysisProgressPollInterval) {
+          clearInterval(analysisProgressPollInterval);
+          analysisProgressPollInterval = null;
+        }
       }
     }
     

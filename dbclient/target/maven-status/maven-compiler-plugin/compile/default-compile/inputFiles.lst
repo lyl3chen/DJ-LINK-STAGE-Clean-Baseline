@@ -9,6 +9,7 @@
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/model/WaveformPreview.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/protocol/TitanClientAdapter.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/model/PlaybackStatus.java
+/home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/analysis/AnalysisProgress.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/timecode/TimecodeCore.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/test/TestBuilder.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/MtcDriver.java
@@ -52,6 +53,7 @@
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/drivers/Ma2BpmDriver.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/input/LocalSourceInput.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/trigger/TriggerDualSourceVerification.java
+/home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/library/JsonFileTrackLibraryRepository.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/SyncOutputManager.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/sync/timecode/PlayerEvent.java
 /home/shenlei/.openclaw/agents/dev/workspace/dj-link-stage/dbclient/src/main/java/dbclient/media/trigger/TriggerActionDriver.java
