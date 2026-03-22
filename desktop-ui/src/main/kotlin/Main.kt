@@ -89,6 +89,8 @@ data class DashboardPlayer(
     val master: Boolean,
     val title: String,
     val artist: String,
+    val artworkUrl: String?,
+    val artworkAvailable: Boolean,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -255,6 +257,8 @@ private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifi
             master = false,
             title = "-",
             artist = "-",
+            artworkUrl = null,
+            artworkAvailable = false,
             currentTimeMs = 0,
             durationMs = 0,
             remainTimeMs = 0,
@@ -308,15 +312,54 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                 }
                 Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(18.dp)
-                        .background(Color(0xFF0C1117))
-                        .border(1.dp, Color(0xFF25303C)),
-                    contentAlignment = Alignment.CenterStart
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(UiText.ZOOM, color = Color(0xFF6F7D8F), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 6.dp))
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                            .background(Color(0xFF0C1117))
+                            .border(1.dp, Color(0xFF25303C)),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        // ZOOM波形槽占位
+                        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            repeat(28) { i ->
+                                val h = if (i % 6 == 0) 18 else if (i % 3 == 0) 13 else 9
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 0.8.dp)
+                                        .height(h.dp)
+                                        .background(if (i % 7 == 0) Color(0xFF6EA3FF) else Color(0xFF3F6CA7))
+                                )
+                            }
+                        }
+                        Text(
+                            UiText.ZOOM,
+                            color = Color(0xFF6F7D8F),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.align(Alignment.TopStart).padding(start = 6.dp, top = 1.dp)
+                        )
+                    }
+
+                    // 正方形封面容器（按需求）
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(Color(0xFF0B1016))
+                            .border(1.dp, Color(0xFF3A4656)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (p.artworkAvailable) {
+                            Text("ART", color = C_TEXT, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        } else {
+                            Text("-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
 
@@ -576,6 +619,8 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     master = master,
                     title = title,
                     artist = artist,
+                    artworkUrl = track?.optString("artworkUrl"),
+                    artworkAvailable = track?.optBool("artworkAvailable", false) ?: false,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
