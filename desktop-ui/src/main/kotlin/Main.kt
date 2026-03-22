@@ -3,15 +3,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -32,46 +31,51 @@ private val httpClient: HttpClient = HttpClient.newBuilder().build()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 private object UiText {
-    const val APP_TITLE = "DJ Link Stage - CDJ Monitor"
-    const val DASHBOARD_TITLE = "SHOW MONITOR"
-    const val REFRESH = "Refresh"
-    const val MASTER = "Master"
-    const val MASTER_BPM = "Master BPM"
-    const val DJ_LINK = "DJ Link"
-    const val SCAN = "Scan"
-    const val LAST_UPDATE = "Last Update"
-    const val FAIL_COUNT = "Fail"
-    const val INTERRUPTED = "DATA INTERRUPTED"
-    const val NO_DEVICE = "NO DEVICE"
-    const val CONNECTED = "CONNECTED"
-    const val DEBUG = "Debug"
-    const val HIDE_DEBUG = "Hide"
+    const val APP_TITLE = "DJ Link Stage"
+    const val TAB_LIVE = "LIVE"
+    const val TAB_SYNC = "同步中心"
+    const val TAB_LOCAL = "本地播放器"
+    const val TAB_TRIGGER = "触发"
+    const val SETTINGS = "设置"
+
+    const val MASTER = "MASTER"
+    const val MASTER_BPM = "MASTER BPM"
+    const val DJ_LINK = "DJ LINK"
+    const val SCAN = "SCAN"
+    const val LAST_UPDATE = "LAST UPDATE"
+    const val FAIL = "FAIL"
+
     const val PLAYER = "PLAYER"
-    const val ARTIST = "Artist"
-    const val CURRENT = "Current"
-    const val REMAIN = "Remain"
+    const val ARTIST = "ARTIST"
+    const val ZOOM = "ZOOM WAVE SLOT"
+    const val CURRENT = "CURRENT"
+    const val REMAIN = "REMAIN"
     const val BPM = "BPM"
-    const val PITCH = "Pitch"
-    const val EFFECTIVE = "Eff"
-    const val RESERVED_ZONE = "MINI DECK / WAVE OVERVIEW (RESERVED)"
+    const val PITCH = "PITCH"
+    const val EFFECTIVE = "EFFECTIVE"
+    const val DEBUG = "DEBUG"
+    const val HIDE = "HIDE"
+
+    const val MINI_DECK = "MINI DECK OVERVIEW"
 }
 
-private val C_BG = Color(0xFF0B0E12)
-private val C_PANEL = Color(0xFF11161D)
+private val C_BG = Color(0xFF0A0D12)
+private val C_PANEL = Color(0xFF10151C)
+private val C_PANEL_2 = Color(0xFF131A23)
 private val C_BORDER = Color(0xFF2A313B)
-private val C_TEXT = Color(0xFFE9EEF5)
-private val C_MUTED = Color(0xFF8D99A8)
-private val C_PLAY = Color(0xFF34C759)
-private val C_PAUSE = Color(0xFFFFB020)
+private val C_TEXT = Color(0xFFE7EDF5)
+private val C_MUTED = Color(0xFF8A97A8)
+private val C_PLAY = Color(0xFF36C965)
+private val C_PAUSE = Color(0xFFFFB01F)
 private val C_CUED = Color(0xFF3B82F6)
-private val C_STOP = Color(0xFF7D8794)
-private val C_OFFLINE = Color(0xFF5B6470)
+private val C_STOP = Color(0xFF7B8796)
+private val C_OFFLINE = Color(0xFF5A6470)
 private val C_ALERT = Color(0xFFFF4D4F)
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = UiText.APP_TITLE) {
         MaterialTheme {
-            CDJDashboardApp()
+            AppRoot()
         }
     }
 }
@@ -106,7 +110,7 @@ data class DashboardState(
 )
 
 @Composable
-private fun CDJDashboardApp() {
+private fun AppRoot() {
     val baseUrl = "http://127.0.0.1:8080"
     var refreshMs by remember { mutableStateOf(300) }
     var state by remember { mutableStateOf(DashboardState()) }
@@ -122,12 +126,50 @@ private fun CDJDashboardApp() {
         modifier = Modifier
             .fillMaxSize()
             .background(C_BG)
-            .padding(10.dp),
+            .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        TopToolbar()
         TopStatusBar(state, refreshMs) { refreshMs = it }
-        PlayersRows(state.players, modifier = Modifier.weight(1f))
-        BottomReservedZone()
+        LiveMain(state.players, modifier = Modifier.weight(1f))
+        MiniDeckOverview(state.players)
+    }
+}
+
+@Composable
+private fun TopToolbar() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .background(C_PANEL)
+            .border(1.dp, C_BORDER)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        TopTab(UiText.TAB_LIVE, selected = true)
+        TopTab(UiText.TAB_SYNC, selected = false)
+        TopTab(UiText.TAB_LOCAL, selected = false)
+        TopTab(UiText.TAB_TRIGGER, selected = false)
+        Spacer(Modifier.weight(1f))
+        OutlinedButton(onClick = {}, modifier = Modifier.height(26.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
+            Text(UiText.SETTINGS, color = C_TEXT, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun TopTab(text: String, selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .height(24.dp)
+            .background(if (selected) C_PANEL_2 else Color.Transparent)
+            .border(1.dp, if (selected) Color(0xFF3A4656) else C_BORDER)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = if (selected) C_TEXT else C_MUTED, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -138,10 +180,10 @@ private fun TopStatusBar(state: DashboardState, refreshMs: Int, onRefreshChange:
     } else "-"
 
     val linkStateText = when {
-        state.error != null -> UiText.INTERRUPTED
-        state.stale -> UiText.INTERRUPTED
-        state.players.any { it.online } -> UiText.CONNECTED
-        else -> UiText.NO_DEVICE
+        state.error != null -> "INTERRUPTED"
+        state.stale -> "INTERRUPTED"
+        state.players.any { it.online } -> "CONNECTED"
+        else -> "NO DEVICE"
     }
 
     val linkStateColor = when {
@@ -156,60 +198,52 @@ private fun TopStatusBar(state: DashboardState, refreshMs: Int, onRefreshChange:
             .background(C_PANEL)
             .border(1.dp, C_BORDER)
             .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(UiText.DASHBOARD_TITLE, color = C_TEXT, fontWeight = FontWeight.Bold)
-            Text("${UiText.REFRESH}:", color = C_MUTED)
-            listOf(200, 300, 500).forEach { ms ->
-                FilterChip(
-                    selected = refreshMs == ms,
-                    onClick = { onRefreshChange(ms) },
-                    label = { Text("${ms}ms") }
-                )
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            TopMetric(UiText.MASTER, state.masterPlayer?.toString() ?: "-", Modifier.weight(1f), highlight = true)
+            TopMetric(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-", Modifier.weight(1f), highlight = true)
+            TopMetric(UiText.DJ_LINK, linkStateText, Modifier.weight(1f), valueColor = linkStateColor, highlight = true)
+            TopMetric(UiText.SCAN, if (state.scanEnabled == true) "ON" else if (state.scanEnabled == false) "OFF" else "UNKNOWN", Modifier.weight(1f))
+            TopMetric(UiText.LAST_UPDATE, updateText, Modifier.weight(1f))
+            TopMetric(UiText.FAIL, state.consecutiveFailures.toString(), Modifier.weight(1f), valueColor = if (state.consecutiveFailures > 0) C_ALERT else C_PLAY)
+            RefreshSelector(refreshMs, onRefreshChange)
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            TopMetric(UiText.MASTER, state.masterPlayer?.toString() ?: "-", modifier = Modifier.weight(1f), highlight = true)
-            TopMetric(UiText.MASTER_BPM, state.masterBpm?.let { "%.2f".format(it) } ?: "-", modifier = Modifier.weight(1f), highlight = true)
-            TopMetric(UiText.DJ_LINK, linkStateText, modifier = Modifier.weight(1f), valueColor = linkStateColor, highlight = true)
-            TopMetric(UiText.SCAN, when (state.scanEnabled) {
-                true -> "ON"
-                false -> "OFF"
-                null -> "UNKNOWN"
-            }, modifier = Modifier.weight(1f))
-            TopMetric(UiText.LAST_UPDATE, updateText, modifier = Modifier.weight(1f))
-            TopMetric(UiText.FAIL_COUNT, state.consecutiveFailures.toString(), modifier = Modifier.weight(1f), valueColor = if (state.consecutiveFailures > 0) C_ALERT else C_PLAY)
-        }
-
         if (state.error != null || state.stale) {
-            Text("⚠ ${state.error ?: UiText.INTERRUPTED}", color = C_ALERT, fontWeight = FontWeight.SemiBold)
+            Text("⚠ ${state.error ?: "DATA INTERRUPTED"}", color = C_ALERT, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-private fun TopMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = C_TEXT,
-    highlight: Boolean = false
-) {
+private fun RefreshSelector(refreshMs: Int, onRefreshChange: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(200, 300, 500).forEach { ms ->
+            FilterChip(
+                selected = refreshMs == ms,
+                onClick = { onRefreshChange(ms) },
+                label = { Text("${ms}ms") }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopMetric(label: String, value: String, modifier: Modifier, valueColor: Color = C_TEXT, highlight: Boolean = false) {
     Column(
         modifier = modifier
-            .background(if (highlight) Color(0xFF151C24) else Color.Transparent)
+            .height(44.dp)
+            .background(if (highlight) C_PANEL_2 else Color.Transparent)
             .border(1.dp, if (highlight) Color(0xFF3A4656) else C_BORDER)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
-        Text(label.uppercase(), color = C_MUTED, style = MaterialTheme.typography.labelSmall)
-        Text(value, color = valueColor, fontWeight = FontWeight.Bold)
+        Text(label, color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        Text(value, color = valueColor, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun PlayersRows(players: List<DashboardPlayer>, modifier: Modifier = Modifier) {
+private fun LiveMain(players: List<DashboardPlayer>, modifier: Modifier = Modifier) {
     val byNumber = players.associateBy { it.number }
     val fixed = (1..4).map { idx ->
         byNumber[idx] ?: DashboardPlayer(
@@ -231,13 +265,15 @@ private fun PlayersRows(players: List<DashboardPlayer>, modifier: Modifier = Mod
         )
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = modifier) {
-        items(fixed) { p -> PlayerStrip(p) }
+    LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(fixed) { p ->
+            LiveChannelRow(p)
+        }
     }
 }
 
 @Composable
-private fun PlayerStrip(p: DashboardPlayer) {
+private fun LiveChannelRow(p: DashboardPlayer) {
     var showDebug by remember(p.number) { mutableStateOf(false) }
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -253,43 +289,93 @@ private fun PlayerStrip(p: DashboardPlayer) {
             .fillMaxWidth()
             .background(C_PANEL)
             .border(1.dp, C_BORDER)
-            .padding(horizontal = 8.dp, vertical = 7.dp),
+            .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // single strip line like show monitors
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.width(72.dp)) {
-                Text("${UiText.PLAYER} ${p.number}", color = C_TEXT, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // LEFT
+            Column(
+                modifier = Modifier
+                    .weight(0.55f)
+                    .height(88.dp)
+                    .background(Color(0xFF0F141B))
+                    .border(1.dp, C_BORDER)
+                    .padding(7.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${UiText.PLAYER} ${p.number}", color = C_TEXT, fontWeight = FontWeight.Bold)
+                    StateTag(p.stateText.uppercase(), stateColor)
+                }
+                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .background(Color(0xFF0C1117))
+                        .border(1.dp, Color(0xFF25303C)),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(UiText.ZOOM, color = Color(0xFF6F7D8F), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 6.dp))
+                }
             }
 
-            StateTag(p.stateText.uppercase(), stateColor)
-            TinyFlag("ON", p.online)
-            TinyFlag("AIR", p.onAir)
-            TinyFlag("MST", p.master)
-
-            Spacer(Modifier.width(6.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
-                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+            // CENTER
+            Column(
+                modifier = Modifier
+                    .weight(0.30f)
+                    .height(88.dp)
+                    .background(Color(0xFF0F141B))
+                    .border(1.dp, C_BORDER)
+                    .padding(7.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    fmtTime(p.currentTimeMs),
+                    color = C_TEXT,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    SmallMetric(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), Modifier.weight(1f), emphasize = true)
+                    SmallMetric(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-", Modifier.weight(1f))
+                    SmallMetric(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-", Modifier.weight(1f))
+                    SmallMetric(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", Modifier.weight(1f), emphasize = true)
+                }
             }
 
-            MetricReadout(UiText.CURRENT, fmtTime(p.currentTimeMs), emphasis = true)
-            MetricReadout(UiText.REMAIN, fmtTime(max(0L, p.remainTimeMs)), emphasis = true)
-            MetricReadout(UiText.BPM, p.rawBpm?.let { "%.2f".format(it) } ?: "-")
-            MetricReadout(UiText.PITCH, p.pitch?.let { "%+.2f%%".format(it) } ?: "-")
-            MetricReadout(UiText.EFFECTIVE, p.effectiveBpm?.let { "%.2f".format(it) } ?: "-", emphasis = true)
-
-            TextButton(onClick = { showDebug = !showDebug }) {
-                Text(if (showDebug) UiText.HIDE_DEBUG else UiText.DEBUG, color = C_MUTED)
+            // RIGHT
+            Column(
+                modifier = Modifier
+                    .weight(0.15f)
+                    .height(88.dp)
+                    .background(Color(0xFF0F141B))
+                    .border(1.dp, C_BORDER)
+                    .padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                RightStatusTag("ONLINE", p.online)
+                RightStatusTag("MASTER", p.master)
+                RightStatusTag("ON-AIR", p.onAir)
+                RightStatusTag(p.stateText.uppercase(), true, color = stateColor)
             }
         }
 
-        if (showDebug) {
-            Text(
-                "timeSource=${p.timeSource} | ${p.rawStateSummary}",
-                color = C_MUTED,
-                style = MaterialTheme.typography.labelSmall
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { showDebug = !showDebug }) {
+                Text(if (showDebug) UiText.HIDE else UiText.DEBUG, color = C_MUTED)
+            }
+            if (showDebug) {
+                Text(
+                    "timeSource=${p.timeSource} | ${p.rawStateSummary}",
+                    color = C_MUTED,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -299,52 +385,89 @@ private fun StateTag(text: String, color: Color) {
     Box(
         modifier = Modifier
             .background(color)
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-            .widthIn(min = 76.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         Text(text, color = Color.Black, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-private fun TinyFlag(text: String, on: Boolean) {
+private fun RightStatusTag(text: String, active: Boolean, color: Color = C_PLAY) {
     Box(
         modifier = Modifier
-            .background(if (on) Color(0xFF2A3542) else Color(0xFF1A212B))
-            .border(1.dp, if (on) C_PLAY else C_BORDER)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .fillMaxWidth()
+            .background(if (active) Color(0xFF1A2531) else Color(0xFF121820))
+            .border(1.dp, if (active) color else C_BORDER)
+            .padding(vertical = 2.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(text, color = if (on) C_TEXT else C_MUTED, style = MaterialTheme.typography.labelSmall)
+        Text(text, color = if (active) C_TEXT else C_MUTED, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-private fun MetricReadout(label: String, value: String, emphasis: Boolean = false) {
+private fun SmallMetric(label: String, value: String, modifier: Modifier, emphasize: Boolean = false) {
     Column(
-        modifier = Modifier
-            .widthIn(min = 68.dp)
-            .background(if (emphasis) Color(0xFF18222E) else Color(0xFF131922))
+        modifier = modifier
+            .height(34.dp)
+            .background(if (emphasize) Color(0xFF18222E) else Color(0xFF121922))
             .border(1.dp, C_BORDER)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
-        Text(label.uppercase(), color = C_MUTED, style = MaterialTheme.typography.labelSmall)
-        Text(value, color = if (emphasis) C_TEXT else Color(0xFFD0D8E2), fontWeight = if (emphasis) FontWeight.Bold else FontWeight.Medium)
+        Text(label, color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        Text(value, color = if (emphasize) C_TEXT else Color(0xFFD0D8E2), fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium)
     }
 }
 
 @Composable
-private fun BottomReservedZone() {
-    Column(
+private fun MiniDeckOverview(players: List<DashboardPlayer>) {
+    val byNumber = players.associateBy { it.number }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(78.dp)
             .background(Color(0xFF0F1319))
             .border(1.dp, C_BORDER)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.Center
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(UiText.RESERVED_ZONE, color = C_MUTED, style = MaterialTheme.typography.labelMedium)
-        Text("(layout only, no waveform in this phase)", color = Color(0xFF677485), style = MaterialTheme.typography.labelSmall)
+        (1..4).forEach { idx ->
+            val p = byNumber[idx]
+            MiniDeckItem(idx, p, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MiniDeckItem(index: Int, p: DashboardPlayer?, modifier: Modifier = Modifier) {
+    val st = p?.stateText?.uppercase() ?: "OFFLINE"
+    val stColor = when (st) {
+        "PLAYING", "PLAY" -> C_PLAY
+        "PAUSED" -> C_PAUSE
+        "CUED" -> C_CUED
+        "OFFLINE" -> C_OFFLINE
+        else -> C_STOP
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(Color(0xFF111722))
+            .border(1.dp, C_BORDER)
+            .padding(5.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("P$index", color = C_TEXT, fontWeight = FontWeight.Bold)
+            Box(Modifier.background(stColor).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                Text(st, color = Color.Black, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
+        }
+        Text(p?.title ?: "-", color = C_MUTED, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(fmtTime(p?.currentTimeMs ?: 0), color = C_TEXT, style = MaterialTheme.typography.labelSmall)
+            Text(p?.rawBpm?.let { "%.1f".format(it) } ?: "-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 
