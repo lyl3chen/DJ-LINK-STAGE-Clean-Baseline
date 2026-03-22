@@ -8,12 +8,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.foundation.Image
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.delay
@@ -26,6 +30,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Image
 
 private val httpClient: HttpClient = HttpClient.newBuilder().build()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -346,20 +354,12 @@ private fun LiveChannelRow(p: DashboardPlayer) {
                         )
                     }
 
-                    // 正方形封面容器（按需求）
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .background(Color(0xFF0B1016))
-                            .border(1.dp, Color(0xFF3A4656)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (p.artworkAvailable) {
-                            Text("ART", color = C_TEXT, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        } else {
-                            Text("-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+                    // 正方形封面容器（真实 artwork 缩略图）
+                    ArtworkSquare(
+                        artworkUrl = p.artworkUrl,
+                        artworkAvailable = p.artworkAvailable,
+                        sizeDp = 34
+                    )
                 }
             }
 
@@ -445,6 +445,41 @@ private fun SmallMetric(label: String, value: String, modifier: Modifier, emphas
     ) {
         Text(label, color = C_MUTED, style = MaterialTheme.typography.labelSmall)
         Text(value, color = if (emphasize) C_TEXT else Color(0xFFD0D8E2), fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ArtworkSquare(artworkUrl: String?, artworkAvailable: Boolean, sizeDp: Int) {
+    var bitmap by remember(artworkUrl, artworkAvailable) { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(artworkUrl, artworkAvailable) {
+        bitmap = null
+        if (!artworkAvailable || artworkUrl.isNullOrBlank()) return@LaunchedEffect
+        bitmap = withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = URL(artworkUrl).openStream().use { it.readBytes() }
+                Image.makeFromEncoded(bytes).toComposeImageBitmap()
+            }.getOrNull()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(sizeDp.dp)
+            .background(Color(0xFF0B1016))
+            .border(1.dp, Color(0xFF3A4656)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!,
+                contentDescription = "artwork",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text("-", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 
@@ -619,7 +654,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     master = master,
                     title = title,
                     artist = artist,
-                    artworkUrl = track?.optString("artworkUrl"),
+                    artworkUrl = track?.optString("artworkUrl")?.let { if (it.startsWith("/")) "$baseUrl$it" else it },
                     artworkAvailable = track?.optBool("artworkAvailable", false) ?: false,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
