@@ -40,6 +40,7 @@ private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 private object UiText {
     const val APP_TITLE = "DJ Link Stage"
+    const val UI_VERSION = "UI bc70482"
     const val TAB_LIVE = "LIVE"
     const val TAB_SYNC = "同步中心"
     const val TAB_LOCAL = "本地播放器"
@@ -163,6 +164,7 @@ private fun TopToolbar() {
         TopTab(UiText.TAB_LOCAL, selected = false)
         TopTab(UiText.TAB_TRIGGER, selected = false)
         Spacer(Modifier.weight(1f))
+        Text(UiText.UI_VERSION, color = C_MUTED, style = MaterialTheme.typography.labelSmall)
         OutlinedButton(onClick = {}, modifier = Modifier.height(26.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
             Text(UiText.SETTINGS, color = C_TEXT, style = MaterialTheme.typography.labelSmall)
         }
