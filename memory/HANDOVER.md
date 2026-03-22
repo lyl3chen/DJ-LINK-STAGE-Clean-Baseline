@@ -53,6 +53,7 @@ curl -s http://127.0.0.1:8080/api/sync/state | jq '.drivers'
 2. 校准 `CUED/PAUSE` 状态判定语义（按现场设备行为微调）
 3. 增加数据更新时间 watchdog 参数化（当前阈值 2s）
 4. 明确未覆盖字段清单（如某些设备不回 artist/title 时的显示策略）
+5. V1.2 已加入最小调试信息：raw 状态摘要、timeSource、连续失败计数
 
 
 ### 2.1 LTC 停止态抖动修复（优先级 1）

@@ -40,6 +40,7 @@ data class DashboardPlayer(
     val number: Int,
     val online: Boolean,
     val stateText: String,
+    val rawStateSummary: String,
     val onAir: Boolean,
     val master: Boolean,
     val title: String,
@@ -47,6 +48,7 @@ data class DashboardPlayer(
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
+    val timeSource: String,
     val rawBpm: Double?,
     val pitch: Double?,
     val effectiveBpm: Double?
@@ -59,16 +61,18 @@ data class DashboardState(
     val scanEnabled: Boolean? = null,
     val updatedAtMs: Long = 0,
     val stale: Boolean = true,
+    val consecutiveFailures: Int = 0,
     val error: String? = null
 )
 
 @Composable
 private fun CDJDashboardApp() {
-    var baseUrl by remember { mutableStateOf("http://127.0.0.1:8080") }
+    // 主线固定本机 API，不在主界面暴露 BaseURL
+    val baseUrl = "http://127.0.0.1:8080"
     var refreshMs by remember { mutableStateOf(300) }
     var state by remember { mutableStateOf(DashboardState()) }
 
-    LaunchedEffect(baseUrl, refreshMs) {
+    LaunchedEffect(refreshMs) {
         while (isActive) {
             state = fetchDashboardState(baseUrl, state)
             delay(refreshMs.toLong())
@@ -78,8 +82,6 @@ private fun CDJDashboardApp() {
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         TopStatusBar(
             state = state,
-            baseUrl = baseUrl,
-            onBaseUrlChange = { baseUrl = it },
             refreshMs = refreshMs,
             onRefreshChange = { refreshMs = it }
         )
@@ -93,23 +95,13 @@ private fun CDJDashboardApp() {
 @Composable
 private fun TopStatusBar(
     state: DashboardState,
-    baseUrl: String,
-    onBaseUrlChange: (String) -> Unit,
     refreshMs: Int,
     onRefreshChange: (Int) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("CDJ Dashboard V1", fontWeight = FontWeight.Bold)
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = onBaseUrlChange,
-                    label = { Text("API Base URL") },
-                    singleLine = true,
-                    modifier = Modifier.width(320.dp)
-                )
-
+                Text("CDJ Dashboard V1.2", fontWeight = FontWeight.Bold)
                 Text("刷新:")
                 listOf(200, 300, 500).forEach { ms ->
                     FilterChip(
@@ -149,6 +141,7 @@ private fun TopStatusBar(
                     null -> "UNKNOWN"
                 })
                 StatusPill("Last Update", updateText)
+                StatusPill("连续失败", state.consecutiveFailures.toString(), if (state.consecutiveFailures > 0) Color(0xFFD32F2F) else Color(0xFF2E7D32))
             }
 
             if (state.error != null) {
@@ -183,6 +176,7 @@ private fun PlayersGrid(players: List<DashboardPlayer>) {
             number = idx,
             online = false,
             stateText = "OFFLINE",
+            rawStateSummary = "active=false",
             onAir = false,
             master = false,
             title = "-",
@@ -190,6 +184,7 @@ private fun PlayersGrid(players: List<DashboardPlayer>) {
             currentTimeMs = 0,
             durationMs = 0,
             remainTimeMs = 0,
+            timeSource = "-",
             rawBpm = null,
             pitch = null,
             effectiveBpm = null
@@ -206,9 +201,10 @@ private fun PlayersGrid(players: List<DashboardPlayer>) {
 @Composable
 private fun PlayerCard(p: DashboardPlayer) {
     val stateColor = when (p.stateText) {
-        "PLAY" -> Color(0xFF2E7D32)
-        "PAUSE" -> Color(0xFFEF6C00)
-        "STOP", "CUED", "OFFLINE" -> Color(0xFF607D8B)
+        "PLAYING", "PLAY" -> Color(0xFF2E7D32)
+        "PAUSED" -> Color(0xFFEF6C00)
+        "CUED" -> Color(0xFF1565C0)
+        "STOPPED", "STOP", "OFFLINE" -> Color(0xFF607D8B)
         else -> Color(0xFF455A64)
     }
 
@@ -236,6 +232,9 @@ private fun PlayerCard(p: DashboardPlayer) {
                 Text("Pitch: ${p.pitch?.let { "%+.2f%%".format(it) } ?: "-"}")
                 Text("Effective BPM: ${p.effectiveBpm?.let { "%.2f".format(it) } ?: "-"}", fontWeight = FontWeight.Bold)
             }
+
+            Spacer(Modifier.height(6.dp))
+            Text("timeSource: ${p.timeSource} | raw: ${p.rawStateSummary}", color = Color(0xFF78909C))
         }
     }
 }
@@ -266,7 +265,22 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val playing = p.optBool("playing", false)
                 val onAir = p.optBool("onAir", false)
                 val master = p.optBool("master", false)
-                val currentTimeMs = p.optLong("currentTimeMs", p.optLong("beatTimeMs", 0L))
+                val beat = p.optInt("beat", -1)
+
+                // 时间优先级：currentTimeMs > beatTimeMs > 0
+                val currentTime = p.optLongOrNull("currentTimeMs")
+                val beatTime = p.optLongOrNull("beatTimeMs")
+                val currentTimeMs = when {
+                    currentTime != null && currentTime >= 0 -> currentTime
+                    beatTime != null && beatTime >= 0 -> beatTime
+                    else -> 0L
+                }
+                val timeSource = when {
+                    currentTime != null && currentTime >= 0 -> "currentTimeMs"
+                    beatTime != null && beatTime >= 0 -> "beatTimeMs"
+                    else -> "none"
+                }
+
                 val durationMs = p.optLong("durationMs", 0L)
                 val remain = if (durationMs > 0) durationMs - currentTimeMs else 0L
                 val rawBpm = p.optDoubleOrNull("bpm")
@@ -276,21 +290,30 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val track = p.optObj("track")
                 val title = track?.optString("title") ?: p.optString("title") ?: "-"
                 val artist = track?.optString("artist") ?: p.optString("artist") ?: "-"
+                val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
+                val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
-                val explicitState = p.optString("state") ?: p.optString("playState") ?: p.optString("status")
+                val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
+
                 val stateText = when {
                     !online -> "OFFLINE"
-                    !explicitState.isNullOrBlank() -> explicitState.uppercase()
-                    playing -> "PLAY"
-                    currentTimeMs in 1..100 -> "CUED"
-                    currentTimeMs <= 0 -> "STOP"
-                    else -> "PAUSE"
+                    explicitState == "PLAYING" || explicitState == "PLAY" -> "PLAYING"
+                    explicitState == "PAUSED" || explicitState == "PAUSE" -> "PAUSED"
+                    explicitState == "STOPPED" || explicitState == "STOP" -> "STOPPED"
+                    explicitState == "CUED" || explicitState == "CUE" -> "CUED"
+                    playing -> "PLAYING"
+                    hasTrack && currentTimeMs <= 120 && beat <= 0 -> "CUED"
+                    hasTrack && (currentTimeMs > 120 || beat > 0) -> "PAUSED"
+                    else -> "STOPPED"
                 }
+
+                val rawSummary = "state=${explicitState ?: "-"},playing=$playing,beat=$beat,time=${currentTimeMs}"
 
                 players += DashboardPlayer(
                     number = number,
                     online = online,
                     stateText = stateText,
+                    rawStateSummary = rawSummary,
                     onAir = onAir,
                     master = master,
                     title = title,
@@ -298,6 +321,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
+                    timeSource = timeSource,
                     rawBpm = rawBpm,
                     pitch = pitch,
                     effectiveBpm = effective
@@ -305,7 +329,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
             }
         }
 
-        val master = players.firstOrNull { it.master } ?: players.firstOrNull { it.online && it.stateText == "PLAY" }
+        val master = players.firstOrNull { it.master } ?: players.firstOrNull { it.online && (it.stateText == "PLAYING" || it.stateText == "PLAY") }
         val updatedAt = System.currentTimeMillis()
 
         DashboardState(
@@ -315,11 +339,13 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
             scanEnabled = scanJson?.optBool("scanning", false),
             updatedAtMs = updatedAt,
             stale = false,
+            consecutiveFailures = 0,
             error = null
         )
     } catch (e: Exception) {
         old.copy(
             stale = true,
+            consecutiveFailures = old.consecutiveFailures + 1,
             error = e.message ?: "获取状态失败"
         )
     }
@@ -355,6 +381,9 @@ private fun JsonObject.optInt(key: String, default: Int): Int =
 
 private fun JsonObject.optLong(key: String, default: Long): Long =
     if (has(key) && !get(key).isJsonNull) runCatching { get(key).asLong }.getOrElse { default } else default
+
+private fun JsonObject.optLongOrNull(key: String): Long? =
+    if (has(key) && !get(key).isJsonNull) runCatching { get(key).asLong }.getOrNull() else null
 
 private fun JsonObject.optBool(key: String, default: Boolean): Boolean =
     if (has(key) && !get(key).isJsonNull) runCatching { get(key).asBoolean }.getOrElse { default } else default
