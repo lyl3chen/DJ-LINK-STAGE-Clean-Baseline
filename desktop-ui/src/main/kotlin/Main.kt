@@ -711,7 +711,13 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                     if (resolved.previewHeights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
-                        WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
+                        val progress = if ((p.durationMs) > 0L) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                        PreviewWaveformView(
+                            heights = resolved.previewHeights,
+                            progress = progress,
+                            sourceTag = resolved.sourceTag,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
+                        )
                         Text(
                             when (resolved.sourceTag) {
                                 WaveformSourceTag.RAW -> "RAW"
