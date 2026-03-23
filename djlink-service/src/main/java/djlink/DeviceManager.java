@@ -945,6 +945,7 @@ public class DeviceManager {
             track.put("sourceSlot", ps.status != null && ps.status.getTrackSourceSlot() != null ? ps.status.getTrackSourceSlot().toString() : null);
             track.put("sourcePlayer", ps.status != null ? ps.status.getTrackSourcePlayer() : null);
             track.put("rekordboxId", ps.status != null ? ps.status.getRekordboxId() : null);
+            track.put("metadataFound", false);
 
             try {
                 TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNum);
@@ -954,6 +955,7 @@ public class DeviceManager {
                     track.put("album", meta.getAlbum() != null ? meta.getAlbum().label : null);
                     track.put("duration", meta.getDuration());
                     track.put("durationMs", (long) meta.getDuration() * 1000L);
+                    track.put("metadataFound", true);
 
                     // Artwork metadata
                     track.put("artworkId", meta.getArtworkId());
