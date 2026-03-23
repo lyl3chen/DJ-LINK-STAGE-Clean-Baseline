@@ -742,9 +742,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val sourceSlot = track?.optString("sourceSlot")
                 val sourcePlayer = track?.optInt("sourcePlayer", 0) ?: 0
                 val rekordboxId = track?.optInt("rekordboxId", 0) ?: 0
-                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 240)
+                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 320)
                 val detailColors = parseColorWaveform(analysis?.optArray("detailSampleColors"), detailHeights.size)
-                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 120)
+                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 300)
                 val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
@@ -864,18 +864,23 @@ private fun MainDetailWaveformCanvas(
     Canvas(modifier = modifier) {
         if (waveform.isEmpty()) return@Canvas
 
-        val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
         val n = waveform.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step + 0.8f).coerceAtMost(3.0f)
+        val barW = (step * 1.25f).coerceAtMost(3.6f) // 轻微重叠，形成更整体的“能量体”
         val mid = size.height / 2f
 
-        // 双边“实体采样条”波形体（非轮廓线、非外描边）
+        val norm = normalizeWave(waveform)
+        val env = smoothWave(norm, radius = 8)
+
+        // 双边实体采样条 + 包络增强（提升段落结构可读性）
         for (i in 0 until n) {
-            val raw = waveform[i].toFloat() / maxV.toFloat()
-            val shaped = (raw * 0.85f + raw * raw * 0.15f).coerceIn(0f, 1f)
-            val amp = shaped * (size.height * 0.47f)
-            val x = i * step
+            val raw = norm[i]
+            val envelope = env[i]
+            val shapedRaw = kotlin.math.sqrt(raw)
+            val shapedEnv = envelope * envelope
+            val ampNorm = (shapedRaw * 0.50f + shapedEnv * 0.50f).coerceIn(0f, 1f)
+            val amp = ampNorm * (size.height * 0.47f)
+            val x = i * step - (barW - step) * 0.5f
 
             val c = Color(0xFF6E86FF)
 
@@ -886,7 +891,6 @@ private fun MainDetailWaveformCanvas(
             )
         }
 
-        // 播放头（沿用现有播放进度逻辑）
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(
             color = Color(0xFF00E5FF),
@@ -901,17 +905,18 @@ private fun MainDetailWaveformCanvas(
 private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         if (waveform.isEmpty()) return@Canvas
-        val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
         val n = waveform.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step + 0.8f).coerceAtMost(2.6f)
+        val barW = (step * 1.45f).coerceAtMost(3.0f) // 更高重叠，去掉松散柱状感
 
-        // 单边“实体缩略采样条”波形（非柱状图感：条更密、形成整体体块）
+        val norm = normalizeWave(waveform)
+        val env = smoothWave(norm, radius = 6)
+
+        // 单边紧凑缩略实体波形（overview体感）
         for (i in 0 until n) {
-            val raw = waveform[i].toFloat() / maxV.toFloat()
-            val shaped = (raw * 0.90f + raw * raw * 0.10f).coerceIn(0f, 1f)
-            val amp = shaped * (size.height * 0.98f)
-            val x = i * step
+            val ampNorm = (norm[i] * 0.45f + env[i] * 0.55f).coerceIn(0f, 1f)
+            val amp = ampNorm * (size.height * 0.98f)
+            val x = i * step - (barW - step) * 0.5f
             drawRect(
                 color = Color(0xFF6E86FF),
                 topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
@@ -932,6 +937,29 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
+}
+
+private fun normalizeWave(waveform: List<Int>): List<Float> {
+    if (waveform.isEmpty()) return emptyList()
+    val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
+    return waveform.map { (it.toFloat() / maxV.toFloat()).coerceIn(0f, 1f) }
+}
+
+private fun smoothWave(src: List<Float>, radius: Int): List<Float> {
+    if (src.isEmpty() || radius <= 0) return src
+    val out = MutableList(src.size) { 0f }
+    for (i in src.indices) {
+        var sum = 0f
+        var count = 0
+        val s = (i - radius).coerceAtLeast(0)
+        val e = (i + radius).coerceAtMost(src.lastIndex)
+        for (j in s..e) {
+            sum += src[j]
+            count++
+        }
+        out[i] = if (count > 0) sum / count.toFloat() else src[i]
+    }
+    return out
 }
 
 private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int): List<Int> {
