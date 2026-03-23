@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -20,7 +21,8 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.delay
@@ -279,7 +281,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
-    var mainWaveZoom by remember { mutableStateOf(1) } // 1x / 2x / 4x
+    var mainWaveZoom by remember { mutableStateOf(1f) } // 1.0x ~ 10.0x
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -325,19 +327,20 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
                 uiNowMs = uiNowMs,
                 mainWaveZoom = mainWaveZoom,
-                onZoomChange = { next -> mainWaveZoom = next.coerceIn(1, 4) }
+                onZoomChange = { next -> mainWaveZoom = next.coerceIn(1f, 10f) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
     uiNowMs: Long,
-    mainWaveZoom: Int,
-    onZoomChange: (Int) -> Unit
+    mainWaveZoom: Float,
+    onZoomChange: (Float) -> Unit
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -397,6 +400,10 @@ private fun LiveChannelRow(
                         .height(34.dp)
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
+                        .onPointerEvent(PointerEventType.Scroll) { e ->
+                            val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                            if (dy < 0f) onZoomChange(mainWaveZoom * 1.12f) else if (dy > 0f) onZoomChange(mainWaveZoom / 1.12f)
+                        }
                 ) {
                     val progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                     when {
@@ -414,21 +421,15 @@ private fun LiveChannelRow(
                                     heights = heights,
                                     colors = colors,
                                     progress = progress,
-                                    zoom = when (mainWaveZoom) {
-                                        4 -> 4f
-                                        2 -> 2f
-                                        else -> 1f
-                                    },
+                                    zoom = mainWaveZoom,
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
-                                Row(
-                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 3.dp, top = 1.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                ) {
-                                    TinyActionButton("-") { onZoomChange(if (mainWaveZoom <= 1) 1 else if (mainWaveZoom <= 2) 1 else 2) }
-                                    TinyActionButton("+") { onZoomChange(if (mainWaveZoom >= 4) 4 else if (mainWaveZoom >= 2) 4 else 2) }
-                                    Text("${mainWaveZoom}x", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
-                                }
+                                Text(
+                                    "${"%.1f".format(mainWaveZoom)}x",
+                                    color = C_MUTED,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp)
+                                )
                                 Text(
                                     if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
                                     color = C_MUTED,
@@ -933,19 +934,6 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
-}
-
-@Composable
-private fun TinyActionButton(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(Color(0xFF1B2430))
-            .border(1.dp, C_BORDER)
-            .padding(horizontal = 4.dp, vertical = 0.dp)
-            .clickable { onClick() }
-    ) {
-        Text(label, color = C_TEXT, style = MaterialTheme.typography.labelSmall)
-    }
 }
 
 private data class WaveRenderData(
