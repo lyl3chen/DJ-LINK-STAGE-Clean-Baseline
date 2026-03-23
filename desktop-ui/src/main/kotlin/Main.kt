@@ -36,6 +36,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import kotlin.math.pow
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -959,31 +960,50 @@ private fun DetailWaveformBLTStyle(
             return (playHead + offset) * scale
         }
 
-        fun segmentHeight(seg: Int): Int {
-            if (seg >= total || seg + scale <= 0) return 0
-            var sum = 0
-            var cnt = 0
+        fun segmentHeight(seg: Int): Float {
+            if (seg >= total || seg + scale <= 0) return 0f
             val s = seg.coerceAtLeast(0)
             val e = (seg + scale).coerceAtMost(total)
+            if (e <= s) return 0f
+
+            var sum = 0f
+            var peak = 0
+            var cnt = 0
             for (i in s until e) {
-                sum += heights[i]
+                val v = heights[i]
+                sum += v.toFloat()
+                if (v > peak) peak = v
                 cnt++
             }
-            return if (cnt > 0) sum / cnt else 0
+            val mean = if (cnt > 0) (sum / cnt.toFloat()) else 0f
+            // 保峰聚合：peak主导，mean辅助
+            return peak * 0.72f + mean * 0.28f
         }
 
-        // 仅对当前可视窗口取max，保持局部细节可见
-        var localMax = 1
-        for (x in 0 until pxWidth) {
-            val v = segmentHeight(getSegmentForX(x))
-            if (v > localMax) localMax = v
+        val values = FloatArray(pxWidth)
+        for (x in 0 until pxWidth) values[x] = segmentHeight(getSegmentForX(x))
+
+        val sorted = values.sorted()
+        fun percentile(q: Float): Float {
+            if (sorted.isEmpty()) return 1f
+            val idx = ((sorted.lastIndex) * q).toInt().coerceIn(0, sorted.lastIndex)
+            return sorted[idx]
         }
-        val maxV = localMax.toFloat().coerceAtLeast(1f)
+
+        // 鲁棒动态范围，避免localMax压扁整窗
+        val lo = percentile(0.10f)
+        val hiRaw = percentile(0.95f)
+        val hi = if (hiRaw - lo < 1e-3f) (lo + 1f) else hiRaw
+
+        fun ampNorm(v: Float): Float {
+            val n = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
+            // 轻微对比提升（仅几何高度）
+            return n.pow(0.85f)
+        }
 
         val top = Path()
         for (x in 0 until pxWidth) {
-            val v = segmentHeight(getSegmentForX(x)).toFloat()
-            val amp = ((v / maxV).coerceIn(0f, 1f)) * (pxHeight * 0.47f)
+            val amp = ampNorm(values[x]) * (pxHeight * 0.47f)
             if (x == 0) top.moveTo(x.toFloat(), axis - amp)
             else top.lineTo(x.toFloat(), axis - amp)
         }
@@ -991,8 +1011,7 @@ private fun DetailWaveformBLTStyle(
         val fill = Path().apply {
             addPath(top)
             for (x in pxWidth - 1 downTo 0) {
-                val v = segmentHeight(getSegmentForX(x)).toFloat()
-                val amp = ((v / maxV).coerceIn(0f, 1f)) * (pxHeight * 0.47f)
+                val amp = ampNorm(values[x]) * (pxHeight * 0.47f)
                 lineTo(x.toFloat(), axis + amp)
             }
             close()
