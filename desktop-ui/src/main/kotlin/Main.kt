@@ -335,7 +335,18 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // LEFT: 状态条 + 曲目信息 + 波形 + 封面位（showkontrol风格）
+            Box(
+                modifier = Modifier
+                    .width(26.dp)
+                    .height(98.dp)
+                    .background(if (p.onAir) Color(0xFFD23838) else Color(0xFF1A2531))
+                    .border(1.dp, C_BORDER),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(p.number.toString(), color = C_TEXT, fontWeight = FontWeight.Bold)
+            }
+
+            // LEFT: 只显示歌曲-歌手名 + 波形 + 元数据
             Column(
                 modifier = Modifier
                     .weight(0.45f)
@@ -345,14 +356,13 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                     .padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("${UiText.PLAYER} ${p.number}", color = C_TEXT, fontWeight = FontWeight.Bold)
-                    StateTag(p.stateText.uppercase(), stateColor)
-                    TinyFlag("M", p.master)
-                    TinyFlag("A", p.onAir)
-                }
-                Text(p.title.ifBlank { "-" }, color = C_TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Text("${UiText.ARTIST}: ${p.artist.ifBlank { "-" }}", color = C_MUTED, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                Text(
+                    "${p.title.ifBlank { "-" }} - ${p.artist.ifBlank { "-" }}",
+                    color = C_TEXT,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold
+                )
 
                 Box(
                     modifier = Modifier
@@ -367,8 +377,6 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                             progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                         )
-                    } else {
-                        Text("NO WAVEFORM", color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.Center))
                     }
                 }
 
@@ -416,8 +424,8 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                     .padding(5.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                RightStatusTag("MASTER", p.master)
-                RightStatusTag("ON-AIR", p.onAir)
+                RightStatusTag("MASTER", p.master, color = Color(0xFFFFD54A))
+                RightStatusTag("ON-AIR", p.onAir, color = Color(0xFFD23838))
                 RightStatusTag(p.stateText.uppercase(), true, color = stateColor)
             }
         }
