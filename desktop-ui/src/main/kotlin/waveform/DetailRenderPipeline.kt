@@ -11,6 +11,7 @@ object DetailRenderPipeline {
 
     fun build(
         heights: List<Int>,
+        colors: List<Int>,
         progress: Float,
         widthPx: Int,
         heightPx: Int,
@@ -87,10 +88,16 @@ object DetailRenderPipeline {
             close()
         }
 
-        val color = when (sourceTag) {
-            WaveformSourceTag.RAW -> Color(0xFF7EA8FF)
-            WaveformSourceTag.SAMPLE_FALLBACK -> Color(0xFF6E86D8)
-            WaveformSourceTag.NONE -> Color(0xFF5A6270)
+        val color = if (colors.isNotEmpty()) {
+            val idx = (playSeg.toInt().coerceIn(0, heights.lastIndex) * colors.size / heights.size).coerceIn(0, colors.lastIndex)
+            val c = colors[idx]
+            Color((((c and 0x00FFFFFF) or (0xFF shl 24)).toLong()))
+        } else {
+            when (sourceTag) {
+                WaveformSourceTag.RAW -> Color(0xFF7EA8FF)
+                WaveformSourceTag.SAMPLE_FALLBACK -> Color(0xFF6E86D8)
+                WaveformSourceTag.NONE -> Color(0xFF5A6270)
+            }
         }
 
         return DetailDrawData(

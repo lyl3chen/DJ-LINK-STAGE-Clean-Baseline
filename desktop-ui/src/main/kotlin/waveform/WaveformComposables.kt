@@ -33,6 +33,7 @@ fun PreviewWaveformView(
 @Composable
 fun DetailWaveformView(
     heights: List<Int>,
+    colors: List<Int>,
     progress: Float,
     zoom: Float,
     sourceTag: WaveformSourceTag,
@@ -41,6 +42,7 @@ fun DetailWaveformView(
     Canvas(modifier = modifier) {
         val drawData = DetailRenderPipeline.build(
             heights = heights,
+            colors = colors,
             progress = progress,
             widthPx = size.width.toInt().coerceAtLeast(2),
             heightPx = size.height.toInt().coerceAtLeast(2),

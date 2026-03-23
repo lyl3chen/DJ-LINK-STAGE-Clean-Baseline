@@ -1,7 +1,8 @@
 data class WaveformResolvedData(
     val sourceTag: WaveformSourceTag,
     val detailHeights: List<Int>,
-    val previewHeights: List<Int>
+    val previewHeights: List<Int>,
+    val detailColors: List<Int>
 )
 
 object WaveformDataAdapter {
@@ -11,11 +12,11 @@ object WaveformDataAdapter {
         val identity = WaveformTrackIdentity.fromPlayer(p)
         val entry = cache.getOrCreate(identity)
 
-        decodeRaw(p.detailRawBase64, target = 900)?.takeIf { it.heights.isNotEmpty() }?.let {
+        decodeRawWaveHeights(p.detailRawBase64, target = 900)?.takeIf { it.heights.isNotEmpty() }?.let {
             entry.decodedDetailRaw = it
             entry.lastUpdatedMs = System.currentTimeMillis()
         }
-        decodeRaw(p.previewRawBase64, target = 240)?.takeIf { it.heights.isNotEmpty() }?.let {
+        decodeRawWaveHeights(p.previewRawBase64, target = 240)?.takeIf { it.heights.isNotEmpty() }?.let {
             entry.decodedPreviewRaw = it
             entry.lastUpdatedMs = System.currentTimeMillis()
         }
@@ -56,11 +57,12 @@ object WaveformDataAdapter {
         return WaveformResolvedData(
             sourceTag = sourceTag,
             detailHeights = detailHeights,
-            previewHeights = previewHeights
+            previewHeights = previewHeights,
+            detailColors = p.detailSampleColors
         )
     }
 
-    private fun decodeRaw(rawBase64: String?, target: Int): WaveformDecodedData? {
+    private fun decodeRawWaveHeights(rawBase64: String?, target: Int): WaveformDecodedData? {
         if (rawBase64.isNullOrBlank()) return null
         return runCatching {
             val bytes = java.util.Base64.getDecoder().decode(rawBase64)

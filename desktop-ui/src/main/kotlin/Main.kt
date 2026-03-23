@@ -405,6 +405,7 @@ private fun LiveChannelRow(
                                 val progress = if (p.durationMs > 0L) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                                 DetailWaveformView(
                                     heights = resolved.detailHeights,
+                                    colors = resolved.detailColors,
                                     progress = progress,
                                     zoom = detailZoom,
                                     sourceTag = resolved.sourceTag,
