@@ -6,11 +6,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -22,8 +20,6 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.delay
@@ -282,7 +278,6 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
-    var mainWaveZoom by remember { mutableStateOf(1f) } // 1.0x ~ 10.0x
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -326,22 +321,17 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
             LiveChannelRow(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
-                uiNowMs = uiNowMs,
-                mainWaveZoom = mainWaveZoom,
-                onZoomChange = { next -> mainWaveZoom = next.coerceIn(1f, 10f) }
+                uiNowMs = uiNowMs
             )
         }
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
-    uiNowMs: Long,
-    mainWaveZoom: Float,
-    onZoomChange: (Float) -> Unit
+    uiNowMs: Long
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -401,12 +391,7 @@ private fun LiveChannelRow(
                         .height(34.dp)
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
-                        .onPointerEvent(PointerEventType.Scroll) { e ->
-                            val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                            if (dy < 0f) onZoomChange(mainWaveZoom * 1.12f) else if (dy > 0f) onZoomChange(mainWaveZoom / 1.12f)
-                        }
                 ) {
-                    val progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                     when {
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
@@ -414,23 +399,10 @@ private fun LiveChannelRow(
                             val rawData = decodeRawWaveRenderData(p.detailRawBase64, target = 900)
                             val rawUsed = rawData != null && rawData.heights.isNotEmpty()
                             val heights = if (rawUsed) rawData!!.heights else p.detailSampleHeights
-                            val colors = if (rawUsed) rawData!!.colors else p.detailSampleColors
                             if (heights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
-                                MainCompatWaveform(
-                                    heights = heights,
-                                    colors = colors,
-                                    progress = progress,
-                                    zoom = mainWaveZoom,
-                                    modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
-                                )
-                                Text(
-                                    "${"%.1f".format(mainWaveZoom)}x",
-                                    color = C_MUTED,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp)
-                                )
+                                WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
                                 Text(
                                     if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
                                     color = C_MUTED,
@@ -730,7 +702,6 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
         ) {
-            val progress = if ((p?.durationMs ?: 0L) > 0) (displayMs.toFloat() / (p?.durationMs ?: 1L).toFloat()).coerceIn(0f, 1f) else 0f
             when {
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
@@ -741,11 +712,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                     if (heights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
-                        MiniCompatWaveform(
-                            heights = heights,
-                            progress = progress,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
-                        )
+                        WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
                         Text(
                             if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
                             color = C_MUTED,
@@ -941,121 +908,6 @@ private data class WaveRenderData(
     val heights: List<Int>,
     val colors: List<Int>
 )
-
-@Composable
-private fun MainCompatWaveform(
-    heights: List<Int>,
-    colors: List<Int>,
-    progress: Float,
-    zoom: Float,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier) {
-        if (heights.isEmpty()) return@Canvas
-
-        // Step1: detail 几何同构（连续上/下边缘 + 闭合实体），不走柱条模型
-        val denseAll = resampleInt(heights, 900)
-        val total = denseAll.size.coerceAtLeast(1)
-        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(80, total)
-        val center = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
-        val start = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
-        val end = (start + windowSize).coerceAtMost(total)
-
-        val window = denseAll.subList(start, end)
-        val body = smoothInt(window, radius = 1)                          // 只做极轻平滑
-        val env = smoothInt(window, radius = if (zoom >= 6f) 3 else 6)    // 段落包络
-        val peak = localPeakInt(window, radius = 2)                        // 峰值保持
-
-        val merged = MutableList(window.size) { i ->
-            // 避免过度平均化：保留原始瞬态 + 包络趋势
-            ((window[i] * 0.42f) + (body[i] * 0.26f) + (env[i] * 0.20f) + (peak[i] * 0.12f)).toInt()
-        }
-
-        val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
-        val n = merged.size.coerceAtLeast(1)
-        val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
-        val mid = size.height / 2f
-
-        val topPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
-        val botPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
-        for (i in 0 until n) {
-            val x = i * step
-            val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.47f)
-            topPts += androidx.compose.ui.geometry.Offset(x, mid - amp)
-            botPts += androidx.compose.ui.geometry.Offset(x, mid + amp)
-        }
-
-        if (topPts.isNotEmpty()) {
-            val fill = Path().apply {
-                moveTo(topPts.first().x, topPts.first().y)
-                for (i in 1 until topPts.size) lineTo(topPts[i].x, topPts[i].y)
-                for (i in botPts.lastIndex downTo 0) lineTo(botPts[i].x, botPts[i].y)
-                close()
-            }
-
-            // 当前阶段颜色从属形体，避免色块拼接破坏连续几何
-            val centerGlobalIdx = (start + n / 2).coerceIn(0, total - 1)
-            val centerColor = colors.getOrNull(centerGlobalIdx * colors.size / total)
-                ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
-                ?: Color(0xFF6E86FF)
-            drawPath(fill, color = centerColor.copy(alpha = 0.94f))
-        }
-
-        val localProgress = if (windowSize > 1) ((center - start).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f) else 0f
-        val px = localProgress * size.width
-        drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.4f)
-    }
-}
-
-@Composable
-private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        if (heights.isEmpty()) return@Canvas
-
-        // Step2: preview同构为“连续总览条带 + 播放位置定位”
-        val dense = resampleInt(heights, 1200)
-        val smooth = smoothInt(dense, radius = 4)
-        val env = smoothInt(dense, radius = 18)
-        val peak = localPeakInt(dense, radius = 3)
-        val merged = MutableList(dense.size) { i ->
-            ((dense[i] * 0.36f) + (smooth[i] * 0.30f) + (env[i] * 0.24f) + (peak[i] * 0.10f)).toInt()
-        }
-
-        val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
-        val n = merged.size.coerceAtLeast(1)
-        val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
-
-        val path = Path().apply {
-            moveTo(0f, size.height)
-            for (i in 0 until n) {
-                val x = i * step
-                val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.98f)
-                lineTo(x, size.height - amp)
-            }
-            lineTo(size.width, size.height)
-            close()
-        }
-
-        // 总览条带：连续填充 + 轻透明层，避免纯色死块
-        drawPath(path, color = Color(0xFF7EA8FF).copy(alpha = 0.90f))
-        drawPath(path, color = Color(0xFFA4C4FF).copy(alpha = 0.16f))
-
-        // 当前播放位置：清晰定位线 + 顶部小刻度
-        val px = progress.coerceIn(0f, 1f) * size.width
-        drawLine(
-            color = Color(0xFF00E5FF),
-            start = androidx.compose.ui.geometry.Offset(px, 0f),
-            end = androidx.compose.ui.geometry.Offset(px, size.height),
-            strokeWidth = 1.2f
-        )
-        drawLine(
-            color = Color(0xFF00E5FF),
-            start = androidx.compose.ui.geometry.Offset(px - 3f, 0.8f),
-            end = androidx.compose.ui.geometry.Offset(px + 3f, 0.8f),
-            strokeWidth = 1.4f
-        )
-    }
-}
 
 private fun resampleInt(src: List<Int>, target: Int): List<Int> {
     if (src.isEmpty() || target <= 0) return emptyList()
