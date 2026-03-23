@@ -20,6 +20,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.delay
@@ -278,6 +279,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
+    var mainWaveZoom by remember { mutableStateOf(1) } // 1x / 2x / 4x
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -318,13 +320,25 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
 
     LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(display) { p ->
-            LiveChannelRow(p, sourceUpdatedAtMs, uiNowMs)
+            LiveChannelRow(
+                p = p,
+                sourceUpdatedAtMs = sourceUpdatedAtMs,
+                uiNowMs = uiNowMs,
+                mainWaveZoom = mainWaveZoom,
+                onZoomChange = { next -> mainWaveZoom = next.coerceIn(1, 4) }
+            )
         }
     }
 }
 
 @Composable
-private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs: Long) {
+private fun LiveChannelRow(
+    p: DashboardPlayer,
+    sourceUpdatedAtMs: Long,
+    uiNowMs: Long,
+    mainWaveZoom: Int,
+    onZoomChange: (Int) -> Unit
+) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
         "PAUSED" -> C_PAUSE
@@ -400,8 +414,21 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                                     heights = heights,
                                     colors = colors,
                                     progress = progress,
+                                    zoom = when (mainWaveZoom) {
+                                        4 -> 4f
+                                        2 -> 2f
+                                        else -> 1f
+                                    },
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
+                                Row(
+                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 3.dp, top = 1.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    TinyActionButton("-") { onZoomChange(if (mainWaveZoom <= 1) 1 else if (mainWaveZoom <= 2) 1 else 2) }
+                                    TinyActionButton("+") { onZoomChange(if (mainWaveZoom >= 4) 4 else if (mainWaveZoom >= 2) 4 else 2) }
+                                    Text("${mainWaveZoom}x", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+                                }
                                 Text(
                                     if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
                                     color = C_MUTED,
@@ -908,6 +935,19 @@ private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
 }
 
+@Composable
+private fun TinyActionButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(Color(0xFF1B2430))
+            .border(1.dp, C_BORDER)
+            .padding(horizontal = 4.dp, vertical = 0.dp)
+            .clickable { onClick() }
+    ) {
+        Text(label, color = C_TEXT, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
 private data class WaveRenderData(
     val heights: List<Int>,
     val colors: List<Int>
@@ -918,29 +958,38 @@ private fun MainCompatWaveform(
     heights: List<Int>,
     colors: List<Int>,
     progress: Float,
+    zoom: Float,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        val dense = resampleInt(heights, 520)
+        val denseAll = resampleInt(heights, 520)
+        val total = denseAll.size.coerceAtLeast(1)
+        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(40, total)
+        val center = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
+        val start = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
+        val end = (start + windowSize).coerceAtMost(total)
+
+        val dense = denseAll.subList(start, end)
         val smooth = smoothInt(dense, radius = 2)
         val env = smoothInt(dense, radius = 10)
 
         val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
         val n = dense.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step * 1.35f).coerceAtMost(2.6f) // 紧凑实体体块
+        val barW = (step * 1.35f).coerceAtMost(2.6f)
         val mid = size.height / 2f
 
         for (i in 0 until n) {
+            val globalIdx = (start + i)
             val body = smooth[i].toFloat() / maxV.toFloat()
             val section = env[i].toFloat() / maxV.toFloat()
             val ampNorm = (body * 0.58f + section * 0.42f).coerceIn(0f, 1f)
             val amp = ampNorm * (size.height * 0.47f)
             val x = i * step - (barW - step) * 0.5f
 
-            val c = colors.getOrNull(i * colors.size / n)
+            val c = colors.getOrNull(globalIdx * colors.size / total)
                 ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
                 ?: Color(0xFF6E86FF)
 
@@ -951,7 +1000,8 @@ private fun MainCompatWaveform(
             )
         }
 
-        val px = progress.coerceIn(0f, 1f) * size.width
+        val localProgress = if (windowSize > 1) ((center - start).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f) else 0f
+        val px = localProgress * size.width
         drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.4f)
     }
 }
