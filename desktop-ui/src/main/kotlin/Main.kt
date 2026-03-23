@@ -6,7 +6,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -278,6 +282,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
+    var detailZoom by remember { mutableStateOf(1f) } // 1x~10x
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -321,17 +326,22 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
             LiveChannelRow(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
-                uiNowMs = uiNowMs
+                uiNowMs = uiNowMs,
+                detailZoom = detailZoom,
+                onDetailZoomChange = { z -> detailZoom = z.coerceIn(1f, 10f) }
             )
         }
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
-    uiNowMs: Long
+    uiNowMs: Long,
+    detailZoom: Float,
+    onDetailZoomChange: (Float) -> Unit
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -391,7 +401,13 @@ private fun LiveChannelRow(
                         .height(34.dp)
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
+                        .onPointerEvent(PointerEventType.Scroll) { e ->
+                            val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                            if (dy < 0f) onDetailZoomChange(detailZoom * 1.12f)
+                            else if (dy > 0f) onDetailZoomChange(detailZoom / 1.12f)
+                        }
                 ) {
+                    val progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                     when {
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
@@ -402,7 +418,18 @@ private fun LiveChannelRow(
                             if (heights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
-                                WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                                DetailWaveformBLTStyle(
+                                    heights = heights,
+                                    progress = progress,
+                                    zoom = detailZoom,
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
+                                )
+                                Text(
+                                    "${"%.1f".format(detailZoom)}x",
+                                    color = C_MUTED,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp)
+                                )
                                 Text(
                                     if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
                                     color = C_MUTED,
@@ -902,6 +929,80 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
+}
+
+@Composable
+private fun DetailWaveformBLTStyle(
+    heights: List<Int>,
+    progress: Float,
+    zoom: Float,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        if (heights.isEmpty()) return@Canvas
+
+        // BLT同构骨架：局部窗口 + 中心滚动 + x->segment映射
+        val source = resampleInt(heights, 1200)
+        val total = source.size.coerceAtLeast(1)
+        val windowSeg = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(80, total)
+
+        val playSeg = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
+        val start = (playSeg - windowSeg / 2).coerceIn(0, (total - windowSeg).coerceAtLeast(0))
+        val end = (start + windowSeg).coerceAtMost(total)
+
+        val window = source.subList(start, end)
+        val maxV = (window.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+
+        val w = size.width
+        val h = size.height
+        val mid = h / 2f
+
+        val top = Path()
+        val bottom = Path()
+
+        // x -> segment 连续映射（线性插值），避免柱条/马赛克
+        val pxCount = w.toInt().coerceAtLeast(2)
+        for (px in 0 until pxCount) {
+            val t = if (pxCount > 1) px.toFloat() / (pxCount - 1).toFloat() else 0f
+            val segPos = t * (window.size - 1).coerceAtLeast(1)
+            val i0 = kotlin.math.floor(segPos).toInt().coerceIn(0, window.lastIndex)
+            val i1 = (i0 + 1).coerceAtMost(window.lastIndex)
+            val frac = (segPos - i0.toFloat()).coerceIn(0f, 1f)
+            val v = (window[i0] * (1f - frac) + window[i1] * frac)
+            val amp = ((v / maxV).coerceIn(0f, 1f)) * (h * 0.47f)
+            val x = t * w
+            if (px == 0) {
+                top.moveTo(x, mid - amp)
+                bottom.moveTo(x, mid + amp)
+            } else {
+                top.lineTo(x, mid - amp)
+                bottom.lineTo(x, mid + amp)
+            }
+        }
+
+        val fill = Path().apply {
+            addPath(top)
+            for (i in pxCount - 1 downTo 0) {
+                val t = if (pxCount > 1) i.toFloat() / (pxCount - 1).toFloat() else 0f
+                val segPos = t * (window.size - 1).coerceAtLeast(1)
+                val i0 = kotlin.math.floor(segPos).toInt().coerceIn(0, window.lastIndex)
+                val i1 = (i0 + 1).coerceAtMost(window.lastIndex)
+                val frac = (segPos - i0.toFloat()).coerceIn(0f, 1f)
+                val v = (window[i0] * (1f - frac) + window[i1] * frac)
+                val amp = ((v / maxV).coerceIn(0f, 1f)) * (h * 0.47f)
+                val x = t * w
+                lineTo(x, mid + amp)
+            }
+            close()
+        }
+
+        drawPath(fill, color = Color(0xFF78A6FF).copy(alpha = 0.94f))
+
+        // 播放头固定在窗口中心语义
+        val localProgress = if (windowSeg > 1) ((playSeg - start).toFloat() / (windowSeg - 1).toFloat()).coerceIn(0f, 1f) else 0f
+        val phx = localProgress * w
+        drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(phx, 0f), androidx.compose.ui.geometry.Offset(phx, h), 1.4f)
+    }
 }
 
 private data class WaveRenderData(
