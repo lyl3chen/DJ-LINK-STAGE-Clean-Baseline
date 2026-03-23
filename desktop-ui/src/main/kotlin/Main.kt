@@ -271,8 +271,6 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
-    val byNumber = players.associateBy { it.number }
-
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -297,11 +295,12 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
         effectiveBpm = null
     )
 
-    val display = mutableListOf<DashboardPlayer>()
-    display += (byNumber[1] ?: placeholder(1))
-    display += (byNumber[2] ?: placeholder(2))
-    if (byNumber[3]?.online == true) display += byNumber[3]!!
-    if (byNumber[4]?.online == true) display += byNumber[4]!!
+    val onlinePlayers = players.filter { it.online }.sortedBy { it.number }.take(4)
+    val display = if (onlinePlayers.isNotEmpty()) {
+        onlinePlayers
+    } else {
+        listOf(placeholder(1), placeholder(2))
+    }
 
     LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(display) { p ->
@@ -559,19 +558,32 @@ private fun ArtworkSquare(artworkUrl: String?, sizeDp: Int) {
 
 @Composable
 private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long) {
-    val byNumber = players.associateBy { it.number }
-    Row(
+    val onlinePlayers = players.filter { it.online }.sortedBy { it.number }.take(4)
+    val display = if (onlinePlayers.isNotEmpty()) onlinePlayers else listOf(
+        DashboardPlayer(1, false, "OFFLINE", "active=false", false, false, "-", "-", null, false, null, 0, 0, emptyList(), 0, 0, 0, "-", null, null, null),
+        DashboardPlayer(2, false, "OFFLINE", "active=false", false, false, "-", "-", null, false, null, 0, 0, emptyList(), 0, 0, 0, "-", null, null, null)
+    )
+
+    val rows = display.chunked(2)
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(78.dp)
+            .height(if (rows.size > 1) 156.dp else 78.dp)
             .background(Color(0xFF0F1319))
             .border(1.dp, C_BORDER)
             .padding(6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        (1..4).forEach { idx ->
-            val p = byNumber[idx]
-            MiniDeckItem(idx, p, sourceUpdatedAtMs, uiNowMs, Modifier.weight(1f))
+        rows.forEach { rowPlayers ->
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                rowPlayers.forEach { p ->
+                    MiniDeckItem(p.number, p, sourceUpdatedAtMs, uiNowMs, Modifier.weight(1f))
+                }
+                if (rowPlayers.size < 2) Spacer(Modifier.weight(1f))
+            }
         }
     }
 }
