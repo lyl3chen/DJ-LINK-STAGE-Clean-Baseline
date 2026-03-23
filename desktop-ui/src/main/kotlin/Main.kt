@@ -10,6 +10,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -952,40 +953,61 @@ private fun MainCompatWaveform(
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        val denseAll = resampleInt(heights, 520)
+        // BLT-like detail显示结构：缩放窗口 + 连续上下边缘 + 闭合实体填充
+        val denseAll = resampleInt(heights, 900)
         val total = denseAll.size.coerceAtLeast(1)
-        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(40, total)
+        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(60, total)
         val center = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
         val start = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
         val end = (start + windowSize).coerceAtMost(total)
 
-        val dense = denseAll.subList(start, end)
-        val smooth = smoothInt(dense, radius = 2)
-        val env = smoothInt(dense, radius = 10)
+        val window = denseAll.subList(start, end)
+        val body = smoothInt(window, radius = 2)
+        val env = smoothInt(window, radius = if (zoom >= 6f) 4 else 8)
+        val merged = MutableList(window.size) { i -> ((body[i] * 0.65f) + (env[i] * 0.35f)).toInt() }
 
-        val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
-        val n = dense.size.coerceAtLeast(1)
-        val step = size.width / n.toFloat()
-        val barW = (step * 1.35f).coerceAtMost(2.6f)
+        val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+        val n = merged.size.coerceAtLeast(1)
+        val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
         val mid = size.height / 2f
 
+        val topPath = Path()
+        val bottomPath = Path()
+        val topPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
+        val botPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
+
         for (i in 0 until n) {
-            val globalIdx = (start + i)
-            val body = smooth[i].toFloat() / maxV.toFloat()
-            val section = env[i].toFloat() / maxV.toFloat()
-            val ampNorm = (body * 0.58f + section * 0.42f).coerceIn(0f, 1f)
-            val amp = ampNorm * (size.height * 0.47f)
-            val x = i * step - (barW - step) * 0.5f
+            val x = i * step
+            val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.47f)
+            topPts += androidx.compose.ui.geometry.Offset(x, mid - amp)
+            botPts += androidx.compose.ui.geometry.Offset(x, mid + amp)
+        }
 
-            val c = colors.getOrNull(globalIdx * colors.size / total)
-                ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
-                ?: Color(0xFF6E86FF)
+        if (topPts.isNotEmpty()) {
+            topPath.moveTo(topPts.first().x, topPts.first().y)
+            for (i in 1 until topPts.size) topPath.lineTo(topPts[i].x, topPts[i].y)
 
-            drawRect(
-                color = c,
-                topLeft = androidx.compose.ui.geometry.Offset(x, mid - amp),
-                size = androidx.compose.ui.geometry.Size(barW, (amp * 2f).coerceAtLeast(1f))
-            )
+            bottomPath.moveTo(botPts.first().x, botPts.first().y)
+            for (i in 1 until botPts.size) bottomPath.lineTo(botPts[i].x, botPts[i].y)
+
+            // 分段渐变填充，避免单色块
+            val seg = 6
+            val segSize = (n / seg).coerceAtLeast(1)
+            for (s in 0 until seg) {
+                val i0 = (s * segSize).coerceAtMost(n - 1)
+                val i1 = (((s + 1) * segSize).coerceAtMost(n - 1)).coerceAtLeast(i0)
+                val fill = Path().apply {
+                    moveTo(topPts[i0].x, topPts[i0].y)
+                    for (i in i0 + 1..i1) lineTo(topPts[i].x, topPts[i].y)
+                    for (i in i1 downTo i0) lineTo(botPts[i].x, botPts[i].y)
+                    close()
+                }
+                val globalIdx = start + ((i0 + i1) / 2)
+                val c = colors.getOrNull(globalIdx * colors.size / total)
+                    ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
+                    ?: Color(0xFF6E86FF)
+                drawPath(fill, color = c.copy(alpha = 0.92f))
+            }
         }
 
         val localProgress = if (windowSize > 1) ((center - start).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f) else 0f
@@ -999,34 +1021,27 @@ private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Mo
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        // mini暂时走 overview 可读性优先：单色亮度条带（弱色偏）
-        val dense = resampleInt(heights, 520)
-        val smooth = smoothInt(dense, radius = 4)
-        val env = smoothInt(dense, radius = 18)
+        // BLT-like preview: 单边连续overview实体（非独立柱条）
+        val dense = resampleInt(heights, 640)
+        val smooth = smoothInt(dense, radius = 6)
+        val env = smoothInt(dense, radius = 20)
+        val merged = MutableList(dense.size) { i -> ((smooth[i] * 0.45f) + (env[i] * 0.55f)).toInt() }
 
-        val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
-        val n = dense.size.coerceAtLeast(1)
-        val step = size.width / n.toFloat()
-        val barW = (step * 1.55f).coerceAtMost(2.6f) // 紧凑但不过度糊成整块
+        val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+        val n = merged.size.coerceAtLeast(1)
+        val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
 
+        val path = Path()
+        path.moveTo(0f, size.height)
         for (i in 0 until n) {
-            val body = smooth[i].toFloat() / maxV.toFloat()
-            val section = env[i].toFloat() / maxV.toFloat()
-            val ampNorm = (body * 0.38f + section * 0.62f).coerceIn(0f, 1f)
-            val gated = (ampNorm - 0.05f).coerceAtLeast(0f) / 0.95f
-            val amp = gated * (size.height * 0.98f)
-            val x = i * step - (barW - step) * 0.5f
-
-            // 弱冷暖偏色：主要靠亮度表达结构，不追求强RGB
-            val shade = (90 + gated * 145).toInt().coerceIn(0, 255)
-            val c = Color((shade * 0.78f / 255f), (shade * 0.88f / 255f), (shade / 255f), 1f)
-
-            drawRect(
-                color = c,
-                topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
-                size = androidx.compose.ui.geometry.Size(barW, amp.coerceAtLeast(1f))
-            )
+            val x = i * step
+            val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.98f)
+            path.lineTo(x, size.height - amp)
         }
+        path.lineTo(size.width, size.height)
+        path.close()
+
+        drawPath(path, color = Color(0xFF88AFFF))
 
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.2f)
