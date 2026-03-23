@@ -870,35 +870,37 @@ private fun MainDetailWaveformCanvas(
         val mid = size.height / 2f
 
         val norm = normalizeWave(waveform)
-        val smoothed = smoothWave(norm, radius = 5)          // 局部细节
-        val envelopeSlow = smoothWave(norm, radius = 22)     // 段落级慢包络
-        val envelopeFast = smoothWave(norm, radius = 8)      // 小段级快包络
-        val peaks = localPeak(norm, radius = 2)              // 峰值保持
+        val envelopeSlow = smoothWave(norm, radius = 26)      // 段落级包络
+        val envelopeFast = smoothWave(norm, radius = 6)       // 短窗包络
+        val peaks = localPeak(norm, radius = 2)               // 局部峰值
 
-        // 双边实体采样条 + 段落结构强化（非轮廓线）
+        // 双边实体采样条 + 段落边界优先（强调“刀切式”drop）
         for (i in 0 until n) {
             val raw = norm[i]
-            val s = smoothed[i]
             val slow = envelopeSlow[i]
             val fast = envelopeFast[i]
-            val p = peaks[i]
+            val prevSlow = if (i > 0) envelopeSlow[i - 1] else slow
+            val slopeDown = (prevSlow - slow).coerceAtLeast(0f)   // 段落下坠趋势
+            val slopeUp = (slow - prevSlow).coerceAtLeast(0f)
+            val peak = peaks[i]
 
-            val base = (raw * 0.45f + s * 0.55f).coerceIn(0f, 1f)
-            val compressed = kotlin.math.sqrt(base)
-            val section = (slow * slow).coerceIn(0f, 1f)
-            val boundary = (fast - slow).coerceAtLeast(0f)   // build/drop边界增强
-            val peakKeep = ((p - s).coerceAtLeast(0f) * 0.6f + p * 0.4f).coerceIn(0f, 1f)
+            val sectionBody = (slow * slow).coerceIn(0f, 1f)
+            val texture = kotlin.math.sqrt((raw * 0.5f + fast * 0.5f).coerceIn(0f, 1f))
+            val transient = (peak - fast).coerceAtLeast(0f)
 
-            val ampNorm = (
-                compressed * 0.46f +
-                    section * 0.34f +
-                    boundary * 0.12f +
-                    peakKeep * 0.08f
+            var ampNorm = (
+                sectionBody * 0.56f +
+                    texture * 0.28f +
+                    transient * 0.10f +
+                    slopeUp * 0.06f
                 ).coerceIn(0f, 1f)
 
-            // 低能段门限压低，提升“空段”可读性（幅度克制）
-            val gated = (ampNorm - 0.06f).coerceAtLeast(0f) / 0.94f
-            val amp = gated * (size.height * 0.47f)
+            // drop 后“刀切式”下收：检测到明显下坡时直接加重门限压低
+            val dropBoost = (slopeDown * 2.8f).coerceIn(0f, 0.28f)
+            val gate = (0.10f + dropBoost).coerceAtMost(0.32f)
+            ampNorm = ((ampNorm - gate).coerceAtLeast(0f) / (1f - gate).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+
+            val amp = ampNorm * (size.height * 0.47f)
             val x = i * step - (barW - step) * 0.5f
 
             val c = Color(0xFF6E86FF)
@@ -929,13 +931,13 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
         val barW = (step * 2.4f).coerceAtMost(4.2f) // 强重叠，形成紧凑overview实体
 
         val norm = normalizeWave(waveform)
-        val smooth = smoothWave(norm, radius = 5)
-        val env = smoothWave(norm, radius = 16)
+        val smooth = smoothWave(norm, radius = 7)
+        val env = smoothWave(norm, radius = 22)
 
-        // 单边紧凑overview：去松散柱状感，保留真实段落差异
+        // 单边紧凑overview：以段落包络优先，减少“独立柱子”读感
         for (i in 0 until n) {
-            val ampNorm = (smooth[i] * 0.68f + env[i] * 0.24f + norm[i] * 0.08f).coerceIn(0f, 1f)
-            val gated = (ampNorm - 0.04f).coerceAtLeast(0f) / 0.96f
+            val ampNorm = (env[i] * 0.62f + smooth[i] * 0.30f + norm[i] * 0.08f).coerceIn(0f, 1f)
+            val gated = (ampNorm - 0.06f).coerceAtLeast(0f) / 0.94f
             val amp = gated * (size.height * 0.98f)
             val x = i * step - (barW - step) * 0.5f
             drawRect(
