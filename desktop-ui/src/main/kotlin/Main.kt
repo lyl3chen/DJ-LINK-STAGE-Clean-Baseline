@@ -961,23 +961,30 @@ private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Mo
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        val dense = resampleInt(heights, 420)
-        val smooth = smoothInt(dense, radius = 3)
-        val env = smoothInt(dense, radius = 12)
+        // mini暂时走 overview 可读性优先：单色亮度条带（弱色偏）
+        val dense = resampleInt(heights, 520)
+        val smooth = smoothInt(dense, radius = 4)
+        val env = smoothInt(dense, radius = 18)
 
         val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
         val n = dense.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step * 2.2f).coerceAtMost(3.2f) // 强重叠，去独立柱感
+        val barW = (step * 1.55f).coerceAtMost(2.6f) // 紧凑但不过度糊成整块
 
         for (i in 0 until n) {
             val body = smooth[i].toFloat() / maxV.toFloat()
             val section = env[i].toFloat() / maxV.toFloat()
-            val ampNorm = (body * 0.42f + section * 0.58f).coerceIn(0f, 1f)
-            val amp = ampNorm * (size.height * 0.98f)
+            val ampNorm = (body * 0.38f + section * 0.62f).coerceIn(0f, 1f)
+            val gated = (ampNorm - 0.05f).coerceAtLeast(0f) / 0.95f
+            val amp = gated * (size.height * 0.98f)
             val x = i * step - (barW - step) * 0.5f
+
+            // 弱冷暖偏色：主要靠亮度表达结构，不追求强RGB
+            val shade = (90 + gated * 145).toInt().coerceIn(0, 255)
+            val c = Color((shade * 0.78f / 255f), (shade * 0.88f / 255f), (shade / 255f), 1f)
+
             drawRect(
-                color = Color(0xFF6E86FF),
+                color = c,
                 topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
                 size = androidx.compose.ui.geometry.Size(barW, amp.coerceAtLeast(1f))
             )
@@ -1023,36 +1030,83 @@ private fun smoothInt(src: List<Int>, radius: Int): List<Int> {
     return out
 }
 
+private fun percentile(values: List<Float>, q: Float): Float {
+    if (values.isEmpty()) return 0f
+    val sorted = values.sorted()
+    val idx = ((sorted.size - 1) * q.coerceIn(0f, 1f)).toInt().coerceIn(0, sorted.lastIndex)
+    return sorted[idx]
+}
+
+private fun normalizeClip(v: Float, lo: Float, hi: Float): Float {
+    val d = (hi - lo).coerceAtLeast(1e-6f)
+    return ((v - lo) / d).coerceIn(0f, 1f)
+}
+
 private fun decodeRawWaveRenderData(rawBase64: String?, target: Int = 360): WaveRenderData? {
     if (rawBase64.isNullOrBlank()) return null
     return runCatching {
         val bytes = java.util.Base64.getDecoder().decode(rawBase64)
         if (bytes.isEmpty()) return@runCatching null
 
-        // 从raw字节提取基础能量：去掉直流偏置后取绝对值
+        // 从raw字节提取基础能量：去偏置后取绝对值
         val rawEnergy = bytes.map { kotlin.math.abs((it.toInt() and 0xFF) - 128) }
         if (rawEnergy.isEmpty()) return@runCatching null
 
         val heights = resampleInt(rawEnergy, target)
         val n = heights.size
+        if (n == 0) return@runCatching null
 
-        // 频段驱动颜色（前端渲染层近似）：
-        // low=慢包络、mid=中窗包络、high=瞬态/细节
-        val low = smoothInt(heights, radius = 18)
-        val midBase = smoothInt(heights, radius = 7)
+        // 频段近似：low/mid/high
+        val lowArr = smoothInt(heights, radius = 24)
+        val midBase = smoothInt(heights, radius = 8)
         val highBase = smoothInt(heights, radius = 2)
-        val maxV = (heights.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+
+        val low = MutableList(n) { 0f }
+        val mid = MutableList(n) { 0f }
+        val high = MutableList(n) { 0f }
+        for (i in 0 until n) {
+            val l = lowArr[i].toFloat()
+            val m = (midBase[i] - l * 0.55f).coerceAtLeast(0f)
+            val h = (highBase[i] - midBase[i] * 0.75f).coerceAtLeast(0f)
+            low[i] = l
+            mid[i] = m
+            high[i] = h
+        }
+
+        // 百分位裁剪 + 局部归一化 + 通道竞争抑制，避免整段单色塌缩
+        val l10 = percentile(low, 0.10f); val l90 = percentile(low, 0.90f)
+        val m10 = percentile(mid, 0.10f); val m90 = percentile(mid, 0.90f)
+        val h10 = percentile(high, 0.10f); val h90 = percentile(high, 0.90f)
 
         val colors = MutableList(n) { 0x6E86FF }
         for (i in 0 until n) {
-            val l = (low[i] / maxV).coerceIn(0f, 1f)
-            val m = ((midBase[i] - low[i] * 0.35f) / maxV).coerceIn(0f, 1f)
-            val h = ((highBase[i] - midBase[i] * 0.60f) / maxV).coerceIn(0f, 1f)
+            val s = (i - 20).coerceAtLeast(0)
+            val e = (i + 20).coerceAtMost(n - 1)
+            var lMax = 0f; var mMax = 0f; var hMax = 0f
+            for (j in s..e) {
+                if (low[j] > lMax) lMax = low[j]
+                if (mid[j] > mMax) mMax = mid[j]
+                if (high[j] > hMax) hMax = high[j]
+            }
 
-            // 3Band风格映射：低频->红，中频->绿，高频->蓝
-            val r = (25 + l * 230).toInt().coerceIn(0, 255)
-            val g = (20 + m * 220).toInt().coerceIn(0, 255)
-            val b = (35 + h * 220).toInt().coerceIn(0, 255)
+            var l = normalizeClip(low[i], l10, l90) / lMax.coerceAtLeast(1f)
+            var m = normalizeClip(mid[i], m10, m90) / mMax.coerceAtLeast(1f)
+            var h = normalizeClip(high[i], h10, h90) / hMax.coerceAtLeast(1f)
+
+            // 通道竞争：抑制单通道长期霸占
+            l = (l - 0.28f * (m + h)).coerceAtLeast(0f)
+            m = (m - 0.24f * (l + h)).coerceAtLeast(0f)
+            h = (h - 0.22f * (l + m)).coerceAtLeast(0f)
+
+            val sum = (l + m + h).coerceAtLeast(0.001f)
+            l /= sum; m /= sum; h /= sum
+
+            val intensity = ((heights[i].toFloat() / (heights.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()) * 0.75f + 0.25f)
+                .coerceIn(0.15f, 1f)
+
+            val r = (18 + intensity * (l * 255f)).toInt().coerceIn(0, 255)
+            val g = (18 + intensity * (m * 255f)).toInt().coerceIn(0, 255)
+            val b = (22 + intensity * (h * 255f)).toInt().coerceIn(0, 255)
             colors[i] = (r shl 16) or (g shl 8) or b
         }
 
