@@ -742,9 +742,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val sourceSlot = track?.optString("sourceSlot")
                 val sourcePlayer = track?.optInt("sourcePlayer", 0) ?: 0
                 val rekordboxId = track?.optInt("rekordboxId", 0) ?: 0
-                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 320)
+                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 320, useMax = true)
                 val detailColors = parseColorWaveform(analysis?.optArray("detailSampleColors"), detailHeights.size)
-                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 300)
+                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 360, useMax = false)
                 val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
@@ -870,15 +870,21 @@ private fun MainDetailWaveformCanvas(
         val mid = size.height / 2f
 
         val norm = normalizeWave(waveform)
-        val env = smoothWave(norm, radius = 8)
+        val smoothed = smoothWave(norm, radius = 4)         // 局部平滑（克制）
+        val envelope = smoothWave(norm, radius = 14)        // 慢包络（段落趋势）
+        val peaks = localPeak(norm, radius = 2)             // 峰值保持
 
-        // 双边实体采样条 + 包络增强（提升段落结构可读性）
+        // 双边实体采样条 + 结构增强（克制：保留原始语义）
         for (i in 0 until n) {
             val raw = norm[i]
-            val envelope = env[i]
-            val shapedRaw = kotlin.math.sqrt(raw)
-            val shapedEnv = envelope * envelope
-            val ampNorm = (shapedRaw * 0.50f + shapedEnv * 0.50f).coerceIn(0f, 1f)
+            val s = smoothed[i]
+            val e = envelope[i]
+            val p = peaks[i]
+
+            val compressed = kotlin.math.sqrt((raw * 0.65f + s * 0.35f).coerceIn(0f, 1f))
+            val trend = (e * e)
+            val peakKeep = p * 0.18f
+            val ampNorm = (compressed * 0.62f + trend * 0.28f + peakKeep).coerceIn(0f, 1f)
             val amp = ampNorm * (size.height * 0.47f)
             val x = i * step - (barW - step) * 0.5f
 
@@ -907,14 +913,15 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
         if (waveform.isEmpty()) return@Canvas
         val n = waveform.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step * 1.45f).coerceAtMost(3.0f) // 更高重叠，去掉松散柱状感
+        val barW = (step * 1.8f).coerceAtMost(3.4f) // 更紧凑，减少独立柱子感
 
         val norm = normalizeWave(waveform)
-        val env = smoothWave(norm, radius = 6)
+        val smooth = smoothWave(norm, radius = 3)
+        val env = smoothWave(norm, radius = 10)
 
-        // 单边紧凑缩略实体波形（overview体感）
+        // 单边紧凑overview：更整体但保留真实高低差
         for (i in 0 until n) {
-            val ampNorm = (norm[i] * 0.45f + env[i] * 0.55f).coerceIn(0f, 1f)
+            val ampNorm = (smooth[i] * 0.62f + env[i] * 0.28f + norm[i] * 0.10f).coerceIn(0f, 1f)
             val amp = ampNorm * (size.height * 0.98f)
             val x = i * step - (barW - step) * 0.5f
             drawRect(
@@ -962,7 +969,20 @@ private fun smoothWave(src: List<Float>, radius: Int): List<Float> {
     return out
 }
 
-private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int): List<Int> {
+private fun localPeak(src: List<Float>, radius: Int): List<Float> {
+    if (src.isEmpty() || radius <= 0) return src
+    val out = MutableList(src.size) { 0f }
+    for (i in src.indices) {
+        var peak = 0f
+        val s = (i - radius).coerceAtLeast(0)
+        val e = (i + radius).coerceAtMost(src.lastIndex)
+        for (j in s..e) if (src[j] > peak) peak = src[j]
+        out[i] = peak
+    }
+    return out
+}
+
+private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int, useMax: Boolean = true): List<Int> {
     if (arr == null || arr.size() == 0) return emptyList()
     val src = MutableList(arr.size()) { i -> runCatching { arr[i].asInt }.getOrElse { 0 }.coerceIn(0, 255) }
     if (src.isEmpty()) return emptyList()
@@ -972,9 +992,19 @@ private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int): List<In
     for (i in 0 until target) {
         val start = (i * bucket).toInt()
         val end = (((i + 1) * bucket).toInt()).coerceAtMost(src.size)
-        var maxV = 0
-        for (j in start until end) if (src[j] > maxV) maxV = src[j]
-        out[i] = maxV
+        if (useMax) {
+            var maxV = 0
+            for (j in start until end) if (src[j] > maxV) maxV = src[j]
+            out[i] = maxV
+        } else {
+            var sum = 0
+            var count = 0
+            for (j in start until end) {
+                sum += src[j]
+                count++
+            }
+            out[i] = if (count > 0) (sum / count) else 0
+        }
     }
     return out
 }
