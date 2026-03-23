@@ -941,67 +941,68 @@ private fun DetailWaveformBLTStyle(
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        // BLT同构骨架：局部窗口 + 中心滚动 + x->segment映射
-        val source = resampleInt(heights, 1200)
-        val total = source.size.coerceAtLeast(1)
-        val windowSeg = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(80, total)
+        // BLT同构核心：getSegmentForX + paintComponent 思路
+        val total = heights.size.coerceAtLeast(1)
+        val pxWidth = size.width.toInt().coerceAtLeast(2)
+        val pxHeight = size.height
+        val axis = pxHeight / 2f
+
+        // scale: 每列像素平均多少segment；值越大越“看更广”，值越小越“放大细节”
+        val baseScale = kotlin.math.ceil(total.toDouble() / pxWidth.toDouble() / 2.4).toInt().coerceAtLeast(1)
+        val scale = (baseScale / zoom.coerceAtLeast(1f)).toInt().coerceAtLeast(1)
 
         val playSeg = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
-        val start = (playSeg - windowSeg / 2).coerceIn(0, (total - windowSeg).coerceAtLeast(0))
-        val end = (start + windowSeg).coerceAtMost(total)
+        val offset = playSeg / scale
 
-        val window = source.subList(start, end)
-        val maxV = (window.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+        fun getSegmentForX(x: Int): Int {
+            val playHead = x - (pxWidth / 2)
+            return (playHead + offset) * scale
+        }
 
-        val w = size.width
-        val h = size.height
-        val mid = h / 2f
+        fun segmentHeight(seg: Int): Int {
+            if (seg >= total || seg + scale <= 0) return 0
+            var sum = 0
+            var cnt = 0
+            val s = seg.coerceAtLeast(0)
+            val e = (seg + scale).coerceAtMost(total)
+            for (i in s until e) {
+                sum += heights[i]
+                cnt++
+            }
+            return if (cnt > 0) sum / cnt else 0
+        }
+
+        // 仅对当前可视窗口取max，保持局部细节可见
+        var localMax = 1
+        for (x in 0 until pxWidth) {
+            val v = segmentHeight(getSegmentForX(x))
+            if (v > localMax) localMax = v
+        }
+        val maxV = localMax.toFloat().coerceAtLeast(1f)
 
         val top = Path()
-        val bottom = Path()
-
-        // x -> segment 连续映射（线性插值），避免柱条/马赛克
-        val pxCount = w.toInt().coerceAtLeast(2)
-        for (px in 0 until pxCount) {
-            val t = if (pxCount > 1) px.toFloat() / (pxCount - 1).toFloat() else 0f
-            val segPos = t * (window.size - 1).coerceAtLeast(1)
-            val i0 = kotlin.math.floor(segPos).toInt().coerceIn(0, window.lastIndex)
-            val i1 = (i0 + 1).coerceAtMost(window.lastIndex)
-            val frac = (segPos - i0.toFloat()).coerceIn(0f, 1f)
-            val v = (window[i0] * (1f - frac) + window[i1] * frac)
-            val amp = ((v / maxV).coerceIn(0f, 1f)) * (h * 0.47f)
-            val x = t * w
-            if (px == 0) {
-                top.moveTo(x, mid - amp)
-                bottom.moveTo(x, mid + amp)
-            } else {
-                top.lineTo(x, mid - amp)
-                bottom.lineTo(x, mid + amp)
-            }
+        for (x in 0 until pxWidth) {
+            val v = segmentHeight(getSegmentForX(x)).toFloat()
+            val amp = ((v / maxV).coerceIn(0f, 1f)) * (pxHeight * 0.47f)
+            if (x == 0) top.moveTo(x.toFloat(), axis - amp)
+            else top.lineTo(x.toFloat(), axis - amp)
         }
 
         val fill = Path().apply {
             addPath(top)
-            for (i in pxCount - 1 downTo 0) {
-                val t = if (pxCount > 1) i.toFloat() / (pxCount - 1).toFloat() else 0f
-                val segPos = t * (window.size - 1).coerceAtLeast(1)
-                val i0 = kotlin.math.floor(segPos).toInt().coerceIn(0, window.lastIndex)
-                val i1 = (i0 + 1).coerceAtMost(window.lastIndex)
-                val frac = (segPos - i0.toFloat()).coerceIn(0f, 1f)
-                val v = (window[i0] * (1f - frac) + window[i1] * frac)
-                val amp = ((v / maxV).coerceIn(0f, 1f)) * (h * 0.47f)
-                val x = t * w
-                lineTo(x, mid + amp)
+            for (x in pxWidth - 1 downTo 0) {
+                val v = segmentHeight(getSegmentForX(x)).toFloat()
+                val amp = ((v / maxV).coerceIn(0f, 1f)) * (pxHeight * 0.47f)
+                lineTo(x.toFloat(), axis + amp)
             }
             close()
         }
 
         drawPath(fill, color = Color(0xFF78A6FF).copy(alpha = 0.94f))
 
-        // 播放头固定在窗口中心语义
-        val localProgress = if (windowSeg > 1) ((playSeg - start).toFloat() / (windowSeg - 1).toFloat()).coerceIn(0f, 1f) else 0f
-        val phx = localProgress * w
-        drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(phx, 0f), androidx.compose.ui.geometry.Offset(phx, h), 1.4f)
+        // 播放头固定中心语义（边界处允许偏移）
+        val phx = (pxWidth / 2f).coerceIn(0f, size.width)
+        drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(phx, 0f), androidx.compose.ui.geometry.Offset(phx, size.height), 1.4f)
     }
 }
 
