@@ -105,7 +105,10 @@ data class DashboardPlayer(
     val sourceSlot: String?,
     val sourcePlayer: Int,
     val rekordboxId: Int,
+    val hasTrack: Boolean,
     val waveform: List<Int>,
+    val waveformColors: List<Int>,
+    val previewWaveform: List<Int>,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -285,7 +288,10 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
         sourceSlot = null,
         sourcePlayer = 0,
         rekordboxId = 0,
+        hasTrack = false,
         waveform = emptyList(),
+        waveformColors = emptyList(),
+        previewWaveform = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -370,10 +376,15 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
                 ) {
-                    if (p.waveform.isNotEmpty()) {
-                        SimpleWaveform(
+                    val progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                    when {
+                        !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
+                        !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
+                        p.waveform.isEmpty() -> WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
+                        else -> MainDetailWaveformCanvas(
                             waveform = p.waveform,
-                            progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                            waveformColors = p.waveformColors,
+                            progress = progress,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                         )
                     }
@@ -558,11 +569,35 @@ private fun ArtworkSquare(artworkUrl: String?, sizeDp: Int) {
 
 @Composable
 private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long) {
-    val onlinePlayers = players.filter { it.online }.sortedBy { it.number }.take(4)
-    val display = if (onlinePlayers.isNotEmpty()) onlinePlayers else listOf(
-        DashboardPlayer(1, false, "OFFLINE", "active=false", false, false, "-", "-", null, false, null, 0, 0, emptyList(), 0, 0, 0, "-", null, null, null),
-        DashboardPlayer(2, false, "OFFLINE", "active=false", false, false, "-", "-", null, false, null, 0, 0, emptyList(), 0, 0, 0, "-", null, null, null)
+    fun placeholder(idx: Int) = DashboardPlayer(
+        number = idx,
+        online = false,
+        stateText = "OFFLINE",
+        rawStateSummary = "active=false",
+        onAir = false,
+        master = false,
+        title = "-",
+        artist = "-",
+        artworkUrl = null,
+        artworkAvailable = false,
+        sourceSlot = null,
+        sourcePlayer = 0,
+        rekordboxId = 0,
+        hasTrack = false,
+        waveform = emptyList(),
+        waveformColors = emptyList(),
+        previewWaveform = emptyList(),
+        currentTimeMs = 0,
+        durationMs = 0,
+        remainTimeMs = 0,
+        timeSource = "-",
+        rawBpm = null,
+        pitch = null,
+        effectiveBpm = null
     )
+
+    val onlinePlayers = players.filter { it.online }.sortedBy { it.number }.take(4)
+    val display = if (onlinePlayers.isNotEmpty()) onlinePlayers else listOf(placeholder(1), placeholder(2))
 
     val rows = display.chunked(2)
     Column(
@@ -639,10 +674,14 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
         ) {
-            if (!p?.waveform.isNullOrEmpty()) {
-                MiniWaveformTop(
-                    waveform = p!!.waveform,
-                    progress = if (p.durationMs > 0) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+            val progress = if ((p?.durationMs ?: 0L) > 0) (displayMs.toFloat() / (p?.durationMs ?: 1L).toFloat()).coerceIn(0f, 1f) else 0f
+            when {
+                p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
+                !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
+                p.previewWaveform.isEmpty() -> WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
+                else -> MiniWaveformTop(
+                    waveform = p.previewWaveform,
+                    progress = progress,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
                 )
             }
@@ -703,7 +742,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val sourceSlot = track?.optString("sourceSlot")
                 val sourcePlayer = track?.optInt("sourcePlayer", 0) ?: 0
                 val rekordboxId = track?.optInt("rekordboxId", 0) ?: 0
-                val waveform = parseWaveform(analysis?.optArray("detailSampleHeights"), analysis?.optArray("previewSample"))
+                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 240)
+                val detailColors = parseColorWaveform(analysis?.optArray("detailSampleColors"), detailHeights.size)
+                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 120)
                 val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
@@ -747,7 +788,10 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     sourceSlot = sourceSlot,
                     sourcePlayer = sourcePlayer,
                     rekordboxId = rekordboxId,
-                    waveform = waveform,
+                    hasTrack = hasTrack,
+                    waveform = detailHeights,
+                    waveformColors = detailColors,
+                    previewWaveform = previewHeights,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
@@ -811,7 +855,12 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 }
 
 @Composable
-private fun SimpleWaveform(waveform: List<Int>, progress: Float, modifier: Modifier = Modifier) {
+private fun MainDetailWaveformCanvas(
+    waveform: List<Int>,
+    waveformColors: List<Int>,
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
     Canvas(modifier = modifier) {
         if (waveform.isEmpty()) return@Canvas
         val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
@@ -820,8 +869,9 @@ private fun SimpleWaveform(waveform: List<Int>, progress: Float, modifier: Modif
         waveform.forEachIndexed { i, v ->
             val amp = (v.toFloat() / maxV.toFloat()) * (size.height * 0.46f)
             val x = i * step
+            val c = waveformColors.getOrNull(i)?.let { Color(it) } ?: Color(0xFF6E86FF)
             drawLine(
-                color = Color(0xFF6E86FF),
+                color = c,
                 start = androidx.compose.ui.geometry.Offset(x, mid - amp),
                 end = androidx.compose.ui.geometry.Offset(x, mid + amp),
                 strokeWidth = step.coerceAtLeast(1f)
@@ -865,12 +915,15 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
     }
 }
 
-private fun parseWaveform(detailArr: com.google.gson.JsonArray?, previewArr: com.google.gson.JsonArray?): List<Int> {
-    val arr = if (detailArr != null && detailArr.size() > 0) detailArr else previewArr
+@Composable
+private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
+    Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
+}
+
+private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int): List<Int> {
     if (arr == null || arr.size() == 0) return emptyList()
     val src = MutableList(arr.size()) { i -> runCatching { arr[i].asInt }.getOrElse { 0 }.coerceIn(0, 255) }
     if (src.isEmpty()) return emptyList()
-    val target = 180
     if (src.size <= target) return src
     val out = MutableList(target) { 0 }
     val bucket = src.size.toFloat() / target.toFloat()
@@ -880,6 +933,21 @@ private fun parseWaveform(detailArr: com.google.gson.JsonArray?, previewArr: com
         var maxV = 0
         for (j in start until end) if (src[j] > maxV) maxV = src[j]
         out[i] = maxV
+    }
+    return out
+}
+
+private fun parseColorWaveform(arr: com.google.gson.JsonArray?, target: Int): List<Int> {
+    if (arr == null || arr.size() == 0 || target <= 0) return emptyList()
+    val src = MutableList(arr.size()) { i -> runCatching { arr[i].asInt }.getOrElse { 0x6E86FF } }
+    if (src.size == target) return src
+    if (src.size < target) {
+        return List(target) { idx -> src[(idx * src.size / target).coerceIn(0, src.size - 1)] }
+    }
+    val out = MutableList(target) { 0x6E86FF }
+    val bucket = src.size.toFloat() / target.toFloat()
+    for (i in 0 until target) {
+        out[i] = src[(i * bucket).toInt().coerceIn(0, src.size - 1)]
     }
     return out
 }
