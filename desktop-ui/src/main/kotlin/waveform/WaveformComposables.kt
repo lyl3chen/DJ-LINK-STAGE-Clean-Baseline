@@ -3,7 +3,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.unit.IntSize
 
 @Composable
@@ -27,6 +26,34 @@ fun PreviewWaveformView(
             start = Offset(px, 0f),
             end = Offset(px, size.height),
             strokeWidth = 1.2f
+        )
+    }
+}
+
+@Composable
+fun DetailWaveformView(
+    heights: List<Int>,
+    progress: Float,
+    zoom: Float,
+    sourceTag: WaveformSourceTag,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val drawData = DetailRenderPipeline.build(
+            heights = heights,
+            progress = progress,
+            widthPx = size.width.toInt().coerceAtLeast(2),
+            heightPx = size.height.toInt().coerceAtLeast(2),
+            zoom = zoom,
+            sourceTag = sourceTag
+        ) ?: return@Canvas
+
+        drawPath(drawData.fillPath, color = drawData.color.copy(alpha = 0.94f))
+        drawLine(
+            color = Color(0xFF00E5FF),
+            start = Offset(drawData.playheadX, 0f),
+            end = Offset(drawData.playheadX, size.height),
+            strokeWidth = 1.4f
         )
     }
 }

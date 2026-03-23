@@ -277,6 +277,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
+    var detailZoom by remember { mutableStateOf(2f) }
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -320,7 +321,8 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
             LiveChannelRow(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
-                uiNowMs = uiNowMs
+                uiNowMs = uiNowMs,
+                detailZoom = detailZoom
             )
         }
     }
@@ -330,7 +332,8 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
-    uiNowMs: Long
+    uiNowMs: Long,
+    detailZoom: Float
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -399,7 +402,14 @@ private fun LiveChannelRow(
                             if (resolved.detailHeights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
-                                WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                                val progress = if (p.durationMs > 0L) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                                DetailWaveformView(
+                                    heights = resolved.detailHeights,
+                                    progress = progress,
+                                    zoom = detailZoom,
+                                    sourceTag = resolved.sourceTag,
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
+                                )
                                 Text(
                                     when (resolved.sourceTag) {
                                         WaveformSourceTag.RAW -> "RAW"
