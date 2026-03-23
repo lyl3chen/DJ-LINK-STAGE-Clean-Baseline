@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.Canvas
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.delay
@@ -396,15 +395,17 @@ private fun LiveChannelRow(
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                         else -> {
-                            val rawData = decodeRawWaveRenderData(p.detailRawBase64, target = 900)
-                            val rawUsed = rawData != null && rawData.heights.isNotEmpty()
-                            val heights = if (rawUsed) rawData!!.heights else p.detailSampleHeights
-                            if (heights.isEmpty()) {
+                            val resolved = WaveformDataAdapter.resolve(p)
+                            if (resolved.detailHeights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
                                 WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
                                 Text(
-                                    if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
+                                    when (resolved.sourceTag) {
+                                        WaveformSourceTag.RAW -> "RAW"
+                                        WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
+                                        WaveformSourceTag.NONE -> "NO_SOURCE"
+                                    },
                                     color = C_MUTED,
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 1.dp)
@@ -706,15 +707,17 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                 else -> {
-                    val rawData = decodeRawWaveRenderData(p.previewRawBase64, target = 240)
-                    val rawUsed = rawData != null && rawData.heights.isNotEmpty()
-                    val heights = if (rawUsed) rawData!!.heights else p.previewSample
-                    if (heights.isEmpty()) {
+                    val resolved = WaveformDataAdapter.resolve(p)
+                    if (resolved.previewHeights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
                         WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
                         Text(
-                            if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
+                            when (resolved.sourceTag) {
+                                WaveformSourceTag.RAW -> "RAW"
+                                WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
+                                WaveformSourceTag.NONE -> "NO_SOURCE"
+                            },
                             color = C_MUTED,
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.align(Alignment.TopEnd).padding(end = 3.dp, top = 0.dp)
@@ -902,143 +905,6 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
-}
-
-private data class WaveRenderData(
-    val heights: List<Int>,
-    val colors: List<Int>
-)
-
-private fun resampleInt(src: List<Int>, target: Int): List<Int> {
-    if (src.isEmpty() || target <= 0) return emptyList()
-    if (src.size == target) return src
-    if (src.size < target) {
-        return List(target) { i -> src[(i * src.size / target).coerceIn(0, src.size - 1)] }
-    }
-    val out = MutableList(target) { 0 }
-    val bucket = src.size.toFloat() / target.toFloat()
-    for (i in 0 until target) {
-        val s = (i * bucket).toInt()
-        val e = (((i + 1) * bucket).toInt()).coerceAtMost(src.size)
-        var maxV = 0
-        for (j in s until e) if (src[j] > maxV) maxV = src[j]
-        out[i] = maxV
-    }
-    return out
-}
-
-private fun smoothInt(src: List<Int>, radius: Int): List<Int> {
-    if (src.isEmpty() || radius <= 0) return src
-    val out = MutableList(src.size) { 0 }
-    for (i in src.indices) {
-        var sum = 0
-        var cnt = 0
-        val s = (i - radius).coerceAtLeast(0)
-        val e = (i + radius).coerceAtMost(src.lastIndex)
-        for (j in s..e) {
-            sum += src[j]
-            cnt++
-        }
-        out[i] = if (cnt > 0) sum / cnt else src[i]
-    }
-    return out
-}
-
-private fun localPeakInt(src: List<Int>, radius: Int): List<Int> {
-    if (src.isEmpty() || radius <= 0) return src
-    val out = MutableList(src.size) { 0 }
-    for (i in src.indices) {
-        var mx = 0
-        val s = (i - radius).coerceAtLeast(0)
-        val e = (i + radius).coerceAtMost(src.lastIndex)
-        for (j in s..e) if (src[j] > mx) mx = src[j]
-        out[i] = mx
-    }
-    return out
-}
-
-private fun percentile(values: List<Float>, q: Float): Float {
-    if (values.isEmpty()) return 0f
-    val sorted = values.sorted()
-    val idx = ((sorted.size - 1) * q.coerceIn(0f, 1f)).toInt().coerceIn(0, sorted.lastIndex)
-    return sorted[idx]
-}
-
-private fun normalizeClip(v: Float, lo: Float, hi: Float): Float {
-    val d = (hi - lo).coerceAtLeast(1e-6f)
-    return ((v - lo) / d).coerceIn(0f, 1f)
-}
-
-private fun decodeRawWaveRenderData(rawBase64: String?, target: Int = 360): WaveRenderData? {
-    if (rawBase64.isNullOrBlank()) return null
-    return runCatching {
-        val bytes = java.util.Base64.getDecoder().decode(rawBase64)
-        if (bytes.isEmpty()) return@runCatching null
-
-        // 从raw字节提取基础能量：去偏置后取绝对值
-        val rawEnergy = bytes.map { kotlin.math.abs((it.toInt() and 0xFF) - 128) }
-        if (rawEnergy.isEmpty()) return@runCatching null
-
-        val heights = resampleInt(rawEnergy, target)
-        val n = heights.size
-        if (n == 0) return@runCatching null
-
-        // 频段近似：low/mid/high
-        val lowArr = smoothInt(heights, radius = 24)
-        val midBase = smoothInt(heights, radius = 8)
-        val highBase = smoothInt(heights, radius = 2)
-
-        val low = MutableList(n) { 0f }
-        val mid = MutableList(n) { 0f }
-        val high = MutableList(n) { 0f }
-        for (i in 0 until n) {
-            val l = lowArr[i].toFloat()
-            val m = (midBase[i] - l * 0.55f).coerceAtLeast(0f)
-            val h = (highBase[i] - midBase[i] * 0.75f).coerceAtLeast(0f)
-            low[i] = l
-            mid[i] = m
-            high[i] = h
-        }
-
-        // 百分位裁剪 + 局部归一化 + 通道竞争抑制，避免整段单色塌缩
-        val l10 = percentile(low, 0.10f); val l90 = percentile(low, 0.90f)
-        val m10 = percentile(mid, 0.10f); val m90 = percentile(mid, 0.90f)
-        val h10 = percentile(high, 0.10f); val h90 = percentile(high, 0.90f)
-
-        val colors = MutableList(n) { 0x6E86FF }
-        for (i in 0 until n) {
-            val s = (i - 20).coerceAtLeast(0)
-            val e = (i + 20).coerceAtMost(n - 1)
-            var lMax = 0f; var mMax = 0f; var hMax = 0f
-            for (j in s..e) {
-                if (low[j] > lMax) lMax = low[j]
-                if (mid[j] > mMax) mMax = mid[j]
-                if (high[j] > hMax) hMax = high[j]
-            }
-
-            var l = normalizeClip(low[i], l10, l90) / lMax.coerceAtLeast(1f)
-            var m = normalizeClip(mid[i], m10, m90) / mMax.coerceAtLeast(1f)
-            var h = normalizeClip(high[i], h10, h90) / hMax.coerceAtLeast(1f)
-
-            // 通道竞争：抑制单通道长期霸占
-            l = (l - 0.28f * (m + h)).coerceAtLeast(0f)
-            m = (m - 0.24f * (l + h)).coerceAtLeast(0f)
-            h = (h - 0.22f * (l + m)).coerceAtLeast(0f)
-
-            val sum = (l + m + h).coerceAtLeast(0.001f)
-            l /= sum; m /= sum; h /= sum
-
-            val intensity = ((heights[i].toFloat() / (heights.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()) * 0.75f + 0.25f)
-                .coerceIn(0.15f, 1f)
-
-            val r = (18 + intensity * (l * 255f)).toInt().coerceIn(0, 255)
-            val g = (18 + intensity * (m * 255f)).toInt().coerceIn(0, 255)
-            val b = (22 + intensity * (h * 255f)).toInt().coerceIn(0, 255)
-            colors[i] = (r shl 16) or (g shl 8) or b
-        }
-
-        WaveRenderData(heights = heights, colors = colors)
-    }.getOrNull()
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
