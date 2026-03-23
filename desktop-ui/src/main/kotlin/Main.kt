@@ -962,9 +962,14 @@ private fun MainCompatWaveform(
         val end = (start + windowSize).coerceAtMost(total)
 
         val window = denseAll.subList(start, end)
-        val body = smoothInt(window, radius = 2)
-        val env = smoothInt(window, radius = if (zoom >= 6f) 4 else 7)
-        val merged = MutableList(window.size) { i -> ((body[i] * 0.68f) + (env[i] * 0.32f)).toInt() }
+        val body = smoothInt(window, radius = 1)                          // 只做极轻平滑
+        val env = smoothInt(window, radius = if (zoom >= 6f) 3 else 6)    // 段落包络
+        val peak = localPeakInt(window, radius = 2)                        // 峰值保持
+
+        val merged = MutableList(window.size) { i ->
+            // 避免过度平均化：保留原始瞬态 + 包络趋势
+            ((window[i] * 0.42f) + (body[i] * 0.26f) + (env[i] * 0.20f) + (peak[i] * 0.12f)).toInt()
+        }
 
         val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
         val n = merged.size.coerceAtLeast(1)
@@ -1009,9 +1014,12 @@ private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Mo
 
         // Step2: preview同构为“连续总览条带 + 播放位置定位”
         val dense = resampleInt(heights, 1200)
-        val smooth = smoothInt(dense, radius = 8)
-        val env = smoothInt(dense, radius = 28)
-        val merged = MutableList(dense.size) { i -> ((smooth[i] * 0.40f) + (env[i] * 0.60f)).toInt() }
+        val smooth = smoothInt(dense, radius = 4)
+        val env = smoothInt(dense, radius = 18)
+        val peak = localPeakInt(dense, radius = 3)
+        val merged = MutableList(dense.size) { i ->
+            ((dense[i] * 0.36f) + (smooth[i] * 0.30f) + (env[i] * 0.24f) + (peak[i] * 0.10f)).toInt()
+        }
 
         val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
         val n = merged.size.coerceAtLeast(1)
@@ -1080,6 +1088,19 @@ private fun smoothInt(src: List<Int>, radius: Int): List<Int> {
             cnt++
         }
         out[i] = if (cnt > 0) sum / cnt else src[i]
+    }
+    return out
+}
+
+private fun localPeakInt(src: List<Int>, radius: Int): List<Int> {
+    if (src.isEmpty() || radius <= 0) return src
+    val out = MutableList(src.size) { 0 }
+    for (i in src.indices) {
+        var mx = 0
+        val s = (i - radius).coerceAtLeast(0)
+        val e = (i + radius).coerceAtMost(src.lastIndex)
+        for (j in s..e) if (src[j] > mx) mx = src[j]
+        out[i] = mx
     }
     return out
 }
