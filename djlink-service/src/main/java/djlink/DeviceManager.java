@@ -434,6 +434,55 @@ public class DeviceManager {
     }
 
     /**
+     * 获取指定播放器的曲目元数据（兼容 dbclient 反射调用）
+     */
+    public Map<String, Object> getTrackMetadata(int playerNumber) {
+        Map<String, Object> out = new HashMap<>();
+        PlayerState ps = players.get(playerNumber);
+        if (ps == null) {
+            out.put("title", null);
+            out.put("artist", null);
+            out.put("album", null);
+            out.put("durationMs", 0L);
+            out.put("metadataFound", false);
+            out.put("error", "player-not-found");
+            return out;
+        }
+
+        try {
+            TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNumber);
+            if (meta == null) {
+                meta = ps.trackMeta;
+            }
+            if (meta != null) {
+                out.put("title", meta.getTitle());
+                out.put("artist", meta.getArtist() != null ? meta.getArtist().label : null);
+                out.put("album", meta.getAlbum() != null ? meta.getAlbum().label : null);
+                out.put("durationMs", (long) meta.getDuration() * 1000L);
+                out.put("metadataFound", true);
+                return out;
+            }
+        } catch (Exception e) {
+            out.put("error", e.getClass().getSimpleName() + ":" + e.getMessage());
+        }
+
+        if (ps.trackMeta != null) {
+            out.put("title", ps.trackMeta.getTitle());
+            out.put("artist", ps.trackMeta.getArtist() != null ? ps.trackMeta.getArtist().label : null);
+            out.put("album", ps.trackMeta.getAlbum() != null ? ps.trackMeta.getAlbum().label : null);
+            out.put("durationMs", (long) ps.trackMeta.getDuration() * 1000L);
+            out.put("metadataFound", true);
+        } else {
+            out.put("title", null);
+            out.put("artist", null);
+            out.put("album", null);
+            out.put("durationMs", 0L);
+            out.put("metadataFound", false);
+        }
+        return out;
+    }
+
+    /**
      * Get track info - with detailed debugging
      */
     public Map<String, Object> getTrackInfo() {
