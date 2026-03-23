@@ -1,6 +1,30 @@
 # 历史变更与已废弃路线简表
 
-> 更新日期：2026-03-23
+> 更新日期：2026-03-24
+
+## 2026-03-24 关键变更（本次会话）
+
+### 已确认恢复与基线回退
+- 按用户指令将仓库回退到 `6b3ee21` 并在其基础继续修复。
+- 增加恢复锚点：`ui-safe-before-mini-waveform-tune`（指向 `c68643a`）。
+
+### 元数据链路修复（接口口径一致化）
+- 补回 `DeviceManager.getTrackMetadata(int)` 以恢复 dbclient 反射兼容入口。
+- `/api/players/state` 与 `/api/players/track` 对齐字段：
+  - `durationMs`
+  - `sourcePlayer`
+  - `rekordboxId`
+  - `metadataFound`（state.track 侧补齐）
+- 实测同一时刻同一 player 两接口字段一致（title/artist/duration/durationMs/sourceSlot/sourcePlayer/rekordboxId）。
+
+### desktop-ui 展示层收口
+- LIVE 主卡与 mini 卡片改为仅显示在线播放器（编号升序，最多4台）。
+- 0台在线时显示2个占位卡。
+- mini 区 2个一排，超过2个自动第二排。
+- 主卡左侧新增播放器编号条（ON-AIR 红底）。
+- MASTER 状态条改黄，ON-AIR 状态条改红。
+- 波形占位文案移除，改为真实波形绘制（有数据即画，无数据不占位提示）。
+- mini 波形高度提升并调整为单边显示；后续落差映射已恢复默认。
 
 ---
 

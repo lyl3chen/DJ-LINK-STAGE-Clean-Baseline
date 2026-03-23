@@ -1,8 +1,20 @@
 # DJ LINK STAGE - 当前项目主文档
 
-> 更新时间：2026-03-23  
-> 当前运行版本：0b635d6  
+> 更新时间：2026-03-24  
+> 当前运行版本：5b802bf（UI布局规则） / 3dc536e（mini波形调优） / ed14d81（mini落差恢复） / c68643a（在线播放器显示规则） / 20fa99d（真实波形渲染接入）  
 > 项目根目录：~/agents/dev/workspace/dj-link-stage/
+
+## 2026-03-24 基线备份说明（GitHub恢复锚点）
+
+- 代码已按用户要求恢复到历史稳定点后继续迭代，并新增可回退锚点：
+  - `ui-safe-before-mini-waveform-tune` → `c68643a`
+- 当前可用于完整恢复的“桌面UI现行基线”建议以 **HEAD + 基线tag** 双保险保存到 GitHub。
+- 本阶段核心状态：
+  1. `/api/players/state` 与 `/api/players/track` 的关键 track 字段已对齐（durationMs/sourcePlayer/rekordboxId）。
+  2. `metadataFound` 在两接口口径已对齐。
+  3. desktop-ui LIVE 已改为“仅显示在线播放器、最多4台、编号升序；0台时显示2个占位”。
+  4. mini 卡片波形已从占位改为真实数据绘制；高度提升；当前落差映射为默认。
+  5. LTC/MTC 发送端状态可进入 PLAYING 且帧推进；LTC接收端问题暂挂起（发送端证据已留存）。
 
 ---
 

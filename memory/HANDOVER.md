@@ -1,7 +1,37 @@
 # 下一步开发建议与接力说明
 
 > 为新会话或新 agent 准备的接力说明  
-> 更新时间：2026-03-23
+> 更新时间：2026-03-24
+
+## 当前交接状态（2026-03-24）
+
+### 当前分支/提交
+- branch: `master`
+- 当前 HEAD: `ed14d81`（mini波形落差恢复默认）
+- 相关关键提交：
+  - `20fa99d` LIVE接入真实波形 + 元数据展示补齐
+  - `c68643a` 主卡/mini按在线播放器动态显示（最多4台）
+  - `3dc536e` mini波形高度x2+单边
+  - `ed14d81` mini波形落差恢复默认
+- 可回退锚点：`ui-safe-before-mini-waveform-tune` -> `c68643a`
+
+### 用户已确认/要求
+1. 一次只改一个问题，不并行修改。
+2. 每轮交付固定6点回执（文件/HEAD/链路核验/最小实测/成功标准/失败回传）。
+3. 当前 LTC 接收端问题暂挂起（发送端 PLAYING+帧推进已证据化）。
+4. 主线继续 desktop-ui 收口。
+
+### 当前可直接恢复命令
+```bash
+cd ~/.openclaw/agents/dev/workspace/dj-link-stage
+git reset --hard ed14d81
+# 或回退到波形调优前锚点
+git reset --hard ui-safe-before-mini-waveform-tune
+```
+
+### 下一步建议（若继续 UI）
+- 仅在 desktop-ui 层做微调，不改后端链路。
+- 任何涉及 player/track/metadata/waveform 改动后，都必须现场抓 `/api/players/state` 实证。
 
 ---
 
