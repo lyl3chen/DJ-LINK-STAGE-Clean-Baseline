@@ -863,26 +863,36 @@ private fun MainDetailWaveformCanvas(
 ) {
     Canvas(modifier = modifier) {
         if (waveform.isEmpty()) return@Canvas
+
         val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
-        val step = size.width / waveform.size.coerceAtLeast(1)
+        val n = waveform.size.coerceAtLeast(1)
+        val step = size.width / n.toFloat()
+        val barW = (step + 0.8f).coerceAtMost(3.0f)
         val mid = size.height / 2f
-        waveform.forEachIndexed { i, v ->
-            val amp = (v.toFloat() / maxV.toFloat()) * (size.height * 0.46f)
+
+        // 双边“实体采样条”波形体（非轮廓线、非外描边）
+        for (i in 0 until n) {
+            val raw = waveform[i].toFloat() / maxV.toFloat()
+            val shaped = (raw * 0.85f + raw * raw * 0.15f).coerceIn(0f, 1f)
+            val amp = shaped * (size.height * 0.47f)
             val x = i * step
-            val c = waveformColors.getOrNull(i)?.let { Color(it) } ?: Color(0xFF6E86FF)
-            drawLine(
+
+            val c = Color(0xFF6E86FF)
+
+            drawRect(
                 color = c,
-                start = androidx.compose.ui.geometry.Offset(x, mid - amp),
-                end = androidx.compose.ui.geometry.Offset(x, mid + amp),
-                strokeWidth = step.coerceAtLeast(1f)
+                topLeft = androidx.compose.ui.geometry.Offset(x, mid - amp),
+                size = androidx.compose.ui.geometry.Size(barW, (amp * 2f).coerceAtLeast(1f))
             )
         }
+
+        // 播放头（沿用现有播放进度逻辑）
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(
             color = Color(0xFF00E5FF),
             start = androidx.compose.ui.geometry.Offset(px, 0f),
             end = androidx.compose.ui.geometry.Offset(px, size.height),
-            strokeWidth = 1.5f
+            strokeWidth = 1.4f
         )
     }
 }
@@ -892,19 +902,23 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
     Canvas(modifier = modifier) {
         if (waveform.isEmpty()) return@Canvas
         val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
-        val step = size.width / waveform.size.coerceAtLeast(1)
-        waveform.forEachIndexed { i, v ->
-            val n = (v.toFloat() / maxV.toFloat()).coerceIn(0f, 1f)
-            // 单边波形，恢复默认落差映射
-            val amp = n * (size.height * 0.98f)
+        val n = waveform.size.coerceAtLeast(1)
+        val step = size.width / n.toFloat()
+        val barW = (step + 0.8f).coerceAtMost(2.6f)
+
+        // 单边“实体缩略采样条”波形（非柱状图感：条更密、形成整体体块）
+        for (i in 0 until n) {
+            val raw = waveform[i].toFloat() / maxV.toFloat()
+            val shaped = (raw * 0.90f + raw * raw * 0.10f).coerceIn(0f, 1f)
+            val amp = shaped * (size.height * 0.98f)
             val x = i * step
-            drawLine(
+            drawRect(
                 color = Color(0xFF6E86FF),
-                start = androidx.compose.ui.geometry.Offset(x, size.height),
-                end = androidx.compose.ui.geometry.Offset(x, size.height - amp),
-                strokeWidth = step.coerceAtLeast(1f)
+                topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
+                size = androidx.compose.ui.geometry.Size(barW, amp.coerceAtLeast(1f))
             )
         }
+
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(
             color = Color(0xFF00E5FF),
