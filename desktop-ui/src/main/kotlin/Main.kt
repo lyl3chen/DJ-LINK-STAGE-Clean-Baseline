@@ -845,9 +845,8 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
         val step = size.width / waveform.size.coerceAtLeast(1)
         waveform.forEachIndexed { i, v ->
             val n = (v.toFloat() / maxV.toFloat()).coerceIn(0f, 1f)
-            // 单边波形 + 提高高振幅、压低低振幅（落差更明显）
-            val shaped = n * n
-            val amp = shaped * (size.height * 0.98f)
+            // 单边波形，恢复默认落差映射
+            val amp = n * (size.height * 0.98f)
             val x = i * step
             drawLine(
                 color = Color(0xFF6E86FF),
