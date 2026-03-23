@@ -1061,6 +1061,7 @@ public class DeviceManager {
                     // 增量兼容：新增 raw 字段，不改变旧字段语义
                     try {
                         java.nio.ByteBuffer buf = preview.getData().asReadOnlyBuffer();
+                        buf.rewind();
                         byte[] raw = new byte[buf.remaining()];
                         buf.get(raw);
                         analysis.put("previewRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
@@ -1105,6 +1106,7 @@ public class DeviceManager {
                     // 增量兼容：新增 raw 字段，不改变旧字段语义
                     try {
                         java.nio.ByteBuffer buf = detail.getData().asReadOnlyBuffer();
+                        buf.rewind();
                         byte[] raw = new byte[buf.remaining()];
                         buf.get(raw);
                         analysis.put("detailRawBase64", java.util.Base64.getEncoder().encodeToString(raw));

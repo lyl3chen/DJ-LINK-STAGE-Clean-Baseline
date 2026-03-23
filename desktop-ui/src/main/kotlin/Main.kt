@@ -389,8 +389,9 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                         else -> {
-                            val rawHeights = decodeRawWaveHeights(p.detailRawBase64)
-                            val heights = if (rawHeights.isNotEmpty()) rawHeights else p.detailSampleHeights
+                            val rawHeights = decodeRawWaveHeights(p.detailRawBase64, target = 900)
+                            val rawUsed = rawHeights.isNotEmpty()
+                            val heights = if (rawUsed) rawHeights else p.detailSampleHeights
                             if (heights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
@@ -399,6 +400,12 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                                     colors = p.detailSampleColors,
                                     progress = progress,
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
+                                )
+                                Text(
+                                    if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
+                                    color = C_MUTED,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 1.dp)
                                 )
                             }
                         }
@@ -698,8 +705,9 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                 else -> {
-                    val rawHeights = decodeRawWaveHeights(p.previewRawBase64)
-                    val heights = if (rawHeights.isNotEmpty()) rawHeights else p.previewSample
+                    val rawHeights = decodeRawWaveHeights(p.previewRawBase64, target = 240)
+                    val rawUsed = rawHeights.isNotEmpty()
+                    val heights = if (rawUsed) rawHeights else p.previewSample
                     if (heights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
@@ -707,6 +715,12 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                             heights = heights,
                             progress = progress,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
+                        )
+                        Text(
+                            if (rawUsed) "RAW" else "SAMPLE_FALLBACK",
+                            color = C_MUTED,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(end = 3.dp, top = 0.dp)
                         )
                     }
                 }
@@ -902,19 +916,35 @@ private fun MainCompatWaveform(
 ) {
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
-        val maxV = heights.maxOrNull()?.coerceAtLeast(1) ?: 1
-        val step = size.width / heights.size.coerceAtLeast(1)
+
+        val dense = resampleInt(heights, 520)
+        val smooth = smoothInt(dense, radius = 2)
+        val env = smoothInt(dense, radius = 10)
+
+        val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
+        val n = dense.size.coerceAtLeast(1)
+        val step = size.width / n.toFloat()
+        val barW = (step * 1.35f).coerceAtMost(2.6f) // 紧凑实体体块
         val mid = size.height / 2f
-        heights.forEachIndexed { i, h ->
-            val amp = (h.toFloat() / maxV.toFloat()) * (size.height * 0.47f)
-            val x = i * step
-            val c = colors.getOrNull(i)?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) } ?: Color(0xFF6E86FF)
+
+        for (i in 0 until n) {
+            val body = smooth[i].toFloat() / maxV.toFloat()
+            val section = env[i].toFloat() / maxV.toFloat()
+            val ampNorm = (body * 0.58f + section * 0.42f).coerceIn(0f, 1f)
+            val amp = ampNorm * (size.height * 0.47f)
+            val x = i * step - (barW - step) * 0.5f
+
+            val c = colors.getOrNull(i * colors.size / n)
+                ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
+                ?: Color(0xFF6E86FF)
+
             drawRect(
                 color = c,
                 topLeft = androidx.compose.ui.geometry.Offset(x, mid - amp),
-                size = androidx.compose.ui.geometry.Size(step.coerceAtLeast(1f), (amp * 2f).coerceAtLeast(1f))
+                size = androidx.compose.ui.geometry.Size(barW, (amp * 2f).coerceAtLeast(1f))
             )
         }
+
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.4f)
     }
@@ -924,20 +954,67 @@ private fun MainCompatWaveform(
 private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
-        val maxV = heights.maxOrNull()?.coerceAtLeast(1) ?: 1
-        val step = size.width / heights.size.coerceAtLeast(1)
-        heights.forEachIndexed { i, h ->
-            val amp = (h.toFloat() / maxV.toFloat()) * (size.height * 0.98f)
-            val x = i * step
+
+        val dense = resampleInt(heights, 420)
+        val smooth = smoothInt(dense, radius = 3)
+        val env = smoothInt(dense, radius = 12)
+
+        val maxV = (env.maxOrNull() ?: 1).coerceAtLeast(1)
+        val n = dense.size.coerceAtLeast(1)
+        val step = size.width / n.toFloat()
+        val barW = (step * 2.2f).coerceAtMost(3.2f) // 强重叠，去独立柱感
+
+        for (i in 0 until n) {
+            val body = smooth[i].toFloat() / maxV.toFloat()
+            val section = env[i].toFloat() / maxV.toFloat()
+            val ampNorm = (body * 0.42f + section * 0.58f).coerceIn(0f, 1f)
+            val amp = ampNorm * (size.height * 0.98f)
+            val x = i * step - (barW - step) * 0.5f
             drawRect(
                 color = Color(0xFF6E86FF),
                 topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
-                size = androidx.compose.ui.geometry.Size(step.coerceAtLeast(1f), amp.coerceAtLeast(1f))
+                size = androidx.compose.ui.geometry.Size(barW, amp.coerceAtLeast(1f))
             )
         }
+
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.2f)
     }
+}
+
+private fun resampleInt(src: List<Int>, target: Int): List<Int> {
+    if (src.isEmpty() || target <= 0) return emptyList()
+    if (src.size == target) return src
+    if (src.size < target) {
+        return List(target) { i -> src[(i * src.size / target).coerceIn(0, src.size - 1)] }
+    }
+    val out = MutableList(target) { 0 }
+    val bucket = src.size.toFloat() / target.toFloat()
+    for (i in 0 until target) {
+        val s = (i * bucket).toInt()
+        val e = (((i + 1) * bucket).toInt()).coerceAtMost(src.size)
+        var maxV = 0
+        for (j in s until e) if (src[j] > maxV) maxV = src[j]
+        out[i] = maxV
+    }
+    return out
+}
+
+private fun smoothInt(src: List<Int>, radius: Int): List<Int> {
+    if (src.isEmpty() || radius <= 0) return src
+    val out = MutableList(src.size) { 0 }
+    for (i in src.indices) {
+        var sum = 0
+        var cnt = 0
+        val s = (i - radius).coerceAtLeast(0)
+        val e = (i + radius).coerceAtMost(src.lastIndex)
+        for (j in s..e) {
+            sum += src[j]
+            cnt++
+        }
+        out[i] = if (cnt > 0) sum / cnt else src[i]
+    }
+    return out
 }
 
 private fun decodeRawWaveHeights(rawBase64: String?, target: Int = 360): List<Int> {
