@@ -948,22 +948,25 @@ private fun DetailWaveformBLTStyle(
         val pxHeight = size.height
         val axis = pxHeight / 2f
 
-        // scale: 每列像素平均多少segment；值越大越“看更广”，值越小越“放大细节”
-        val baseScale = kotlin.math.ceil(total.toDouble() / pxWidth.toDouble() / 2.4).toInt().coerceAtLeast(1)
-        val scale = (baseScale / zoom.coerceAtLeast(1f)).toInt().coerceAtLeast(1)
+        // zoom真实映射：每像素对应的segment数使用浮点，避免1.2~10区间失效
+        // zoom越大，segPerPx越小，可视时间窗口越窄（真正放大）
+        val baseSegPerPx = (total.toFloat() / (pxWidth.toFloat() * 2.4f)).coerceAtLeast(0.5f)
+        val segPerPx = (baseSegPerPx / zoom.coerceAtLeast(1f)).coerceAtLeast(0.06f)
 
-        val playSeg = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
-        val offset = playSeg / scale
+        val playSeg = progress.coerceIn(0f, 1f) * (total - 1).toFloat()
 
-        fun getSegmentForX(x: Int): Int {
-            val playHead = x - (pxWidth / 2)
-            return (playHead + offset) * scale
+        fun segmentCenterForX(x: Int): Float {
+            val dx = x.toFloat() - (pxWidth / 2f)
+            return playSeg + dx * segPerPx
         }
 
-        fun segmentHeight(seg: Int): Float {
-            if (seg >= total || seg + scale <= 0) return 0f
-            val s = seg.coerceAtLeast(0)
-            val e = (seg + scale).coerceAtMost(total)
+        fun segmentHeight(centerSeg: Float): Float {
+            if (centerSeg < -1f || centerSeg > total.toFloat()) return 0f
+
+            // bucket宽度跟随segPerPx，zoom-in(<1 seg/px)时也保留最小采样窗口
+            val bucket = kotlin.math.max(1f, segPerPx)
+            val s = kotlin.math.floor(centerSeg - bucket * 0.5f).toInt().coerceAtLeast(0)
+            val e = kotlin.math.ceil(centerSeg + bucket * 0.5f).toInt().coerceAtMost(total)
             if (e <= s) return 0f
 
             var sum = 0f
@@ -981,7 +984,7 @@ private fun DetailWaveformBLTStyle(
         }
 
         val values = FloatArray(pxWidth)
-        for (x in 0 until pxWidth) values[x] = segmentHeight(getSegmentForX(x))
+        for (x in 0 until pxWidth) values[x] = segmentHeight(segmentCenterForX(x))
 
         val sorted = values.sorted()
         fun percentile(q: Float): Float {
