@@ -742,9 +742,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val sourceSlot = track?.optString("sourceSlot")
                 val sourcePlayer = track?.optInt("sourcePlayer", 0) ?: 0
                 val rekordboxId = track?.optInt("rekordboxId", 0) ?: 0
-                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 320, useMax = true)
+                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 420, useMax = true)
                 val detailColors = parseColorWaveform(analysis?.optArray("detailSampleColors"), detailHeights.size)
-                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 360, useMax = false)
+                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 720, useMax = false)
                 val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
@@ -866,26 +866,39 @@ private fun MainDetailWaveformCanvas(
 
         val n = waveform.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step * 1.25f).coerceAtMost(3.6f) // 轻微重叠，形成更整体的“能量体”
+        val barW = (step * 1.45f).coerceAtMost(3.8f) // 更紧凑融合，减少离散条感
         val mid = size.height / 2f
 
         val norm = normalizeWave(waveform)
-        val smoothed = smoothWave(norm, radius = 4)         // 局部平滑（克制）
-        val envelope = smoothWave(norm, radius = 14)        // 慢包络（段落趋势）
-        val peaks = localPeak(norm, radius = 2)             // 峰值保持
+        val smoothed = smoothWave(norm, radius = 5)          // 局部细节
+        val envelopeSlow = smoothWave(norm, radius = 22)     // 段落级慢包络
+        val envelopeFast = smoothWave(norm, radius = 8)      // 小段级快包络
+        val peaks = localPeak(norm, radius = 2)              // 峰值保持
 
-        // 双边实体采样条 + 结构增强（克制：保留原始语义）
+        // 双边实体采样条 + 段落结构强化（非轮廓线）
         for (i in 0 until n) {
             val raw = norm[i]
             val s = smoothed[i]
-            val e = envelope[i]
+            val slow = envelopeSlow[i]
+            val fast = envelopeFast[i]
             val p = peaks[i]
 
-            val compressed = kotlin.math.sqrt((raw * 0.65f + s * 0.35f).coerceIn(0f, 1f))
-            val trend = (e * e)
-            val peakKeep = p * 0.18f
-            val ampNorm = (compressed * 0.62f + trend * 0.28f + peakKeep).coerceIn(0f, 1f)
-            val amp = ampNorm * (size.height * 0.47f)
+            val base = (raw * 0.45f + s * 0.55f).coerceIn(0f, 1f)
+            val compressed = kotlin.math.sqrt(base)
+            val section = (slow * slow).coerceIn(0f, 1f)
+            val boundary = (fast - slow).coerceAtLeast(0f)   // build/drop边界增强
+            val peakKeep = ((p - s).coerceAtLeast(0f) * 0.6f + p * 0.4f).coerceIn(0f, 1f)
+
+            val ampNorm = (
+                compressed * 0.46f +
+                    section * 0.34f +
+                    boundary * 0.12f +
+                    peakKeep * 0.08f
+                ).coerceIn(0f, 1f)
+
+            // 低能段门限压低，提升“空段”可读性（幅度克制）
+            val gated = (ampNorm - 0.06f).coerceAtLeast(0f) / 0.94f
+            val amp = gated * (size.height * 0.47f)
             val x = i * step - (barW - step) * 0.5f
 
             val c = Color(0xFF6E86FF)
@@ -913,16 +926,17 @@ private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modi
         if (waveform.isEmpty()) return@Canvas
         val n = waveform.size.coerceAtLeast(1)
         val step = size.width / n.toFloat()
-        val barW = (step * 1.8f).coerceAtMost(3.4f) // 更紧凑，减少独立柱子感
+        val barW = (step * 2.4f).coerceAtMost(4.2f) // 强重叠，形成紧凑overview实体
 
         val norm = normalizeWave(waveform)
-        val smooth = smoothWave(norm, radius = 3)
-        val env = smoothWave(norm, radius = 10)
+        val smooth = smoothWave(norm, radius = 5)
+        val env = smoothWave(norm, radius = 16)
 
-        // 单边紧凑overview：更整体但保留真实高低差
+        // 单边紧凑overview：去松散柱状感，保留真实段落差异
         for (i in 0 until n) {
-            val ampNorm = (smooth[i] * 0.62f + env[i] * 0.28f + norm[i] * 0.10f).coerceIn(0f, 1f)
-            val amp = ampNorm * (size.height * 0.98f)
+            val ampNorm = (smooth[i] * 0.68f + env[i] * 0.24f + norm[i] * 0.08f).coerceIn(0f, 1f)
+            val gated = (ampNorm - 0.04f).coerceAtLeast(0f) / 0.96f
+            val amp = gated * (size.height * 0.98f)
             val x = i * step - (barW - step) * 0.5f
             drawRect(
                 color = Color(0xFF6E86FF),
