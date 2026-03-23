@@ -1,6 +1,5 @@
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import kotlin.math.pow
 
 object DetailRenderPipeline {
     data class DetailDrawData(
@@ -55,26 +54,15 @@ object DetailRenderPipeline {
         val values = FloatArray(widthPx)
         for (x in 0 until widthPx) values[x] = sampleHeight(segmentCenterForX(x))
 
-        val sorted = values.sorted()
-        fun percentile(q: Float): Float {
-            if (sorted.isEmpty()) return 1f
-            val idx = ((sorted.lastIndex) * q).toInt().coerceIn(0, sorted.lastIndex)
-            return sorted[idx]
-        }
-
-        val lo = percentile(0.10f)
-        val hiRaw = percentile(0.95f)
-        val hi = if (hiRaw - lo < 1e-3f) (lo + 1f) else hiRaw
-        fun ampNorm(v: Float): Float {
-            val n = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
-            return n.toDouble().pow(0.85).toFloat()
-        }
+        // 去掉分位归一化与gamma，直接按当前窗口最大值线性映射
+        var maxV = 1f
+        for (v in values) if (v > maxV) maxV = v
 
         val axis = heightPx / 2f
         val maxAmp = heightPx * 0.47f
         val top = Path()
         for (x in 0 until widthPx) {
-            val amp = ampNorm(values[x]) * maxAmp
+            val amp = ((values[x] / maxV).coerceIn(0f, 1f)) * maxAmp
             if (x == 0) top.moveTo(x.toFloat(), axis - amp)
             else top.lineTo(x.toFloat(), axis - amp)
         }
@@ -82,7 +70,7 @@ object DetailRenderPipeline {
         val fill = Path().apply {
             addPath(top)
             for (x in widthPx - 1 downTo 0) {
-                val amp = ampNorm(values[x]) * maxAmp
+                val amp = ((values[x] / maxV).coerceIn(0f, 1f)) * maxAmp
                 lineTo(x.toFloat(), axis + amp)
             }
             close()
