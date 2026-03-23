@@ -507,10 +507,11 @@ public class DeviceManager {
 
             t.put("sourceSlot", sourceSlot);
             t.put("trackType", trackType);
+            t.put("sourcePlayer", ps.status != null ? ps.status.getTrackSourcePlayer() : null);
+            t.put("rekordboxId", ps.status != null ? ps.status.getRekordboxId() : null);
 
-            // Check if we have metadata in state
-            boolean hasMeta = ps.trackMeta != null;
-            t.put("metadataFound", hasMeta);
+            // metadataFound 以当前查询命中为准（后续会在分支里覆盖）
+            t.put("metadataFound", false);
 
             // Try to get fresh metadata
             try {
@@ -525,6 +526,8 @@ public class DeviceManager {
                     t.put("artist", artist);
                     t.put("album", album);
                     t.put("duration", meta.getDuration());
+                    t.put("durationMs", (long) meta.getDuration() * 1000L);
+                    t.put("metadataFound", true);
                     System.out.println("✅ Fresh metadata for player " + ps.deviceNumber + ": " + title);
                 } else {
                     // Also try using the status to get metadata
@@ -938,6 +941,11 @@ public class DeviceManager {
 
             // Track metadata
             Map<String, Object> track = new HashMap<>();
+            track.put("trackType", ps.status != null && ps.status.getTrackType() != null ? ps.status.getTrackType().toString() : null);
+            track.put("sourceSlot", ps.status != null && ps.status.getTrackSourceSlot() != null ? ps.status.getTrackSourceSlot().toString() : null);
+            track.put("sourcePlayer", ps.status != null ? ps.status.getTrackSourcePlayer() : null);
+            track.put("rekordboxId", ps.status != null ? ps.status.getRekordboxId() : null);
+
             try {
                 TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNum);
                 if (meta != null) {
@@ -945,8 +953,7 @@ public class DeviceManager {
                     track.put("artist", meta.getArtist() != null ? meta.getArtist().label : null);
                     track.put("album", meta.getAlbum() != null ? meta.getAlbum().label : null);
                     track.put("duration", meta.getDuration());
-                    track.put("trackType", ps.status != null ? ps.status.getTrackType().toString() : null);
-                    track.put("sourceSlot", ps.status != null ? ps.status.getTrackSourceSlot().toString() : null);
+                    track.put("durationMs", (long) meta.getDuration() * 1000L);
 
                     // Artwork metadata
                     track.put("artworkId", meta.getArtworkId());
