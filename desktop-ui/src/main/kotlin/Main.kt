@@ -635,12 +635,12 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(16.dp)
+                .height(32.dp)
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
         ) {
             if (!p?.waveform.isNullOrEmpty()) {
-                SimpleWaveform(
+                MiniWaveformTop(
                     waveform = p!!.waveform,
                     progress = if (p.durationMs > 0) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f,
                     modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
@@ -833,6 +833,35 @@ private fun SimpleWaveform(waveform: List<Int>, progress: Float, modifier: Modif
             start = androidx.compose.ui.geometry.Offset(px, 0f),
             end = androidx.compose.ui.geometry.Offset(px, size.height),
             strokeWidth = 1.5f
+        )
+    }
+}
+
+@Composable
+private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        if (waveform.isEmpty()) return@Canvas
+        val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
+        val step = size.width / waveform.size.coerceAtLeast(1)
+        waveform.forEachIndexed { i, v ->
+            val n = (v.toFloat() / maxV.toFloat()).coerceIn(0f, 1f)
+            // 单边波形 + 提高高振幅、压低低振幅（落差更明显）
+            val shaped = n * n
+            val amp = shaped * (size.height * 0.98f)
+            val x = i * step
+            drawLine(
+                color = Color(0xFF6E86FF),
+                start = androidx.compose.ui.geometry.Offset(x, size.height),
+                end = androidx.compose.ui.geometry.Offset(x, size.height - amp),
+                strokeWidth = step.coerceAtLeast(1f)
+            )
+        }
+        val px = progress.coerceIn(0f, 1f) * size.width
+        drawLine(
+            color = Color(0xFF00E5FF),
+            start = androidx.compose.ui.geometry.Offset(px, 0f),
+            end = androidx.compose.ui.geometry.Offset(px, size.height),
+            strokeWidth = 1.2f
         )
     }
 }
