@@ -106,9 +106,6 @@ data class DashboardPlayer(
     val sourcePlayer: Int,
     val rekordboxId: Int,
     val hasTrack: Boolean,
-    val waveform: List<Int>,
-    val waveformColors: List<Int>,
-    val previewWaveform: List<Int>,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -289,9 +286,6 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
         sourcePlayer = 0,
         rekordboxId = 0,
         hasTrack = false,
-        waveform = emptyList(),
-        waveformColors = emptyList(),
-        previewWaveform = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -376,18 +370,7 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
                 ) {
-                    val progress = if (p.durationMs > 0) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-                    when {
-                        !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
-                        !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                        p.waveform.isEmpty() -> WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
-                        else -> MainDetailWaveformCanvas(
-                            waveform = p.waveform,
-                            waveformColors = p.waveformColors,
-                            progress = progress,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
-                        )
-                    }
+                    WaveformEmptyState("WAVEFORM PLACEHOLDER", Modifier.align(Alignment.Center))
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -584,9 +567,6 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         sourcePlayer = 0,
         rekordboxId = 0,
         hasTrack = false,
-        waveform = emptyList(),
-        waveformColors = emptyList(),
-        previewWaveform = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -674,17 +654,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
         ) {
-            val progress = if ((p?.durationMs ?: 0L) > 0) (displayMs.toFloat() / (p?.durationMs ?: 1L).toFloat()).coerceIn(0f, 1f) else 0f
-            when {
-                p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
-                !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                p.previewWaveform.isEmpty() -> WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
-                else -> MiniWaveformTop(
-                    waveform = p.previewWaveform,
-                    progress = progress,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
-                )
-            }
+            WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
@@ -736,15 +706,11 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val effective = if (rawBpm != null && pitch != null) rawBpm * (1.0 + pitch / 100.0) else rawBpm
 
                 val track = p.optObj("track")
-                val analysis = p.optObj("analysis")
                 val title = track?.optString("title") ?: p.optString("title") ?: "-"
                 val artist = track?.optString("artist") ?: p.optString("artist") ?: "-"
                 val sourceSlot = track?.optString("sourceSlot")
                 val sourcePlayer = track?.optInt("sourcePlayer", 0) ?: 0
                 val rekordboxId = track?.optInt("rekordboxId", 0) ?: 0
-                val detailHeights = parseWaveform(analysis?.optArray("detailSampleHeights"), target = 420, useMax = true)
-                val detailColors = parseColorWaveform(analysis?.optArray("detailSampleColors"), detailHeights.size)
-                val previewHeights = parseWaveform(analysis?.optArray("previewSample"), target = 720, useMax = false)
                 val trackId = track?.optString("trackId") ?: p.optString("trackId") ?: ""
                 val hasTrack = trackId.isNotBlank() || title.isNotBlank() && title != "-"
 
@@ -789,9 +755,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     sourcePlayer = sourcePlayer,
                     rekordboxId = rekordboxId,
                     hasTrack = hasTrack,
-                    waveform = detailHeights,
-                    waveformColors = detailColors,
-                    previewWaveform = previewHeights,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
@@ -855,189 +818,8 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 }
 
 @Composable
-private fun MainDetailWaveformCanvas(
-    waveform: List<Int>,
-    waveformColors: List<Int>,
-    progress: Float,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier) {
-        if (waveform.isEmpty()) return@Canvas
-
-        val n = waveform.size.coerceAtLeast(1)
-        val step = size.width / n.toFloat()
-        val barW = (step * 1.45f).coerceAtMost(3.8f) // 更紧凑融合，减少离散条感
-        val mid = size.height / 2f
-
-        val norm = normalizeWave(waveform)
-        val envelopeSlow = smoothWave(norm, radius = 26)      // 段落级包络
-        val envelopeFast = smoothWave(norm, radius = 6)       // 短窗包络
-        val peaks = localPeak(norm, radius = 2)               // 局部峰值
-
-        // 双边实体采样条 + 段落边界优先（强调“刀切式”drop）
-        for (i in 0 until n) {
-            val raw = norm[i]
-            val slow = envelopeSlow[i]
-            val fast = envelopeFast[i]
-            val prevSlow = if (i > 0) envelopeSlow[i - 1] else slow
-            val slopeDown = (prevSlow - slow).coerceAtLeast(0f)   // 段落下坠趋势
-            val slopeUp = (slow - prevSlow).coerceAtLeast(0f)
-            val peak = peaks[i]
-
-            val sectionBody = (slow * slow).coerceIn(0f, 1f)
-            val texture = kotlin.math.sqrt((raw * 0.5f + fast * 0.5f).coerceIn(0f, 1f))
-            val transient = (peak - fast).coerceAtLeast(0f)
-
-            var ampNorm = (
-                sectionBody * 0.56f +
-                    texture * 0.28f +
-                    transient * 0.10f +
-                    slopeUp * 0.06f
-                ).coerceIn(0f, 1f)
-
-            // drop 后“刀切式”下收：检测到明显下坡时直接加重门限压低
-            val dropBoost = (slopeDown * 2.8f).coerceIn(0f, 0.28f)
-            val gate = (0.10f + dropBoost).coerceAtMost(0.32f)
-            ampNorm = ((ampNorm - gate).coerceAtLeast(0f) / (1f - gate).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
-
-            val amp = ampNorm * (size.height * 0.47f)
-            val x = i * step - (barW - step) * 0.5f
-
-            val c = Color(0xFF6E86FF)
-
-            drawRect(
-                color = c,
-                topLeft = androidx.compose.ui.geometry.Offset(x, mid - amp),
-                size = androidx.compose.ui.geometry.Size(barW, (amp * 2f).coerceAtLeast(1f))
-            )
-        }
-
-        val px = progress.coerceIn(0f, 1f) * size.width
-        drawLine(
-            color = Color(0xFF00E5FF),
-            start = androidx.compose.ui.geometry.Offset(px, 0f),
-            end = androidx.compose.ui.geometry.Offset(px, size.height),
-            strokeWidth = 1.4f
-        )
-    }
-}
-
-@Composable
-private fun MiniWaveformTop(waveform: List<Int>, progress: Float, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        if (waveform.isEmpty()) return@Canvas
-        val n = waveform.size.coerceAtLeast(1)
-        val step = size.width / n.toFloat()
-        val barW = (step * 2.4f).coerceAtMost(4.2f) // 强重叠，形成紧凑overview实体
-
-        val norm = normalizeWave(waveform)
-        val smooth = smoothWave(norm, radius = 7)
-        val env = smoothWave(norm, radius = 22)
-
-        // 单边紧凑overview：以段落包络优先，减少“独立柱子”读感
-        for (i in 0 until n) {
-            val ampNorm = (env[i] * 0.62f + smooth[i] * 0.30f + norm[i] * 0.08f).coerceIn(0f, 1f)
-            val gated = (ampNorm - 0.06f).coerceAtLeast(0f) / 0.94f
-            val amp = gated * (size.height * 0.98f)
-            val x = i * step - (barW - step) * 0.5f
-            drawRect(
-                color = Color(0xFF6E86FF),
-                topLeft = androidx.compose.ui.geometry.Offset(x, size.height - amp),
-                size = androidx.compose.ui.geometry.Size(barW, amp.coerceAtLeast(1f))
-            )
-        }
-
-        val px = progress.coerceIn(0f, 1f) * size.width
-        drawLine(
-            color = Color(0xFF00E5FF),
-            start = androidx.compose.ui.geometry.Offset(px, 0f),
-            end = androidx.compose.ui.geometry.Offset(px, size.height),
-            strokeWidth = 1.2f
-        )
-    }
-}
-
-@Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
-}
-
-private fun normalizeWave(waveform: List<Int>): List<Float> {
-    if (waveform.isEmpty()) return emptyList()
-    val maxV = waveform.maxOrNull()?.coerceAtLeast(1) ?: 1
-    return waveform.map { (it.toFloat() / maxV.toFloat()).coerceIn(0f, 1f) }
-}
-
-private fun smoothWave(src: List<Float>, radius: Int): List<Float> {
-    if (src.isEmpty() || radius <= 0) return src
-    val out = MutableList(src.size) { 0f }
-    for (i in src.indices) {
-        var sum = 0f
-        var count = 0
-        val s = (i - radius).coerceAtLeast(0)
-        val e = (i + radius).coerceAtMost(src.lastIndex)
-        for (j in s..e) {
-            sum += src[j]
-            count++
-        }
-        out[i] = if (count > 0) sum / count.toFloat() else src[i]
-    }
-    return out
-}
-
-private fun localPeak(src: List<Float>, radius: Int): List<Float> {
-    if (src.isEmpty() || radius <= 0) return src
-    val out = MutableList(src.size) { 0f }
-    for (i in src.indices) {
-        var peak = 0f
-        val s = (i - radius).coerceAtLeast(0)
-        val e = (i + radius).coerceAtMost(src.lastIndex)
-        for (j in s..e) if (src[j] > peak) peak = src[j]
-        out[i] = peak
-    }
-    return out
-}
-
-private fun parseWaveform(arr: com.google.gson.JsonArray?, target: Int, useMax: Boolean = true): List<Int> {
-    if (arr == null || arr.size() == 0) return emptyList()
-    val src = MutableList(arr.size()) { i -> runCatching { arr[i].asInt }.getOrElse { 0 }.coerceIn(0, 255) }
-    if (src.isEmpty()) return emptyList()
-    if (src.size <= target) return src
-    val out = MutableList(target) { 0 }
-    val bucket = src.size.toFloat() / target.toFloat()
-    for (i in 0 until target) {
-        val start = (i * bucket).toInt()
-        val end = (((i + 1) * bucket).toInt()).coerceAtMost(src.size)
-        if (useMax) {
-            var maxV = 0
-            for (j in start until end) if (src[j] > maxV) maxV = src[j]
-            out[i] = maxV
-        } else {
-            var sum = 0
-            var count = 0
-            for (j in start until end) {
-                sum += src[j]
-                count++
-            }
-            out[i] = if (count > 0) (sum / count) else 0
-        }
-    }
-    return out
-}
-
-private fun parseColorWaveform(arr: com.google.gson.JsonArray?, target: Int): List<Int> {
-    if (arr == null || arr.size() == 0 || target <= 0) return emptyList()
-    val src = MutableList(arr.size()) { i -> runCatching { arr[i].asInt }.getOrElse { 0x6E86FF } }
-    if (src.size == target) return src
-    if (src.size < target) {
-        return List(target) { idx -> src[(idx * src.size / target).coerceIn(0, src.size - 1)] }
-    }
-    val out = MutableList(target) { 0x6E86FF }
-    val bucket = src.size.toFloat() / target.toFloat()
-    for (i in 0 until target) {
-        out[i] = src[(i * bucket).toInt().coerceIn(0, src.size - 1)]
-    }
-    return out
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
