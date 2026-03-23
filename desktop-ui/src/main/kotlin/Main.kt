@@ -1007,30 +1007,45 @@ private fun MiniCompatWaveform(heights: List<Int>, progress: Float, modifier: Mo
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        // BLT-like preview: 单边连续overview实体（非独立柱条）
-        val dense = resampleInt(heights, 640)
-        val smooth = smoothInt(dense, radius = 6)
-        val env = smoothInt(dense, radius = 20)
-        val merged = MutableList(dense.size) { i -> ((smooth[i] * 0.45f) + (env[i] * 0.55f)).toInt() }
+        // Step2: preview同构为“连续总览条带 + 播放位置定位”
+        val dense = resampleInt(heights, 1200)
+        val smooth = smoothInt(dense, radius = 8)
+        val env = smoothInt(dense, radius = 28)
+        val merged = MutableList(dense.size) { i -> ((smooth[i] * 0.40f) + (env[i] * 0.60f)).toInt() }
 
         val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
         val n = merged.size.coerceAtLeast(1)
         val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
 
-        val path = Path()
-        path.moveTo(0f, size.height)
-        for (i in 0 until n) {
-            val x = i * step
-            val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.98f)
-            path.lineTo(x, size.height - amp)
+        val path = Path().apply {
+            moveTo(0f, size.height)
+            for (i in 0 until n) {
+                val x = i * step
+                val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.98f)
+                lineTo(x, size.height - amp)
+            }
+            lineTo(size.width, size.height)
+            close()
         }
-        path.lineTo(size.width, size.height)
-        path.close()
 
-        drawPath(path, color = Color(0xFF88AFFF))
+        // 总览条带：连续填充 + 轻透明层，避免纯色死块
+        drawPath(path, color = Color(0xFF7EA8FF).copy(alpha = 0.90f))
+        drawPath(path, color = Color(0xFFA4C4FF).copy(alpha = 0.16f))
 
+        // 当前播放位置：清晰定位线 + 顶部小刻度
         val px = progress.coerceIn(0f, 1f) * size.width
-        drawLine(Color(0xFF00E5FF), androidx.compose.ui.geometry.Offset(px, 0f), androidx.compose.ui.geometry.Offset(px, size.height), 1.2f)
+        drawLine(
+            color = Color(0xFF00E5FF),
+            start = androidx.compose.ui.geometry.Offset(px, 0f),
+            end = androidx.compose.ui.geometry.Offset(px, size.height),
+            strokeWidth = 1.2f
+        )
+        drawLine(
+            color = Color(0xFF00E5FF),
+            start = androidx.compose.ui.geometry.Offset(px - 3f, 0.8f),
+            end = androidx.compose.ui.geometry.Offset(px + 3f, 0.8f),
+            strokeWidth = 1.4f
+        )
     }
 }
 
