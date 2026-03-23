@@ -389,15 +389,16 @@ private fun LiveChannelRow(p: DashboardPlayer, sourceUpdatedAtMs: Long, uiNowMs:
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                         else -> {
-                            val rawHeights = decodeRawWaveHeights(p.detailRawBase64, target = 900)
-                            val rawUsed = rawHeights.isNotEmpty()
-                            val heights = if (rawUsed) rawHeights else p.detailSampleHeights
+                            val rawData = decodeRawWaveRenderData(p.detailRawBase64, target = 900)
+                            val rawUsed = rawData != null && rawData.heights.isNotEmpty()
+                            val heights = if (rawUsed) rawData!!.heights else p.detailSampleHeights
+                            val colors = if (rawUsed) rawData!!.colors else p.detailSampleColors
                             if (heights.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
                                 MainCompatWaveform(
                                     heights = heights,
-                                    colors = p.detailSampleColors,
+                                    colors = colors,
                                     progress = progress,
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
@@ -705,9 +706,9 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                 else -> {
-                    val rawHeights = decodeRawWaveHeights(p.previewRawBase64, target = 240)
-                    val rawUsed = rawHeights.isNotEmpty()
-                    val heights = if (rawUsed) rawHeights else p.previewSample
+                    val rawData = decodeRawWaveRenderData(p.previewRawBase64, target = 240)
+                    val rawUsed = rawData != null && rawData.heights.isNotEmpty()
+                    val heights = if (rawUsed) rawData!!.heights else p.previewSample
                     if (heights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
@@ -907,6 +908,11 @@ private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
 }
 
+private data class WaveRenderData(
+    val heights: List<Int>,
+    val colors: List<Int>
+)
+
 @Composable
 private fun MainCompatWaveform(
     heights: List<Int>,
@@ -1017,24 +1023,41 @@ private fun smoothInt(src: List<Int>, radius: Int): List<Int> {
     return out
 }
 
-private fun decodeRawWaveHeights(rawBase64: String?, target: Int = 360): List<Int> {
-    if (rawBase64.isNullOrBlank()) return emptyList()
+private fun decodeRawWaveRenderData(rawBase64: String?, target: Int = 360): WaveRenderData? {
+    if (rawBase64.isNullOrBlank()) return null
     return runCatching {
         val bytes = java.util.Base64.getDecoder().decode(rawBase64)
-        if (bytes.isEmpty()) return@runCatching emptyList<Int>()
-        val src = bytes.map { (it.toInt() and 0xFF) }
-        if (src.size <= target) return@runCatching src
-        val out = MutableList(target) { 0 }
-        val bucket = src.size.toFloat() / target.toFloat()
-        for (i in 0 until target) {
-            val s = (i * bucket).toInt()
-            val e = (((i + 1) * bucket).toInt()).coerceAtMost(src.size)
-            var maxV = 0
-            for (j in s until e) if (src[j] > maxV) maxV = src[j]
-            out[i] = maxV
+        if (bytes.isEmpty()) return@runCatching null
+
+        // 从raw字节提取基础能量：去掉直流偏置后取绝对值
+        val rawEnergy = bytes.map { kotlin.math.abs((it.toInt() and 0xFF) - 128) }
+        if (rawEnergy.isEmpty()) return@runCatching null
+
+        val heights = resampleInt(rawEnergy, target)
+        val n = heights.size
+
+        // 频段驱动颜色（前端渲染层近似）：
+        // low=慢包络、mid=中窗包络、high=瞬态/细节
+        val low = smoothInt(heights, radius = 18)
+        val midBase = smoothInt(heights, radius = 7)
+        val highBase = smoothInt(heights, radius = 2)
+        val maxV = (heights.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
+
+        val colors = MutableList(n) { 0x6E86FF }
+        for (i in 0 until n) {
+            val l = (low[i] / maxV).coerceIn(0f, 1f)
+            val m = ((midBase[i] - low[i] * 0.35f) / maxV).coerceIn(0f, 1f)
+            val h = ((highBase[i] - midBase[i] * 0.60f) / maxV).coerceIn(0f, 1f)
+
+            // 3Band风格映射：低频->红，中频->绿，高频->蓝
+            val r = (25 + l * 230).toInt().coerceIn(0, 255)
+            val g = (20 + m * 220).toInt().coerceIn(0, 255)
+            val b = (35 + h * 220).toInt().coerceIn(0, 255)
+            colors[i] = (r shl 16) or (g shl 8) or b
         }
-        out
-    }.getOrElse { emptyList() }
+
+        WaveRenderData(heights = heights, colors = colors)
+    }.getOrNull()
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
