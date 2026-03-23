@@ -1057,6 +1057,17 @@ public class DeviceManager {
                         previewSample.add(preview.segmentHeight(i, false));
                     }
                     analysis.put("previewSample", previewSample);
+
+                    // 增量兼容：新增 raw 字段，不改变旧字段语义
+                    try {
+                        java.nio.ByteBuffer buf = preview.getData().asReadOnlyBuffer();
+                        byte[] raw = new byte[buf.remaining()];
+                        buf.get(raw);
+                        analysis.put("previewRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
+                        analysis.put("previewRawIsColor", preview.isColor);
+                    } catch (Exception ignore) {
+                        // raw 失败不影响旧 sample 字段
+                    }
                 }
             } catch (Exception e) {
                 analysis.put("previewWaveformFound", false);
@@ -1090,6 +1101,17 @@ public class DeviceManager {
                     analysis.put("detailSampleScale", scale);
                     analysis.put("detailSampleHeights", detailHeights);
                     analysis.put("detailSampleColors", detailColors);
+
+                    // 增量兼容：新增 raw 字段，不改变旧字段语义
+                    try {
+                        java.nio.ByteBuffer buf = detail.getData().asReadOnlyBuffer();
+                        byte[] raw = new byte[buf.remaining()];
+                        buf.get(raw);
+                        analysis.put("detailRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
+                        analysis.put("detailRawIsColor", detail.isColor);
+                    } catch (Exception ignore) {
+                        // raw 失败不影响旧 sample 字段
+                    }
                 }
             } catch (Exception e) {
                 analysis.put("detailedWaveformFound", false);
