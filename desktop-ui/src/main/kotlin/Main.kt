@@ -953,29 +953,26 @@ private fun MainCompatWaveform(
     Canvas(modifier = modifier) {
         if (heights.isEmpty()) return@Canvas
 
-        // BLT-like detail显示结构：缩放窗口 + 连续上下边缘 + 闭合实体填充
+        // Step1: detail 几何同构（连续上/下边缘 + 闭合实体），不走柱条模型
         val denseAll = resampleInt(heights, 900)
         val total = denseAll.size.coerceAtLeast(1)
-        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(60, total)
+        val windowSize = (total / zoom.coerceAtLeast(1f)).toInt().coerceIn(80, total)
         val center = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
         val start = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
         val end = (start + windowSize).coerceAtMost(total)
 
         val window = denseAll.subList(start, end)
         val body = smoothInt(window, radius = 2)
-        val env = smoothInt(window, radius = if (zoom >= 6f) 4 else 8)
-        val merged = MutableList(window.size) { i -> ((body[i] * 0.65f) + (env[i] * 0.35f)).toInt() }
+        val env = smoothInt(window, radius = if (zoom >= 6f) 4 else 7)
+        val merged = MutableList(window.size) { i -> ((body[i] * 0.68f) + (env[i] * 0.32f)).toInt() }
 
         val maxV = (merged.maxOrNull() ?: 1).coerceAtLeast(1).toFloat()
         val n = merged.size.coerceAtLeast(1)
         val step = if (n > 1) size.width / (n - 1).toFloat() else size.width
         val mid = size.height / 2f
 
-        val topPath = Path()
-        val bottomPath = Path()
         val topPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
         val botPts = ArrayList<androidx.compose.ui.geometry.Offset>(n)
-
         for (i in 0 until n) {
             val x = i * step
             val amp = ((merged[i] / maxV).coerceIn(0f, 1f)) * (size.height * 0.47f)
@@ -984,30 +981,19 @@ private fun MainCompatWaveform(
         }
 
         if (topPts.isNotEmpty()) {
-            topPath.moveTo(topPts.first().x, topPts.first().y)
-            for (i in 1 until topPts.size) topPath.lineTo(topPts[i].x, topPts[i].y)
-
-            bottomPath.moveTo(botPts.first().x, botPts.first().y)
-            for (i in 1 until botPts.size) bottomPath.lineTo(botPts[i].x, botPts[i].y)
-
-            // 分段渐变填充，避免单色块
-            val seg = 6
-            val segSize = (n / seg).coerceAtLeast(1)
-            for (s in 0 until seg) {
-                val i0 = (s * segSize).coerceAtMost(n - 1)
-                val i1 = (((s + 1) * segSize).coerceAtMost(n - 1)).coerceAtLeast(i0)
-                val fill = Path().apply {
-                    moveTo(topPts[i0].x, topPts[i0].y)
-                    for (i in i0 + 1..i1) lineTo(topPts[i].x, topPts[i].y)
-                    for (i in i1 downTo i0) lineTo(botPts[i].x, botPts[i].y)
-                    close()
-                }
-                val globalIdx = start + ((i0 + i1) / 2)
-                val c = colors.getOrNull(globalIdx * colors.size / total)
-                    ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
-                    ?: Color(0xFF6E86FF)
-                drawPath(fill, color = c.copy(alpha = 0.92f))
+            val fill = Path().apply {
+                moveTo(topPts.first().x, topPts.first().y)
+                for (i in 1 until topPts.size) lineTo(topPts[i].x, topPts[i].y)
+                for (i in botPts.lastIndex downTo 0) lineTo(botPts[i].x, botPts[i].y)
+                close()
             }
+
+            // 当前阶段颜色从属形体，避免色块拼接破坏连续几何
+            val centerGlobalIdx = (start + n / 2).coerceIn(0, total - 1)
+            val centerColor = colors.getOrNull(centerGlobalIdx * colors.size / total)
+                ?.let { Color((((it and 0x00FFFFFF) or (0xFF shl 24)).toLong())) }
+                ?: Color(0xFF6E86FF)
+            drawPath(fill, color = centerColor.copy(alpha = 0.94f))
         }
 
         val localProgress = if (windowSize > 1) ((center - start).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f) else 0f
