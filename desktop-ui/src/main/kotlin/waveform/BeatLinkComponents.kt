@@ -19,27 +19,30 @@ private data class WavePoint(val h: Int, val color: Color)
 fun BeatLinkDetailWave(
     player: DashboardPlayer,
     progressMs: Long,
+    detailScale: Int = 1,
     modifier: Modifier = Modifier
 ) {
     val style = player.detailRawStyle ?: if (player.detailRawIsColor) "RGB" else "BLUE"
     val points = decodeDetailPoints(player.detailRawBase64, style)
         ?: decodeDetailFallback(player.detailSampleHeights, player.detailSampleColors)
+    val scale = detailScale.coerceIn(1, 256)
+    val visiblePoints = if (scale > 1) aggregatePoints(points, scale) else points
 
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF05080C))
     ) {
-        if (points.isEmpty()) return@Canvas
+        if (visiblePoints.isEmpty()) return@Canvas
 
         val w = size.width
         val h = size.height
-        val n = points.size
+        val n = visiblePoints.size
         val step = w / max(1, n)
         val mid = h / 2f
 
         for (i in 0 until n) {
-            val p = points[i]
+            val p = visiblePoints[i]
             val amp = (p.h.coerceIn(0, 31) / 31f) * (h * 0.48f)
             val x = i * step
             drawLine(
@@ -172,6 +175,34 @@ private fun decodeDetailPoints(base64: String?, style: String): List<WavePoint>?
                 out += WavePoint(h, c)
             }
         }
+    }
+    return out
+}
+
+private fun aggregatePoints(points: List<WavePoint>, scale: Int): List<WavePoint> {
+    if (scale <= 1 || points.isEmpty()) return points
+    val out = ArrayList<WavePoint>((points.size / scale) + 1)
+    var i = 0
+    while (i < points.size) {
+        val end = minOf(points.size, i + scale)
+        var hSum = 0
+        var rSum = 0f
+        var gSum = 0f
+        var bSum = 0f
+        var c = 0
+        for (j in i until end) {
+            val p = points[j]
+            hSum += p.h
+            rSum += p.color.red
+            gSum += p.color.green
+            bSum += p.color.blue
+            c++
+        }
+        out += WavePoint(
+            h = (hSum / max(1, c)).coerceIn(0, 31),
+            color = Color(rSum / max(1, c), gSum / max(1, c), bSum / max(1, c), 1f)
+        )
+        i = end
     }
     return out
 }
