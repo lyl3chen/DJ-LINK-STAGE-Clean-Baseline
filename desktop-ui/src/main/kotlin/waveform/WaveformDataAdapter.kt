@@ -2,7 +2,15 @@ data class WaveformResolvedData(
     val sourceTag: WaveformSourceTag,
     val detailHeights: List<Int>,
     val previewHeights: List<Int>,
-    val detailColors: List<Int>
+    val detailColors: List<Int>,
+    val detailEnvelopeBinMs: Int,
+    val detailEnvelopeMin: List<Int>,
+    val detailEnvelopeMax: List<Int>,
+    val detailEnvelopeColor: List<Int>,
+    val previewEnvelopeBinMs: Int,
+    val previewEnvelopeMin: List<Int>,
+    val previewEnvelopeMax: List<Int>,
+    val previewEnvelopeColor: List<Int>
 )
 
 object WaveformDataAdapter {
@@ -54,11 +62,24 @@ object WaveformDataAdapter {
             WaveformSourceState.UNKNOWN -> WaveformSourceTag.NONE
         }
 
+        val detailEnvMin = if (p.detailEnvelopeMin.isNotEmpty()) p.detailEnvelopeMin else detailHeights
+        val detailEnvMax = if (p.detailEnvelopeMax.isNotEmpty()) p.detailEnvelopeMax else detailHeights
+        val previewEnvMin = if (p.previewEnvelopeMin.isNotEmpty()) p.previewEnvelopeMin else previewHeights
+        val previewEnvMax = if (p.previewEnvelopeMax.isNotEmpty()) p.previewEnvelopeMax else previewHeights
+
         return WaveformResolvedData(
             sourceTag = sourceTag,
             detailHeights = detailHeights,
             previewHeights = previewHeights,
-            detailColors = p.detailSampleColors
+            detailColors = p.detailSampleColors,
+            detailEnvelopeBinMs = p.detailEnvelopeBinMs,
+            detailEnvelopeMin = detailEnvMin,
+            detailEnvelopeMax = detailEnvMax,
+            detailEnvelopeColor = if (p.detailEnvelopeColor.isNotEmpty()) p.detailEnvelopeColor else p.detailSampleColors,
+            previewEnvelopeBinMs = p.previewEnvelopeBinMs,
+            previewEnvelopeMin = previewEnvMin,
+            previewEnvelopeMax = previewEnvMax,
+            previewEnvelopeColor = p.previewEnvelopeColor
         )
     }
 

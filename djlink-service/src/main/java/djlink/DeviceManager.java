@@ -1058,6 +1058,43 @@ public class DeviceManager {
                     }
                     analysis.put("previewSample", previewSample);
 
+                    // true envelope (preview)
+                    try {
+                        int bins = Math.min(1024, Math.max(64, preview.segmentCount));
+                        int binSize = Math.max(1, (int) Math.ceil(preview.segmentCount / (double) bins));
+                        List<Integer> envMin = new ArrayList<>(bins);
+                        List<Integer> envMax = new ArrayList<>(bins);
+                        List<Integer> envColor = new ArrayList<>(bins);
+                        for (int b = 0; b < bins; b++) {
+                            int s = b * binSize;
+                            int e = Math.min(preview.segmentCount, s + binSize);
+                            if (s >= e) break;
+                            int mn = 127, mx = 0;
+                            int colorSample = 0x7EA8FF;
+                            int center = s + ((e - s) / 2);
+                            for (int i = s; i < e; i++) {
+                                int v = preview.segmentHeight(i, false);
+                                if (v < mn) mn = v;
+                                if (v > mx) mx = v;
+                            }
+                            try {
+                                java.awt.Color cc = preview.segmentColor(Math.max(0, Math.min(preview.segmentCount - 1, center)), false);
+                                colorSample = ((cc.getRed() & 0xff) << 16) | ((cc.getGreen() & 0xff) << 8) | (cc.getBlue() & 0xff);
+                            } catch (Exception ignoreColor) {}
+                            envMin.add(mn);
+                            envMax.add(mx);
+                            envColor.add(colorSample);
+                        }
+                        Number dmsN = (Number) p.getOrDefault("durationMs", 0);
+                        int dms = dmsN != null ? dmsN.intValue() : 0;
+                        analysis.put("previewEnvelopeBinMs", Math.max(1, (int) (Math.max(1, dms) / Math.max(1, envMin.size()))));
+                        analysis.put("previewEnvelopeMin", envMin);
+                        analysis.put("previewEnvelopeMax", envMax);
+                        analysis.put("previewEnvelopeColor", envColor);
+                    } catch (Exception ignoreEnv) {
+                        // envelope 失败不影响旧字段
+                    }
+
                     // 增量兼容：新增 raw 字段，不改变旧字段语义
                     try {
                         java.nio.ByteBuffer buf = preview.getData().asReadOnlyBuffer();
@@ -1102,6 +1139,43 @@ public class DeviceManager {
                     analysis.put("detailSampleScale", scale);
                     analysis.put("detailSampleHeights", detailHeights);
                     analysis.put("detailSampleColors", detailColors);
+
+                    // true envelope (detail) - 全轨固定bin缓存
+                    try {
+                        int bins = Math.min(4096, Math.max(256, frames));
+                        int binSize = Math.max(1, (int) Math.ceil(frames / (double) bins));
+                        List<Integer> envMin = new ArrayList<>(bins);
+                        List<Integer> envMax = new ArrayList<>(bins);
+                        List<Integer> envColor = new ArrayList<>(bins);
+                        for (int b = 0; b < bins; b++) {
+                            int s = b * binSize;
+                            int e = Math.min(frames, s + binSize);
+                            if (s >= e) break;
+                            int mn = 31, mx = 0;
+                            int center = s + ((e - s) / 2);
+                            int colorPacked = 0x6E86FF;
+                            for (int i = s; i < e; i++) {
+                                int v = detail.segmentHeight(i, 1);
+                                if (v < mn) mn = v;
+                                if (v > mx) mx = v;
+                            }
+                            try {
+                                java.awt.Color cc = detail.segmentColor(Math.max(0, Math.min(frames - 1, center)), 1);
+                                colorPacked = ((cc.getRed() & 0xff) << 16) | ((cc.getGreen() & 0xff) << 8) | (cc.getBlue() & 0xff);
+                            } catch (Exception ignoreColor) {}
+                            envMin.add(mn);
+                            envMax.add(mx);
+                            envColor.add(colorPacked);
+                        }
+                        Number dmsN = (Number) p.getOrDefault("durationMs", 0);
+                        int dms = dmsN != null ? dmsN.intValue() : 0;
+                        analysis.put("detailEnvelopeBinMs", Math.max(1, (int) (Math.max(1, dms) / Math.max(1, envMin.size()))));
+                        analysis.put("detailEnvelopeMin", envMin);
+                        analysis.put("detailEnvelopeMax", envMax);
+                        analysis.put("detailEnvelopeColor", envColor);
+                    } catch (Exception ignoreEnv) {
+                        // envelope 失败不影响旧字段
+                    }
 
                     // 增量兼容：新增 raw 字段，不改变旧字段语义
                     try {

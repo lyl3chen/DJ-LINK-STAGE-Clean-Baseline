@@ -111,6 +111,14 @@ data class DashboardPlayer(
     val detailSampleHeights: List<Int>,
     val detailSampleColors: List<Int>,
     val previewSample: List<Int>,
+    val detailEnvelopeBinMs: Int,
+    val detailEnvelopeMin: List<Int>,
+    val detailEnvelopeMax: List<Int>,
+    val detailEnvelopeColor: List<Int>,
+    val previewEnvelopeBinMs: Int,
+    val previewEnvelopeMin: List<Int>,
+    val previewEnvelopeMax: List<Int>,
+    val previewEnvelopeColor: List<Int>,
     val detailRawBase64: String?,
     val detailRawIsColor: Boolean,
     val previewRawBase64: String?,
@@ -299,6 +307,14 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
         detailSampleHeights = emptyList(),
         detailSampleColors = emptyList(),
         previewSample = emptyList(),
+        detailEnvelopeBinMs = 0,
+        detailEnvelopeMin = emptyList(),
+        detailEnvelopeMax = emptyList(),
+        detailEnvelopeColor = emptyList(),
+        previewEnvelopeBinMs = 0,
+        previewEnvelopeMin = emptyList(),
+        previewEnvelopeMax = emptyList(),
+        previewEnvelopeColor = emptyList(),
         detailRawBase64 = null,
         detailRawIsColor = false,
         previewRawBase64 = null,
@@ -410,15 +426,15 @@ private fun LiveChannelRow(
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                         else -> {
                             val resolved = WaveformDataAdapter.resolve(p)
-                            val heights = p.detailSampleHeights
-                            val colors = p.detailSampleColors
-                            if (heights.isEmpty() || colors.isEmpty()) {
+                            if (resolved.detailEnvelopeMin.isEmpty() || resolved.detailEnvelopeMax.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
                                 val progress = if (p.durationMs > 0L) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                                 DetailWaveformDirect(
-                                    heights = heights,
-                                    colors = colors,
+                                    envelopeMin = resolved.detailEnvelopeMin,
+                                    envelopeMax = resolved.detailEnvelopeMax,
+                                    envelopeColor = resolved.detailEnvelopeColor,
+                                    envelopeBinMs = resolved.detailEnvelopeBinMs,
                                     progress = progress,
                                     zoom = detailZoom,
                                     bpm = (p.effectiveBpm ?: p.rawBpm)?.toFloat(),
@@ -643,6 +659,14 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         detailSampleHeights = emptyList(),
         detailSampleColors = emptyList(),
         previewSample = emptyList(),
+        detailEnvelopeBinMs = 0,
+        detailEnvelopeMin = emptyList(),
+        detailEnvelopeMax = emptyList(),
+        detailEnvelopeColor = emptyList(),
+        previewEnvelopeBinMs = 0,
+        previewEnvelopeMin = emptyList(),
+        previewEnvelopeMax = emptyList(),
+        previewEnvelopeColor = emptyList(),
         detailRawBase64 = null,
         detailRawIsColor = false,
         previewRawBase64 = null,
@@ -739,13 +763,14 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                 else -> {
                     val resolved = WaveformDataAdapter.resolve(p)
-                    val heights = p.previewSample
-                    if (heights.isEmpty()) {
+                    if (resolved.previewEnvelopeMin.isEmpty() || resolved.previewEnvelopeMax.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
                         val progress = if ((p.durationMs) > 0L) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
                         PreviewWaveformDirect(
-                            heights = heights,
+                            envelopeMin = resolved.previewEnvelopeMin,
+                            envelopeMax = resolved.previewEnvelopeMax,
+                            envelopeBinMs = resolved.previewEnvelopeBinMs,
                             progress = progress,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
                         )
@@ -824,6 +849,14 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val detailSampleHeights = analysis?.optIntArray("detailSampleHeights") ?: emptyList()
                 val detailSampleColors = analysis?.optIntArray("detailSampleColors") ?: emptyList()
                 val previewSample = analysis?.optIntArray("previewSample") ?: emptyList()
+                val detailEnvelopeBinMs = analysis?.optInt("detailEnvelopeBinMs", 0) ?: 0
+                val detailEnvelopeMin = analysis?.optIntArray("detailEnvelopeMin") ?: emptyList()
+                val detailEnvelopeMax = analysis?.optIntArray("detailEnvelopeMax") ?: emptyList()
+                val detailEnvelopeColor = analysis?.optIntArray("detailEnvelopeColor") ?: emptyList()
+                val previewEnvelopeBinMs = analysis?.optInt("previewEnvelopeBinMs", 0) ?: 0
+                val previewEnvelopeMin = analysis?.optIntArray("previewEnvelopeMin") ?: emptyList()
+                val previewEnvelopeMax = analysis?.optIntArray("previewEnvelopeMax") ?: emptyList()
+                val previewEnvelopeColor = analysis?.optIntArray("previewEnvelopeColor") ?: emptyList()
                 val detailRawBase64 = analysis?.optString("detailRawBase64")
                 val detailRawIsColor = analysis?.optBool("detailRawIsColor", false) ?: false
                 val previewRawBase64 = analysis?.optString("previewRawBase64")
@@ -873,6 +906,14 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     detailSampleHeights = detailSampleHeights,
                     detailSampleColors = detailSampleColors,
                     previewSample = previewSample,
+                    detailEnvelopeBinMs = detailEnvelopeBinMs,
+                    detailEnvelopeMin = detailEnvelopeMin,
+                    detailEnvelopeMax = detailEnvelopeMax,
+                    detailEnvelopeColor = detailEnvelopeColor,
+                    previewEnvelopeBinMs = previewEnvelopeBinMs,
+                    previewEnvelopeMin = previewEnvelopeMin,
+                    previewEnvelopeMax = previewEnvelopeMax,
+                    previewEnvelopeColor = previewEnvelopeColor,
                     detailRawBase64 = detailRawBase64,
                     detailRawIsColor = detailRawIsColor,
                     previewRawBase64 = previewRawBase64,
