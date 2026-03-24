@@ -13,6 +13,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("org.deepsymmetry:beat-link:8.0.0")
 }
 
 compose.desktop {

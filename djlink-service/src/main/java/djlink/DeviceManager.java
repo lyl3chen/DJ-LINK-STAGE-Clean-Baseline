@@ -1042,11 +1042,44 @@ public class DeviceManager {
             analysis.put("hotCueCount", hotCueCount);
             analysis.put("hotCueTimesMs", hotCueTimesMs);
 
-            // Waveform output disabled by cleanup rollback
-            analysis.put("previewWaveformFound", false);
-            analysis.put("previewLength", 0);
-            analysis.put("detailedWaveformFound", false);
-            analysis.put("detailLength", 0);
+            // Waveform output (beat-link native raw only)
+            try {
+                WaveformPreview preview = waveformFinder.getLatestPreviewFor(playerNum);
+                analysis.put("previewWaveformFound", preview != null);
+                analysis.put("previewLength", preview != null ? preview.segmentCount : 0);
+                if (preview != null) {
+                    try {
+                        java.nio.ByteBuffer buf = preview.getData().asReadOnlyBuffer();
+                        buf.rewind();
+                        byte[] raw = new byte[buf.remaining()];
+                        buf.get(raw);
+                        analysis.put("previewRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
+                        analysis.put("previewRawIsColor", preview.isColor);
+                    } catch (Exception ignore) {}
+                }
+            } catch (Exception e) {
+                analysis.put("previewWaveformFound", false);
+                analysis.put("previewLength", 0);
+            }
+
+            try {
+                WaveformDetail detail = waveformFinder.getLatestDetailFor(playerNum);
+                analysis.put("detailedWaveformFound", detail != null);
+                analysis.put("detailLength", detail != null ? detail.getFrameCount() : 0);
+                if (detail != null) {
+                    try {
+                        java.nio.ByteBuffer buf = detail.getData().asReadOnlyBuffer();
+                        buf.rewind();
+                        byte[] raw = new byte[buf.remaining()];
+                        buf.get(raw);
+                        analysis.put("detailRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
+                        analysis.put("detailRawIsColor", detail.isColor);
+                    } catch (Exception ignore) {}
+                }
+            } catch (Exception e) {
+                analysis.put("detailedWaveformFound", false);
+                analysis.put("detailLength", 0);
+            }
 
             p.put("analysis", analysis);
 

@@ -410,7 +410,17 @@ private fun LiveChannelRow(
                     when {
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                        else -> WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                        else -> {
+                            if (!p.detailRawBase64.isNullOrBlank()) {
+                                BeatLinkDetailWave(
+                                    player = p,
+                                    progressMs = displayedCurrentMs,
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
+                                )
+                            } else {
+                                WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                            }
+                        }
                     }
                 }
 
@@ -713,7 +723,17 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
             when {
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                else -> WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
+                else -> {
+                    if (!p.previewRawBase64.isNullOrBlank()) {
+                        BeatLinkPreviewWave(
+                            player = p,
+                            progressMs = displayMs,
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
+                        )
+                    } else {
+                        WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
+                    }
+                }
             }
         }
 
