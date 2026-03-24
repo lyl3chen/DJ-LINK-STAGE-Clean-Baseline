@@ -2,15 +2,30 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import org.deepsymmetry.beatlink.CdjStatus
+import org.deepsymmetry.beatlink.data.DataReference
+import org.deepsymmetry.beatlink.data.WaveformDetail
+import org.deepsymmetry.beatlink.data.WaveformDetailComponent
+import org.deepsymmetry.beatlink.data.WaveformFinder
+import org.deepsymmetry.beatlink.data.WaveformPreview
+import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
+import java.nio.ByteBuffer
 import java.util.Base64
+import javax.swing.SwingUtilities
 import kotlin.math.max
 
 /**
- * 服务端独占 beat-link；桌面端只消费服务端输出的 beat-link 原生 getData() 数据。
- * sampleHeights/previewSample 仅作为兼容兜底，不是主路径。
+ * 主路径：服务端 raw(getData) -> 桌面端恢复 WaveformPreview/WaveformDetail 对象 -> 原生组件绘制。
+ * fallback：仅在 raw 缺失/解码失败/构造失败时，使用轻量 Canvas 渲染保证可见性。
  */
 
 private data class WavePoint(val h: Int, val color: Color)
@@ -22,36 +37,45 @@ fun BeatLinkDetailWave(
     detailScale: Int = 1,
     modifier: Modifier = Modifier
 ) {
-    val style = player.detailRawStyle ?: if (player.detailRawIsColor) "RGB" else "BLUE"
-    val points = decodeDetailPoints(player.detailRawBase64, style)
-        ?: decodeDetailFallback(player.detailSampleHeights, player.detailSampleColors)
     val scale = detailScale.coerceIn(1, 256)
-    val visiblePoints = if (scale > 1) aggregatePoints(points, scale) else points
-
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF05080C))
-    ) {
-        if (visiblePoints.isEmpty()) return@Canvas
-
-        val w = size.width
-        val h = size.height
-        val n = visiblePoints.size
-        val step = w / max(1, n)
-        val mid = h / 2f
-
-        for (i in 0 until n) {
-            val p = visiblePoints[i]
-            val amp = (p.h.coerceIn(0, 31) / 31f) * (h * 0.48f)
-            val x = i * step
-            drawLine(
-                color = p.color,
-                start = Offset(x, mid - amp),
-                end = Offset(x, mid + amp),
-                strokeWidth = max(1f, step * 0.9f)
-            )
+    val component = remember(player.number) {
+        WaveformDetailComponent(0).apply {
+            setAutoScroll(true)
         }
+    }
+
+    var nativeReady by remember(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat) {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
+        val detail = buildDetailFromRaw(player)
+        nativeReady = detail != null
+        if (detail != null) {
+            SwingUtilities.invokeLater {
+                component.setMonitoredPlayer(0)
+                component.setScale(scale)
+                component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, null)
+                component.revalidate()
+                component.repaint()
+            }
+        }
+    }
+
+    LaunchedEffect(progressMs, player.stateText, player.number) {
+        val playing = player.stateText.equals("PLAYING", true) || player.stateText.equals("PLAY", true)
+        SwingUtilities.invokeLater {
+            component.setPlaybackState(player.number, progressMs, playing)
+            component.repaint()
+        }
+    }
+
+    if (nativeReady) {
+        SwingPanel(factory = { component }, update = { c ->
+            if (c.getScale() != scale) c.setScale(scale)
+        }, modifier = modifier)
+    } else {
+        DetailFallbackCanvas(player = player, detailScale = scale, modifier = modifier)
     }
 }
 
@@ -61,33 +85,118 @@ fun BeatLinkPreviewWave(
     progressMs: Long,
     modifier: Modifier = Modifier
 ) {
+    val component = remember(player.number) { WaveformPreviewComponent(0) }
+
+    var nativeReady by remember(player.number, player.previewRawBase64, player.previewRawStyle, player.previewRawFormat) {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(player.number, player.previewRawBase64, player.previewRawStyle, player.previewRawFormat, player.durationMs) {
+        val preview = buildPreviewFromRaw(player)
+        nativeReady = preview != null
+        if (preview != null) {
+            val durationSec = (player.durationMs / 1000L).toInt().coerceAtLeast(0)
+            SwingUtilities.invokeLater {
+                component.setMonitoredPlayer(0)
+                component.setWaveformPreview(preview, durationSec, null)
+                component.revalidate()
+                component.repaint()
+            }
+        }
+    }
+
+    LaunchedEffect(progressMs, player.stateText, player.number) {
+        val playing = player.stateText.equals("PLAYING", true) || player.stateText.equals("PLAY", true)
+        SwingUtilities.invokeLater {
+            component.setPlaybackState(player.number, progressMs, playing)
+            component.repaint()
+        }
+    }
+
+    if (nativeReady) {
+        SwingPanel(factory = { component }, update = { }, modifier = modifier)
+    } else {
+        PreviewFallbackCanvas(player = player, modifier = modifier)
+    }
+}
+
+private fun buildPreviewFromRaw(player: DashboardPlayer): WaveformPreview? {
+    if (player.previewRawFormat != "beatlink.getData.v1") return null
+    val raw = decodeBase64(player.previewRawBase64) ?: return null
+    return runCatching {
+        WaveformPreview(buildDataReference(player), ByteBuffer.wrap(raw), parseStyle(player.previewRawStyle, player.previewRawIsColor))
+    }.getOrNull()
+}
+
+private fun buildDetailFromRaw(player: DashboardPlayer): WaveformDetail? {
+    if (player.detailRawFormat != "beatlink.getData.v1") return null
+    val raw = decodeBase64(player.detailRawBase64) ?: return null
+    return runCatching {
+        WaveformDetail(buildDataReference(player), ByteBuffer.wrap(raw), parseStyle(player.detailRawStyle, player.detailRawIsColor))
+    }.getOrNull()
+}
+
+private fun parseStyle(style: String?, isColor: Boolean): WaveformFinder.WaveformStyle = when (style?.uppercase()) {
+    "RGB" -> WaveformFinder.WaveformStyle.RGB
+    "THREE_BAND" -> WaveformFinder.WaveformStyle.THREE_BAND
+    else -> if (isColor) WaveformFinder.WaveformStyle.RGB else WaveformFinder.WaveformStyle.BLUE
+}
+
+private fun parseSlot(slot: String?): CdjStatus.TrackSourceSlot = when (slot?.uppercase()) {
+    "CD_SLOT" -> CdjStatus.TrackSourceSlot.CD_SLOT
+    "USB_SLOT" -> CdjStatus.TrackSourceSlot.USB_SLOT
+    "SD_SLOT" -> CdjStatus.TrackSourceSlot.SD_SLOT
+    "COLLECTION" -> CdjStatus.TrackSourceSlot.COLLECTION
+    else -> CdjStatus.TrackSourceSlot.USB_SLOT
+}
+
+private fun buildDataReference(player: DashboardPlayer): DataReference {
+    val sourcePlayer = if (player.sourcePlayer > 0) player.sourcePlayer else player.number
+    val rekordboxId = if (player.rekordboxId > 0) player.rekordboxId else 1
+    return DataReference(sourcePlayer, parseSlot(player.sourceSlot), rekordboxId, CdjStatus.TrackType.REKORDBOX)
+}
+
+@Composable
+private fun DetailFallbackCanvas(player: DashboardPlayer, detailScale: Int, modifier: Modifier = Modifier) {
+    val style = player.detailRawStyle ?: if (player.detailRawIsColor) "RGB" else "BLUE"
+    val points = decodeDetailPoints(player.detailRawBase64, style)
+        ?: decodeDetailFallback(player.detailSampleHeights, player.detailSampleColors)
+    val visiblePoints = if (detailScale > 1) aggregatePoints(points, detailScale) else points
+
+    Canvas(modifier = modifier.fillMaxSize().background(Color(0xFF05080C))) {
+        if (visiblePoints.isEmpty()) return@Canvas
+        val w = size.width
+        val h = size.height
+        val n = visiblePoints.size
+        val step = w / max(1, n)
+        val mid = h / 2f
+        for (i in 0 until n) {
+            val p = visiblePoints[i]
+            val amp = (p.h.coerceIn(0, 31) / 31f) * (h * 0.48f)
+            val x = i * step
+            drawLine(p.color, Offset(x, mid - amp), Offset(x, mid + amp), max(1f, step * 0.9f))
+        }
+    }
+}
+
+@Composable
+private fun PreviewFallbackCanvas(player: DashboardPlayer, modifier: Modifier = Modifier) {
     val style = player.previewRawStyle ?: if (player.previewRawIsColor) "RGB" else "BLUE"
     val points = decodePreviewPoints(player.previewRawBase64, style)
         ?: player.previewSample.map { WavePoint(it.coerceIn(0, 31), Color(0xFF81D4FA)) }
 
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF05080C))
-    ) {
+    Canvas(modifier = modifier.fillMaxSize().background(Color(0xFF05080C))) {
         if (points.isEmpty()) return@Canvas
-
         val w = size.width
         val h = size.height
         val n = points.size
         val step = w / max(1, n)
         val bottom = h
-
         for (i in 0 until n) {
             val p = points[i]
             val amp = (p.h.coerceIn(0, 31) / 31f) * (h * 0.95f)
             val x = i * step
-            drawLine(
-                color = p.color,
-                start = Offset(x, bottom),
-                end = Offset(x, bottom - amp),
-                strokeWidth = max(1f, step * 0.9f)
-            )
+            drawLine(p.color, Offset(x, bottom), Offset(x, bottom - amp), max(1f, step * 0.9f))
         }
     }
 }
@@ -198,10 +307,7 @@ private fun aggregatePoints(points: List<WavePoint>, scale: Int): List<WavePoint
             bSum += p.color.blue
             c++
         }
-        out += WavePoint(
-            h = (hSum / max(1, c)).coerceIn(0, 31),
-            color = Color(rSum / max(1, c), gSum / max(1, c), bSum / max(1, c), 1f)
-        )
+        out += WavePoint((hSum / max(1, c)).coerceIn(0, 31), Color(rSum / max(1, c), gSum / max(1, c), bSum / max(1, c), 1f))
         i = end
     }
     return out

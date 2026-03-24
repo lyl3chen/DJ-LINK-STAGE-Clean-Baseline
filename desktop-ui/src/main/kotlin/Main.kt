@@ -119,9 +119,11 @@ data class DashboardPlayer(
     val detailRawBase64: String?,
     val detailRawIsColor: Boolean,
     val detailRawStyle: String?,
+    val detailRawFormat: String?,
     val previewRawBase64: String?,
     val previewRawIsColor: Boolean,
     val previewRawStyle: String?,
+    val previewRawFormat: String?,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -344,9 +346,11 @@ private fun LiveMain(
         detailRawBase64 = null,
         detailRawIsColor = false,
         detailRawStyle = null,
+        detailRawFormat = null,
         previewRawBase64 = null,
         previewRawIsColor = false,
         previewRawStyle = null,
+        previewRawFormat = null,
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -663,9 +667,11 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         detailRawBase64 = null,
         detailRawIsColor = false,
         detailRawStyle = null,
+        detailRawFormat = null,
         previewRawBase64 = null,
         previewRawIsColor = false,
         previewRawStyle = null,
+        previewRawFormat = null,
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -837,9 +843,11 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val detailRawBase64 = analysis?.optString("detailRawBase64")
                 val detailRawIsColor = analysis?.optBool("detailRawIsColor", false) ?: false
                 val detailRawStyle = analysis?.optString("detailRawStyle")
+                val detailRawFormat = analysis?.optString("detailRawFormat")
                 val previewRawBase64 = analysis?.optString("previewRawBase64")
                 val previewRawIsColor = analysis?.optBool("previewRawIsColor", false) ?: false
                 val previewRawStyle = analysis?.optString("previewRawStyle")
+                val previewRawFormat = analysis?.optString("previewRawFormat")
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
@@ -896,9 +904,11 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     detailRawBase64 = detailRawBase64,
                     detailRawIsColor = detailRawIsColor,
                     detailRawStyle = detailRawStyle,
+                    detailRawFormat = detailRawFormat,
                     previewRawBase64 = previewRawBase64,
                     previewRawIsColor = previewRawIsColor,
                     previewRawStyle = previewRawStyle,
+                    previewRawFormat = previewRawFormat,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
