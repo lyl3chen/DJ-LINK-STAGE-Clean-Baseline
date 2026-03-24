@@ -1119,34 +1119,52 @@
       }
 
       if (detailMode) {
-        // detail：逐像素竖线直绘（与桌面最新一致，避免菱形块感）
+        // detail：每像素min/max envelope连续包络（与桌面同步）
+        const top = new Array(w);
+        const bottom = new Array(w);
         for (let x = 0; x < w; x++) {
-          const t = w > 1 ? x / (w - 1) : 0;
-          const i = Math.max(0, Math.min(n - 1, Math.floor(t * (n - 1))));
-          const p = points[i];
-          const amp = (Math.max(0, Math.min(31, p.h || 0)) / 31) * (h * 0.47);
-          const r = Math.max(0, Math.min(255, p.r | 0));
-          const g = Math.max(0, Math.min(255, p.g | 0));
-          const b = Math.max(0, Math.min(255, p.b | 0));
-          ctx.strokeStyle = `rgba(${r},${g},${b},1)`;
-          ctx.beginPath();
-          ctx.moveTo(x, center - amp);
-          ctx.lineTo(x, center + amp);
-          ctx.stroke();
+          const s = Math.max(0, Math.min(n - 1, Math.floor(x * n / w)));
+          const e = Math.max(s + 1, Math.min(n, Math.floor((x + 1) * n / w)));
+          let mn = 31, mx = 0;
+          for (let i = s; i < e; i++) {
+            const v = Math.max(0, Math.min(31, points[i].h || 0));
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+          }
+          top[x] = center - (mx / 31) * (h * 0.47);
+          bottom[x] = center + (mn / 31) * (h * 0.47);
         }
+        const mid = points[Math.max(0, Math.min(n - 1, Math.floor(n / 2)))] || {r:110,g:134,b:255};
+        ctx.fillStyle = `rgba(${mid.r|0},${mid.g|0},${mid.b|0},1)`;
+        ctx.beginPath();
+        ctx.moveTo(0, top[0]);
+        for (let x = 1; x < w; x++) ctx.lineTo(x, top[x]);
+        for (let x = w - 1; x >= 0; x--) ctx.lineTo(x, bottom[x]);
+        ctx.closePath();
+        ctx.fill();
       } else {
-        // preview：细带级单色上下对称竖线直绘
+        // preview：长程min/max envelope细带
+        const top = new Array(w);
+        const bottom = new Array(w);
         for (let x = 0; x < w; x++) {
-          const t = w > 1 ? x / (w - 1) : 0;
-          const i = Math.max(0, Math.min(n - 1, Math.floor(t * (n - 1))));
-          const p = points[i];
-          const amp = (Math.max(0, Math.min(127, p.h || 0)) / 127) * (h * 0.20);
-          ctx.strokeStyle = 'rgba(126,168,255,1)';
-          ctx.beginPath();
-          ctx.moveTo(x, center - amp);
-          ctx.lineTo(x, center + amp);
-          ctx.stroke();
+          const s = Math.max(0, Math.min(n - 1, Math.floor(x * n / w)));
+          const e = Math.max(s + 1, Math.min(n, Math.floor((x + 1) * n / w)));
+          let mn = 127, mx = 0;
+          for (let i = s; i < e; i++) {
+            const v = Math.max(0, Math.min(127, points[i].h || 0));
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+          }
+          top[x] = center - (mx / 127) * (h * 0.20);
+          bottom[x] = center + (mn / 127) * (h * 0.20);
         }
+        ctx.fillStyle = 'rgba(126,168,255,1)';
+        ctx.beginPath();
+        ctx.moveTo(0, top[0]);
+        for (let x = 1; x < w; x++) ctx.lineTo(x, top[x]);
+        for (let x = w - 1; x >= 0; x--) ctx.lineTo(x, bottom[x]);
+        ctx.closePath();
+        ctx.fill();
       }
 
       return off;
