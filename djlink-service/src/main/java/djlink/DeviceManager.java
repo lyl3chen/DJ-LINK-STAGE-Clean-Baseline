@@ -1001,13 +1001,16 @@ public class DeviceManager {
                 if (grid != null) {
                     List<Integer> beatTicksMs = new ArrayList<>(grid.beatCount);
                     List<Integer> beatTicksInBar = new ArrayList<>(grid.beatCount);
+                    List<Integer> beatTicksBpmX100 = new ArrayList<>(grid.beatCount);
                     int maxBeats = Math.min(grid.beatCount, 2048);
                     for (int bi = 1; bi <= maxBeats; bi++) {
                         beatTicksMs.add((int) grid.getTimeWithinTrack(bi));
                         beatTicksInBar.add(grid.getBeatWithinBar(bi));
+                        beatTicksBpmX100.add(grid.getBpm(bi));
                     }
                     analysis.put("beatTicksMs", beatTicksMs);
                     analysis.put("beatTicksInBar", beatTicksInBar);
+                    analysis.put("beatTicksBpmX100", beatTicksBpmX100);
                 }
             } catch (Exception e) {
                 analysis.put("beatGridFound", false);

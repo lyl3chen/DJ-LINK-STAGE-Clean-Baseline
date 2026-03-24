@@ -13,6 +13,7 @@ import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import org.deepsymmetry.beatlink.CdjStatus
+import org.deepsymmetry.beatlink.data.BeatGrid
 import org.deepsymmetry.beatlink.data.DataReference
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
@@ -74,6 +75,7 @@ fun BeatLinkDetailWave(
 
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
         val detail = buildDetailFromRaw(player)
+        val beatGrid = buildBeatGridFromState(player)
         currentDetail = detail
         nativeReady = detail != null
         if (detail != null) {
@@ -82,7 +84,7 @@ fun BeatLinkDetailWave(
                 if (scale > 0) {
                     component.setScale(scale)
                 }
-                component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, null)
+                component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, beatGrid)
                 component.revalidate()
                 component.repaint()
             }
@@ -197,6 +199,27 @@ private fun buildDataReference(player: DashboardPlayer): DataReference {
     val sourcePlayer = if (player.sourcePlayer > 0) player.sourcePlayer else player.number
     val rekordboxId = if (player.rekordboxId > 0) player.rekordboxId else 1
     return DataReference(sourcePlayer, parseSlot(player.sourceSlot), rekordboxId, CdjStatus.TrackType.REKORDBOX)
+}
+
+private fun buildBeatGridFromState(player: DashboardPlayer): BeatGrid? {
+    val times = player.beatTicksMs
+    val inBar = player.beatTicksInBar
+    val bpmX100 = player.beatTicksBpmX100
+    if (times.isEmpty() || inBar.isEmpty() || bpmX100.isEmpty()) return null
+    val count = minOf(times.size, inBar.size, bpmX100.size)
+    if (count <= 0) return null
+
+    val inBarArr = IntArray(count)
+    val bpmArr = IntArray(count)
+    val timesArr = LongArray(count)
+    for (i in 0 until count) {
+        inBarArr[i] = inBar[i]
+        bpmArr[i] = bpmX100[i]
+        timesArr[i] = times[i].toLong()
+    }
+    return runCatching {
+        BeatGrid(buildDataReference(player), inBarArr, bpmArr, timesArr)
+    }.getOrNull()
 }
 
 @Composable

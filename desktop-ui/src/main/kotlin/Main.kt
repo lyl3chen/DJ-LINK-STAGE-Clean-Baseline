@@ -125,6 +125,9 @@ data class DashboardPlayer(
     val previewRawIsColor: Boolean,
     val previewRawStyle: String?,
     val previewRawFormat: String?,
+    val beatTicksMs: List<Int>,
+    val beatTicksInBar: List<Int>,
+    val beatTicksBpmX100: List<Int>,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -343,6 +346,9 @@ private fun LiveMain(
         previewRawIsColor = false,
         previewRawStyle = null,
         previewRawFormat = null,
+        beatTicksMs = emptyList(),
+        beatTicksInBar = emptyList(),
+        beatTicksBpmX100 = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -667,6 +673,9 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         previewRawIsColor = false,
         previewRawStyle = null,
         previewRawFormat = null,
+        beatTicksMs = emptyList(),
+        beatTicksInBar = emptyList(),
+        beatTicksBpmX100 = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -847,6 +856,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val previewRawIsColor = analysis?.optBool("previewRawIsColor", false) ?: false
                 val previewRawStyle = analysis?.optString("previewRawStyle")
                 val previewRawFormat = analysis?.optString("previewRawFormat")
+                val beatTicksMs = analysis?.optIntArray("beatTicksMs") ?: emptyList()
+                val beatTicksInBar = analysis?.optIntArray("beatTicksInBar") ?: emptyList()
+                val beatTicksBpmX100 = analysis?.optIntArray("beatTicksBpmX100") ?: emptyList()
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
@@ -908,6 +920,9 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     previewRawIsColor = previewRawIsColor,
                     previewRawStyle = previewRawStyle,
                     previewRawFormat = previewRawFormat,
+                    beatTicksMs = beatTicksMs,
+                    beatTicksInBar = beatTicksInBar,
+                    beatTicksBpmX100 = beatTicksBpmX100,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
