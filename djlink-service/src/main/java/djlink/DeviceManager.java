@@ -1055,6 +1055,8 @@ public class DeviceManager {
                         buf.get(raw);
                         analysis.put("previewRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
                         analysis.put("previewRawIsColor", preview.isColor);
+                        analysis.put("previewRawStyle", preview.style.toString());
+                        analysis.put("previewRawFormat", "beatlink.getData.v1");
                     } catch (Exception ignore) {}
                 }
             } catch (Exception e) {
@@ -1074,6 +1076,8 @@ public class DeviceManager {
                         buf.get(raw);
                         analysis.put("detailRawBase64", java.util.Base64.getEncoder().encodeToString(raw));
                         analysis.put("detailRawIsColor", detail.isColor);
+                        analysis.put("detailRawStyle", detail.style.toString());
+                        analysis.put("detailRawFormat", "beatlink.getData.v1");
                     } catch (Exception ignore) {}
                 }
             } catch (Exception e) {
