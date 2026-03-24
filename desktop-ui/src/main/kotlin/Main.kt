@@ -92,6 +92,10 @@ private fun abDisableDetail(): Boolean = WAVE_AB_MODE == "A" || WAVE_AB_MODE == 
 private fun abDisablePreview(): Boolean = WAVE_AB_MODE == "B" || WAVE_AB_MODE == "C"
 private fun abWaveOnly(): Boolean = WAVE_AB_MODE == "D"
 
+private val RUNTIME_DIAG_MODE: String = (System.getenv("RUNTIME_DIAG_MODE") ?: "NORMAL").uppercase()
+private fun diagFreezePage(): Boolean = RUNTIME_DIAG_MODE == "FREEZE_PAGE"
+private fun diagStaticMin(): Boolean = RUNTIME_DIAG_MODE == "STATIC_MIN"
+
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = UiText.APP_TITLE) {
         MaterialTheme {
@@ -147,11 +151,23 @@ private fun AppRoot() {
     val baseUrl = "http://127.0.0.1:8080"
     var refreshMs by remember { mutableStateOf(500) }
     var state by remember { mutableStateOf(DashboardState()) }
-    LaunchedEffect(refreshMs) {
+    LaunchedEffect(refreshMs, RUNTIME_DIAG_MODE) {
+        if (diagStaticMin()) return@LaunchedEffect
+        if (diagFreezePage()) {
+            state = fetchDashboardState(baseUrl, state)
+            return@LaunchedEffect
+        }
         while (isActive) {
             state = fetchDashboardState(baseUrl, state)
             delay(refreshMs.toLong())
         }
+    }
+
+    if (diagStaticMin()) {
+        Box(Modifier.fillMaxSize().background(C_BG), contentAlignment = Alignment.Center) {
+            Text("STATIC_MIN", color = C_TEXT)
+        }
+        return
     }
 
     Column(
