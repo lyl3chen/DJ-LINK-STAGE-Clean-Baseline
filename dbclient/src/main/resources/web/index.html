@@ -316,24 +316,15 @@
 
     .playhead {
       position: absolute;
-      top: -1px;
-      bottom: -1px;
-      width: 2px;
-      background: #ffd84d;
-      box-shadow: 0 0 12px rgba(255,216,77,.95);
+      top: 0;
+      bottom: 0;
+      width: 1.5px;
+      background: #00e5ff;
+      box-shadow: none;
       z-index: 9;
     }
     .playhead::after {
-      content: '';
-      position: absolute;
-      bottom: -6px;
-      left: -4px;
-      width: 0;
-      height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-top: 7px solid #ffffff;
-      filter: drop-shadow(0 0 2px rgba(0,0,0,.9));
+      content: none;
     }
 
     .deck-right {
@@ -1944,17 +1935,12 @@
               <div class="wave-track wave-overview">
                 <div class="wave-sections">${sectionBandsHtml}</div>
                 <canvas class="wave-canvas" id="${overviewCanvasId}"></canvas>
-                ${hotcueOverview}
                 <div class="zoom-window" style="left:${zoomLeftPct}%;width:${zoomWidthPct}%"></div>
               </div>
               <div class="wave-track wave-zoom">
                 <canvas class="wave-canvas" id="waveCanvas-${p.number}"></canvas>
-                ${beatLinesHtml}
-                ${hotcueZoom}
                 <div class="playhead" style="left:${(((ratio - zStart) / span)*100).toFixed(2)}%"></div>
-                <div class="zoom-label">ZOOM x${zoom.toFixed(1)}</div>
               </div>
-              <div class="beat-ruler">${beatTicksHtml}</div>
             </div>
           </div>
           <div class="deck-right">
@@ -1996,13 +1982,6 @@
         const secRemain = (p.currentSection && Number.isFinite(p.currentSection.endTimeMs))
           ? Math.max(0, Math.round((Number(p.currentSection.endTimeMs) - currentMs) / 1000))
           : null;
-        const hotcueHtml = durationMs > 0
-          ? hotcues.map((ms, i) => {
-              const c = hotCueColor(i);
-              return `<span class="mini-hotcue" data-cue="${String.fromCharCode(65+i)}" style="left:${Math.max(0, Math.min(100, (ms/durationMs*100))).toFixed(2)}%;border-left-color:${c};--cue-color:${c}"></span>`;
-            }).join('')
-          : '';
-
         mini.innerHTML = `
           <div class="mini-head">
             <div class="mini-player"><div><small>PLAYER</small><b>${p.number}</b></div></div>
@@ -2012,7 +1991,7 @@
             </div>
             <div class="mini-bpm"><div><small>BPM</small><b>${miniBpm}</b></div></div>
           </div>
-          <div class="mini-wave-wrap">${hotcueHtml}<div class="mini-rgb"><canvas class="wave-canvas" id="${miniCanvasId}"></canvas></div></div>
+          <div class="mini-wave-wrap"><div class="mini-rgb"><canvas class="wave-canvas" id="${miniCanvasId}"></canvas></div></div>
           <div class="mini-progress"><div style="width:${(ratio*100).toFixed(2)}%"></div></div>
           <div class="mini-track">${p.master?'[MASTER] ':''}${title}${secRemain!=null?` • 段落余 ${secRemain}s`:''}</div>
         `;
