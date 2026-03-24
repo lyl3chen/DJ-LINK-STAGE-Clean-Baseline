@@ -1967,15 +1967,8 @@
           </div>
           <div class="deck-wave">
             <div class="wave-stack" data-zoom-deck="${p.number}">
-              <div class="wave-track wave-overview">
-                <div class="wave-sections">${sectionBandsHtml}</div>
-                <canvas class="wave-canvas" id="${overviewCanvasId}"></canvas>
-                <div class="zoom-window" style="left:${zoomLeftPct}%;width:${zoomWidthPct}%"></div>
-              </div>
-              <div class="wave-track wave-zoom">
-                <canvas class="wave-canvas" id="waveCanvas-${p.number}"></canvas>
-                <div class="playhead" style="left:${(((ratio - zStart) / span)*100).toFixed(2)}%"></div>
-              </div>
+              <div class="wave-track wave-overview" style="display:flex;align-items:center;justify-content:center;color:#9fb0c4;">PREVIEW PLACEHOLDER</div>
+              <div class="wave-track wave-zoom" style="display:flex;align-items:center;justify-content:center;color:#9fb0c4;">DETAIL PLACEHOLDER</div>
             </div>
           </div>
           <div class="deck-right">
@@ -2004,10 +1997,6 @@
           </div>
         `;
         deckList.appendChild(deck);
-        const ovCanvas = deck.querySelector(`#${overviewCanvasId}`);
-        if (ovCanvas) drawWaveCanvas(ovCanvas, overviewPts, 'top');
-        const waveCanvas = deck.querySelector(`#waveCanvas-${p.number}`);
-        if (waveCanvas) drawWaveCanvas(waveCanvas, zoomPts, 'mirror');
 
         const mini = document.createElement('div');
         mini.className = 'mini' + (p.playing ? ' playing' : '') + (p.master ? ' master' : '');
@@ -2026,13 +2015,11 @@
             </div>
             <div class="mini-bpm"><div><small>BPM</small><b>${miniBpm}</b></div></div>
           </div>
-          <div class="mini-wave-wrap"><div class="mini-rgb"><canvas class="wave-canvas" id="${miniCanvasId}"></canvas></div></div>
+          <div class="mini-wave-wrap"><div class="mini-rgb" style="display:flex;align-items:center;justify-content:center;color:#9fb0c4;">PREVIEW PLACEHOLDER</div></div>
           <div class="mini-progress"><div style="width:${(ratio*100).toFixed(2)}%"></div></div>
           <div class="mini-track">${p.master?'[MASTER] ':''}${title}${secRemain!=null?` • 段落余 ${secRemain}s`:''}</div>
         `;
         miniGrid.appendChild(mini);
-        const miniCanvas = mini.querySelector(`#${miniCanvasId}`);
-        if (miniCanvas) drawWaveCanvas(miniCanvas, overviewPts, 'top-mini');
       }
     }
 

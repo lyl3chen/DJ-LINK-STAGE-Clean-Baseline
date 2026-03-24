@@ -6,10 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -288,7 +285,6 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 
 @Composable
 private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
-    var detailZoom by remember { mutableStateOf(1f) }
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -340,22 +336,17 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
             LiveChannelRow(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
-                uiNowMs = uiNowMs,
-                detailZoom = detailZoom,
-                onDetailZoomChange = { z -> detailZoom = z.coerceIn(1f, 10f) }
+                uiNowMs = uiNowMs
             )
         }
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
-    uiNowMs: Long,
-    detailZoom: Float,
-    onDetailZoomChange: (Float) -> Unit
+    uiNowMs: Long
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -415,50 +406,11 @@ private fun LiveChannelRow(
                         .height(34.dp)
                         .background(Color(0xFF0C1117))
                         .border(1.dp, Color(0xFF25303C))
-                        .onPointerEvent(PointerEventType.Scroll) { e ->
-                            val dy = e.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                            if (dy < 0f) onDetailZoomChange(detailZoom * 1.12f)
-                            else if (dy > 0f) onDetailZoomChange(detailZoom / 1.12f)
-                        }
                 ) {
                     when {
                         !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                         !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                        else -> {
-                            val resolved = WaveformDataAdapter.resolve(p)
-                            if (resolved.detailEnvelopeMin.isEmpty() || resolved.detailEnvelopeMax.isEmpty()) {
-                                WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
-                            } else {
-                                val progress = if (p.durationMs > 0L) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-                                DetailWaveformDirect(
-                                    envelopeMin = resolved.detailEnvelopeMin,
-                                    envelopeMax = resolved.detailEnvelopeMax,
-                                    envelopeColor = resolved.detailEnvelopeColor,
-                                    envelopeBinMs = resolved.detailEnvelopeBinMs,
-                                    progress = progress,
-                                    zoom = detailZoom,
-                                    bpm = (p.effectiveBpm ?: p.rawBpm)?.toFloat(),
-                                    durationMs = p.durationMs,
-                                    modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
-                                )
-                                Text(
-                                    "${"%.1f".format(detailZoom)}x",
-                                    color = C_MUTED,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp)
-                                )
-                                Text(
-                                    when (resolved.sourceTag) {
-                                        WaveformSourceTag.RAW -> "RAW"
-                                        WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
-                                        WaveformSourceTag.NONE -> "NO_SOURCE"
-                                    },
-                                    color = C_MUTED,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 1.dp)
-                                )
-                            }
-                        }
+                        else -> WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
                     }
                 }
 
@@ -761,31 +713,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
             when {
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
-                else -> {
-                    val resolved = WaveformDataAdapter.resolve(p)
-                    if (resolved.previewEnvelopeMin.isEmpty() || resolved.previewEnvelopeMax.isEmpty()) {
-                        WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
-                    } else {
-                        val progress = if ((p.durationMs) > 0L) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-                        PreviewWaveformDirect(
-                            envelopeMin = resolved.previewEnvelopeMin,
-                            envelopeMax = resolved.previewEnvelopeMax,
-                            envelopeBinMs = resolved.previewEnvelopeBinMs,
-                            progress = progress,
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
-                        )
-                        Text(
-                            when (resolved.sourceTag) {
-                                WaveformSourceTag.RAW -> "RAW"
-                                WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
-                                WaveformSourceTag.NONE -> "NO_SOURCE"
-                            },
-                            color = C_MUTED,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(end = 3.dp, top = 0.dp)
-                        )
-                    }
-                }
+                else -> WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
             }
         }
 
