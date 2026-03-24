@@ -1857,7 +1857,7 @@
 
         const hotcues = (p.analysis && p.analysis.hotCueTimesMs) ? p.analysis.hotCueTimesMs.slice(0, 8) : [];
 
-        const zoom = Math.max(1, Math.min(8, Number(waveZoomByDeck[p.number] || 2)));
+        const zoom = Math.max(1, Math.min(10, Number(waveZoomByDeck[p.number] || 2)));
         const overviewPts = [];
         const zoomPts = [];
 
@@ -1868,7 +1868,16 @@
           overviewPts.push({ h: v, r: 126, g: 168, b: 255 });
         }
 
-        const span = Math.max(0.05, 1 / zoom);
+        // 与桌面端一致：detail窗口按拍子语义（12 bars -> 3.5 beats）
+        const bpmBase = (p.bpm != null) ? Number(p.bpm) : 120;
+        const bpmNow = bpmBase * (1 + Number(p.pitch || 0) / 100);
+        const bpmSafe = Math.max(30, Math.min(300, Number.isFinite(bpmNow) ? bpmNow : 120));
+        const tZoom = Math.max(0, Math.min(1, (zoom - 1) / 9));
+        const maxBeats = 48;
+        const minBeats = 3.5;
+        const windowBeats = maxBeats * Math.pow(minBeats / maxBeats, tZoom);
+        const windowMs = windowBeats * (60000 / bpmSafe);
+        const span = Math.max(0.005, Math.min(1, windowMs / Math.max(1, durationMs)));
         const zTarget = ratio - span / 2;
         const zStart = getSmoothZoomStart(p.number, zTarget, span);
         const zoomLeftPct = (zStart * 100).toFixed(2);
@@ -2853,7 +2862,7 @@
       e.preventDefault();
       const d = Number(box.getAttribute('data-zoom-deck'));
       const cur = Number(waveZoomByDeck[d] || 2);
-      const next = Math.max(1, Math.min(8, cur + (e.deltaY > 0 ? -0.3 : 0.3)));
+      const next = Math.max(1, Math.min(10, cur + (e.deltaY > 0 ? -0.3 : 0.3)));
       waveZoomByDeck[d] = Math.round(next * 10) / 10;
       if (zoomRenderTimer) clearTimeout(zoomRenderTimer);
       zoomRenderTimer = setTimeout(() => { scheduleRender(true); zoomRenderTimer = null; }, 50);
