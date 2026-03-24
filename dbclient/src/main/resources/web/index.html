@@ -1119,30 +1119,34 @@
       }
 
       if (detailMode) {
-        // detail：逐sample颜色直出连续带（与桌面一致）
-        for (let i = 0; i < n - 1; i++) {
+        // detail：逐像素竖线直绘（与桌面最新一致，避免菱形块感）
+        for (let x = 0; x < w; x++) {
+          const t = w > 1 ? x / (w - 1) : 0;
+          const i = Math.max(0, Math.min(n - 1, Math.floor(t * (n - 1))));
           const p = points[i];
+          const amp = (Math.max(0, Math.min(31, p.h || 0)) / 31) * (h * 0.47);
           const r = Math.max(0, Math.min(255, p.r | 0));
           const g = Math.max(0, Math.min(255, p.g | 0));
           const b = Math.max(0, Math.min(255, p.b | 0));
-          ctx.fillStyle = `rgba(${r},${g},${b},1)`;
+          ctx.strokeStyle = `rgba(${r},${g},${b},1)`;
           ctx.beginPath();
-          ctx.moveTo(xs[i], yt[i]);
-          ctx.lineTo(xs[i + 1], yt[i + 1]);
-          ctx.lineTo(xs[i + 1], yb[i + 1]);
-          ctx.lineTo(xs[i], yb[i]);
-          ctx.closePath();
-          ctx.fill();
+          ctx.moveTo(x, center - amp);
+          ctx.lineTo(x, center + amp);
+          ctx.stroke();
         }
       } else {
-        // preview：单色上下对称总览轮廓
-        ctx.fillStyle = 'rgba(126,168,255,1)';
-        ctx.beginPath();
-        ctx.moveTo(xs[0], yt[0]);
-        for (let i = 1; i < n; i++) ctx.lineTo(xs[i], yt[i]);
-        for (let i = n - 1; i >= 0; i--) ctx.lineTo(xs[i], yb[i]);
-        ctx.closePath();
-        ctx.fill();
+        // preview：细带级单色上下对称竖线直绘
+        for (let x = 0; x < w; x++) {
+          const t = w > 1 ? x / (w - 1) : 0;
+          const i = Math.max(0, Math.min(n - 1, Math.floor(t * (n - 1))));
+          const p = points[i];
+          const amp = (Math.max(0, Math.min(127, p.h || 0)) / 127) * (h * 0.20);
+          ctx.strokeStyle = 'rgba(126,168,255,1)';
+          ctx.beginPath();
+          ctx.moveTo(x, center - amp);
+          ctx.lineTo(x, center + amp);
+          ctx.stroke();
+        }
       }
 
       return off;
