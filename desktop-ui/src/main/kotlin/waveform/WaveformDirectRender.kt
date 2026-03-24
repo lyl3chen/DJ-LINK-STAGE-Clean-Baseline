@@ -3,6 +3,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import kotlin.math.max
 import kotlin.math.pow
 
@@ -39,18 +40,43 @@ fun DetailWaveformDirect(
 
         val axis = size.height / 2f
         val maxAmp = size.height * 0.47f
+        val w = size.width.toInt().coerceAtLeast(2)
 
-        // 逐像素列直绘：避免菱形块拼接感
-        for (x in 0 until size.width.toInt().coerceAtLeast(1)) {
-            val t = if (size.width > 1f) x.toFloat() / (size.width - 1f) else 0f
-            val i = (t * (count - 1)).toInt().coerceIn(0, count - 1)
-            val idx = start + i
-            val h = heights[idx].coerceIn(0, 31)
-            val amp = (h / 31f) * maxAmp
-            val rgb = if (colors.isNotEmpty()) colors[idx.coerceIn(0, colors.lastIndex)] else 0x6E86FF
-            val c = Color((((rgb and 0x00FFFFFF) or (0xFF shl 24)).toLong()))
-            drawLine(c, Offset(x.toFloat(), axis - amp), Offset(x.toFloat(), axis + amp), 1f)
+        // 每像素列构建 min/max envelope（连续上下包络）
+        val top = FloatArray(w)
+        val bottom = FloatArray(w)
+
+        for (x in 0 until w) {
+            val segStart = start + (x * count / w)
+            val segEnd = (start + ((x + 1) * count / w)).coerceAtMost(end).coerceAtLeast(segStart + 1)
+            var mn = 31
+            var mx = 0
+            for (i in segStart until segEnd) {
+                val v = heights[i].coerceIn(0, 31)
+                if (v < mn) mn = v
+                if (v > mx) mx = v
+            }
+            val ampTop = (mx / 31f) * maxAmp
+            val ampBottom = (mn / 31f) * maxAmp
+            top[x] = axis - ampTop
+            bottom[x] = axis + ampBottom
         }
+
+        val upPath = Path().apply {
+            moveTo(0f, top[0])
+            for (x in 1 until w) lineTo(x.toFloat(), top[x])
+        }
+        val fillPath = Path().apply {
+            addPath(upPath)
+            for (x in (w - 1) downTo 0) lineTo(x.toFloat(), bottom[x])
+            close()
+        }
+
+        // 颜色仍按当前窗口中心列直取（本轮只做形态）
+        val colorIdx = (start + count / 2).coerceIn(0, colors.lastIndex.coerceAtLeast(0))
+        val rgb = if (colors.isNotEmpty()) colors[colorIdx] else 0x6E86FF
+        val c = Color((((rgb and 0x00FFFFFF) or (0xFF shl 24)).toLong()))
+        drawPath(fillPath, c)
 
         val localProgress = if (windowSize > 1) {
             ((center - start).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f)
@@ -72,14 +98,35 @@ fun PreviewWaveformDirect(
         val total = heights.size
         val axis = size.height / 2f
         val maxAmp = size.height * 0.20f // 总览保持细带
+        val w = size.width.toInt().coerceAtLeast(2)
 
-        for (x in 0 until size.width.toInt().coerceAtLeast(1)) {
-            val t = if (size.width > 1f) x.toFloat() / (size.width - 1f) else 0f
-            val i = (t * (total - 1)).toInt().coerceIn(0, total - 1)
-            val h = heights[i].coerceIn(0, 127)
-            val amp = (h / 127f) * maxAmp
-            drawLine(Color(0xFF7EA8FF), Offset(x.toFloat(), axis - amp), Offset(x.toFloat(), axis + amp), 1f)
+        // preview 使用长程 envelope（每像素 min/max）
+        val top = FloatArray(w)
+        val bottom = FloatArray(w)
+        for (x in 0 until w) {
+            val s = (x * total / w).coerceIn(0, total - 1)
+            val e = ((x + 1) * total / w).coerceIn(s + 1, total)
+            var mn = 127
+            var mx = 0
+            for (i in s until e) {
+                val v = heights[i].coerceIn(0, 127)
+                if (v < mn) mn = v
+                if (v > mx) mx = v
+            }
+            top[x] = axis - (mx / 127f) * maxAmp
+            bottom[x] = axis + (mn / 127f) * maxAmp
         }
+
+        val upPath = Path().apply {
+            moveTo(0f, top[0])
+            for (x in 1 until w) lineTo(x.toFloat(), top[x])
+        }
+        val fillPath = Path().apply {
+            addPath(upPath)
+            for (x in (w - 1) downTo 0) lineTo(x.toFloat(), bottom[x])
+            close()
+        }
+        drawPath(fillPath, Color(0xFF7EA8FF))
 
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(Color(0xFF00E5FF), Offset(px, 0f), Offset(px, size.height), 1.2f)
