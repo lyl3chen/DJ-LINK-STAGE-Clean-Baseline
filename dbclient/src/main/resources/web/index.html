@@ -1869,57 +1869,42 @@
         const overviewPts = [];
         const zoomPts = [];
 
-        const nOverview = useDetail ? 320 : 260;
+        // preview：严格按 previewSample 直出（60列左右）
+        const nOverview = sample.length;
         for (let i=0;i<nOverview;i++) {
-          const norm = i / Math.max(1, (nOverview - 1));
-          const pt = wavePoint(norm, useDetail, detailHeights, detailColors, sample);
-          // Keep strong amplitude for mini overview so peaks can reach top of mini window
-          overviewPts.push({ h: Math.max(2, Math.round(pt.h * 0.95)), r: pt.r, g: pt.g, b: pt.b });
+          const v = Math.max(0, Math.min(127, Number(sample[i] || 0)));
+          overviewPts.push({ h: v, r: 126, g: 168, b: 255 });
         }
 
-        const nZoom = useDetail ? 900 : 420;
         const span = Math.max(0.05, 1 / zoom);
         const zTarget = ratio - span / 2;
         const zStart = getSmoothZoomStart(p.number, zTarget, span);
         const zoomLeftPct = (zStart * 100).toFixed(2);
         const zoomWidthPct = (span * 100).toFixed(2);
 
-        const beatTicksMsForShape = (p.analysis && p.analysis.beatTicksMs) ? p.analysis.beatTicksMs : [];
-        let beatIdx = 0;
-        for (let i=0;i<nZoom;i++) {
-          const norm = zStart + (i / Math.max(1, (nZoom - 1))) * span;
-          const tMs = norm * durationMs;
-          while (beatIdx + 1 < beatTicksMsForShape.length && Number(beatTicksMsForShape[beatIdx + 1]) <= tMs) beatIdx++;
-          const prevBeat = beatTicksMsForShape.length ? Number(beatTicksMsForShape[beatIdx]) : -1;
-          const dt = prevBeat >= 0 ? (tMs - prevBeat) : 9999;
-
-          const pt = wavePoint(norm, useDetail, detailHeights, detailColors, sample);
-          // Knife-cut beat attack: instant onset at beat, then quick decay.
-          if (dt >= 0 && dt < 75) {
-            pt.h = Math.min(110, Math.max(pt.h, Math.round(pt.h * 1.35 + 8)));
-          } else if (dt >= 75 && dt < 150) {
-            pt.h = Math.min(110, Math.max(pt.h, Math.round(pt.h * 1.12 + 3)));
+        // detail：严格按 detailSampleHeights/detailSampleColors 直出（窗口切片）
+        if (useDetail) {
+          const total = detailHeights.length;
+          const start = Math.max(0, Math.min(total - 1, Math.floor(zStart * (total - 1))));
+          const end = Math.max(start + 1, Math.min(total, Math.ceil((zStart + span) * total)));
+          for (let i = start; i < end; i++) {
+            const h = Math.max(0, Math.min(31, Number(detailHeights[i] || 0)));
+            const c = (detailColors[i] || 0x6E86FF) | 0;
+            zoomPts.push({ h, r: (c >> 16) & 255, g: (c >> 8) & 255, b: c & 255 });
           }
-          zoomPts.push(pt);
+        } else {
+          // 无detail时退回preview sample切片
+          const total = sample.length;
+          const start = Math.max(0, Math.min(total - 1, Math.floor(zStart * (total - 1))));
+          const end = Math.max(start + 1, Math.min(total, Math.ceil((zStart + span) * total)));
+          for (let i = start; i < end; i++) {
+            const h = Math.max(0, Math.min(127, Number(sample[i] || 0)));
+            zoomPts.push({ h, r: 126, g: 168, b: 255 });
+          }
         }
 
-        const waveOverviewSvg = buildThreeBandSvg(overviewPts, `ov-${p.number}`, 0.98, 'top', Math.max(1, zoom * 0.7));
-        const waveZoomSvg = buildThreeBandSvg(zoomPts, `zm-${p.number}`, 1.0, 'mirror', zoom);
         const overviewCanvasId = `ovCanvas-${p.number}`;
-        const sectionBandsHtml = (() => {
-          const buckets = 8;
-          const arr = [];
-          for (let i = 0; i < buckets; i++) {
-            const from = Math.floor(i * overviewPts.length / buckets);
-            const to = Math.max(from + 1, Math.floor((i + 1) * overviewPts.length / buckets));
-            let sum = 0;
-            for (let j = from; j < to; j++) sum += overviewPts[j].h;
-            const avg = sum / Math.max(1, to - from);
-            const op = Math.max(0.05, Math.min(0.28, avg / 220));
-            arr.push(`<span class="wave-section" style="left:${(i*100/buckets).toFixed(2)}%;width:${(100/buckets).toFixed(2)}%;background:rgba(120,170,255,${op.toFixed(3)})"></span>`);
-          }
-          return arr.join('');
-        })();
+        const sectionBandsHtml = '';
 
         const hotcueOverview = durationMs > 0
           ? hotcues.map((ms, i) => {
@@ -1941,33 +1926,6 @@
         const pitchSigned = p.pitch != null ? `${Number(p.pitch) >= 0 ? '+' : ''}${Number(p.pitch).toFixed(2)}%` : '--';
         let beatTicksHtml = '';
         let beatLinesHtml = '';
-        const tStart = zStart * durationMs;
-        const tEnd = (zStart + span) * durationMs;
-
-        const beatTicksMs = (p.analysis && p.analysis.beatTicksMs) ? p.analysis.beatTicksMs : [];
-        const beatTicksInBar = (p.analysis && p.analysis.beatTicksInBar) ? p.analysis.beatTicksInBar : [];
-
-        if (durationMs > 0 && beatTicksMs.length && beatTicksInBar.length) {
-          // prodj-link-like beat density: zoomed-out sparse, zoomed-in dense.
-          const showMode = zoom < 4.6 ? 'downbeat' : 'all';
-          const bpmNow = effectiveBpm || p.bpm || 120;
-          const beatVisualDelayMs = (60000 / bpmNow) * 0.08;
-          let lastRel = -999;
-          const minRelGap = showMode === 'all' ? 0.9 : 2.2;
-          for (let i = 0; i < beatTicksMs.length; i++) {
-            const t = Number(beatTicksMs[i]) + beatVisualDelayMs;
-            if (!Number.isFinite(t) || t < tStart || t > tEnd) continue;
-            const rel = ((t - tStart) / Math.max(1, (tEnd - tStart))) * 100;
-            if (rel - lastRel < minRelGap) continue;
-            const beatInBar = Number(beatTicksInBar[i] || 1);
-            const down = beatInBar === 1;
-            if (showMode === 'downbeat' && !down) continue;
-
-            beatLinesHtml += `<span class="wave-beatline ${down ? 'downbeat' : ''}" style="left:${rel.toFixed(2)}%"></span>`;
-            beatTicksHtml += `<span class="beat-tick ${down ? 'downbeat' : ''}" style="left:${rel.toFixed(2)}%"></span>`;
-            lastRel = rel;
-          }
-        }
 
         const chips = [];
         chips.push(`<span class="chip ${p.active ? 'online':'offline'}">${p.active ? 'ONLINE':'OFFLINE'}</span>`);
