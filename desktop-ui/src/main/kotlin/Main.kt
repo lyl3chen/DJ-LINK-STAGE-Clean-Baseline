@@ -723,10 +723,14 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                     if (heights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
-                        val progress = if ((p.durationMs) > 0L) (displayMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                        val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
                         PreviewWaveformDirect(
                             heights = heights,
-                            progress = progress,
+                            baseCurrentMs = p.currentTimeMs,
+                            durationMs = p.durationMs,
+                            isPlaying = isPlaying,
+                            sourceUpdatedAtMs = sourceUpdatedAtMs,
+                            trackToken = "${p.number}:${p.rekordboxId}:${p.title}:${p.artist}:${p.durationMs}",
                             modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
                         )
                     }
