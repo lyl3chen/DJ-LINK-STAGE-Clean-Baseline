@@ -429,6 +429,16 @@ private fun LiveChannelRow(
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 1.dp)
                                 )
+                                Text(
+                                    when (resolved.sourceTag) {
+                                        WaveformSourceTag.RAW -> "RAW"
+                                        WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
+                                        WaveformSourceTag.NONE -> "NO_SOURCE"
+                                    },
+                                    color = C_MUTED,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 1.dp)
+                                )
                             }
                         }
                     }
@@ -736,6 +746,16 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                             heights = heights,
                             progress = progress,
                             modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 1.dp)
+                        )
+                        Text(
+                            when (resolved.sourceTag) {
+                                WaveformSourceTag.RAW -> "RAW"
+                                WaveformSourceTag.SAMPLE_FALLBACK -> "SAMPLE_FALLBACK"
+                                WaveformSourceTag.NONE -> "NO_SOURCE"
+                            },
+                            color = C_MUTED,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(end = 3.dp, top = 0.dp)
                         )
                     }
                 }
