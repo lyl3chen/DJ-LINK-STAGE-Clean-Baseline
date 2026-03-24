@@ -12,13 +12,17 @@ object WaveformDataAdapter {
         val identity = WaveformTrackIdentity.fromPlayer(p)
         val entry = cache.getOrCreate(identity)
 
-        decodeRawWaveHeights(p.detailRawBase64, target = 900)?.takeIf { it.heights.isNotEmpty() }?.let {
-            entry.decodedDetailRaw = it
-            entry.lastUpdatedMs = System.currentTimeMillis()
+        if (entry.decodedDetailRaw == null) {
+            decodeRawWaveHeights(p.detailRawBase64, target = 900)?.takeIf { it.heights.isNotEmpty() }?.let {
+                entry.decodedDetailRaw = it
+                entry.lastUpdatedMs = System.currentTimeMillis()
+            }
         }
-        decodeRawWaveHeights(p.previewRawBase64, target = 240)?.takeIf { it.heights.isNotEmpty() }?.let {
-            entry.decodedPreviewRaw = it
-            entry.lastUpdatedMs = System.currentTimeMillis()
+        if (entry.decodedPreviewRaw == null) {
+            decodeRawWaveHeights(p.previewRawBase64, target = 240)?.takeIf { it.heights.isNotEmpty() }?.let {
+                entry.decodedPreviewRaw = it
+                entry.lastUpdatedMs = System.currentTimeMillis()
+            }
         }
 
         val rawReady = (entry.decodedDetailRaw?.heights?.isNotEmpty() == true) &&
