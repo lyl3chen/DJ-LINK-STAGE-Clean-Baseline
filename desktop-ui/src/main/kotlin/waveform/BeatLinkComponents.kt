@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
@@ -22,6 +23,7 @@ import java.nio.ByteBuffer
 import java.util.Base64
 import javax.swing.SwingUtilities
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 主路径：服务端 raw(getData) -> 桌面端恢复 WaveformPreview/WaveformDetail 对象 -> 原生组件绘制。
@@ -35,12 +37,24 @@ fun BeatLinkDetailWave(
     player: DashboardPlayer,
     progressMs: Long,
     detailScale: Int = 1,
+    onDetailScaleChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scale = detailScale.coerceIn(1, 256)
+    val onScaleChangeState = rememberUpdatedState(onDetailScaleChange)
     val component = remember(player.number) {
         WaveformDetailComponent(0).apply {
             setAutoScroll(true)
+            addMouseWheelListener { e ->
+                val current = getScale().coerceIn(1, 256)
+                val next = if (e.wheelRotation < 0) min(256, current * 2) else max(1, current / 2)
+                if (next != current) {
+                    setScale(next)
+                    onScaleChangeState.value(next)
+                    revalidate()
+                    repaint()
+                }
+            }
         }
     }
 

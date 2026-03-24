@@ -176,8 +176,15 @@ private fun AppRoot() {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         TopToolbar()
-        TopStatusBar(state, refreshMs, detailScale, onRefreshChange = { refreshMs = it }, onDetailScaleChange = { detailScale = it })
-        LiveMain(state.players, state.updatedAtMs, uiNowMs, detailScale, modifier = Modifier.weight(1f))
+        TopStatusBar(state, refreshMs, onRefreshChange = { refreshMs = it })
+        LiveMain(
+            state.players,
+            state.updatedAtMs,
+            uiNowMs,
+            detailScale,
+            onDetailScaleChange = { detailScale = it },
+            modifier = Modifier.weight(1f)
+        )
         MiniDeckOverview(state.players, state.updatedAtMs, uiNowMs)
     }
 }
@@ -224,9 +231,7 @@ private fun TopTab(text: String, selected: Boolean) {
 private fun TopStatusBar(
     state: DashboardState,
     refreshMs: Int,
-    detailScale: Int,
-    onRefreshChange: (Int) -> Unit,
-    onDetailScaleChange: (Int) -> Unit
+    onRefreshChange: (Int) -> Unit
 ) {
     val updateText = if (state.updatedAtMs > 0) {
         timeFmt.format(Instant.ofEpochMilli(state.updatedAtMs).atZone(ZoneId.systemDefault()))
@@ -260,25 +265,10 @@ private fun TopStatusBar(
             TopMetric(UiText.SCAN, if (state.scanEnabled == true) "ON" else if (state.scanEnabled == false) "OFF" else "UNKNOWN", Modifier.weight(1f))
             TopMetric(UiText.LAST_UPDATE, updateText, Modifier.weight(1f))
             TopMetric(UiText.FAIL, state.consecutiveFailures.toString(), Modifier.weight(1f), valueColor = if (state.consecutiveFailures > 0) C_ALERT else C_PLAY)
-            DetailScaleSelector(detailScale, onDetailScaleChange)
             RefreshSelector(refreshMs, onRefreshChange)
         }
         if (state.error != null || state.stale) {
             Text("⚠ ${state.error ?: "DATA INTERRUPTED"}", color = C_ALERT, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun DetailScaleSelector(detailScale: Int, onDetailScaleChange: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("DETAIL", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
-        listOf(1, 2, 4, 8, 16).forEach { s ->
-            FilterChip(
-                selected = detailScale == s,
-                onClick = { onDetailScaleChange(s) },
-                label = { Text("x$s") }
-            )
         }
     }
 }
@@ -316,6 +306,7 @@ private fun LiveMain(
     sourceUpdatedAtMs: Long,
     uiNowMs: Long,
     detailScale: Int,
+    onDetailScaleChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     fun placeholder(idx: Int) = DashboardPlayer(
@@ -374,7 +365,8 @@ private fun LiveMain(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
                 uiNowMs = uiNowMs,
-                detailScale = detailScale
+                detailScale = detailScale,
+                onDetailScaleChange = onDetailScaleChange
             )
         }
     }
@@ -385,7 +377,8 @@ private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
     uiNowMs: Long,
-    detailScale: Int
+    detailScale: Int,
+    onDetailScaleChange: (Int) -> Unit
 ) {
     val stateColor = when (p.stateText.uppercase()) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -454,6 +447,7 @@ private fun LiveChannelRow(
                                 player = p,
                                 progressMs = displayedCurrentMs,
                                 detailScale = detailScale,
+                                onDetailScaleChange = onDetailScaleChange,
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                             )
                         }
