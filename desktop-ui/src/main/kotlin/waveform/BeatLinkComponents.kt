@@ -7,7 +7,6 @@ import org.deepsymmetry.beatlink.CdjStatus
 import org.deepsymmetry.beatlink.data.DataReference
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
-import org.deepsymmetry.beatlink.data.WaveformFinder
 import org.deepsymmetry.beatlink.data.WaveformPreview
 import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
 import java.nio.ByteBuffer
@@ -42,7 +41,8 @@ fun BeatLinkDetailWave(
         if (!raw.isNullOrBlank()) {
             runCatching {
                 val bytes = Base64.getDecoder().decode(raw)
-                val detail = WaveformDetail(dataRef(player), ByteBuffer.wrap(bytes), WaveformFinder.WaveformStyle.RGB)
+                // 使用 beat-link 的 ByteBuffer + isColor 构造，避免样式强制解析导致的数据解释偏差
+                val detail = WaveformDetail(dataRef(player), ByteBuffer.wrap(bytes), player.detailRawIsColor)
                 component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, null)
             }
         }
@@ -73,7 +73,8 @@ fun BeatLinkPreviewWave(
         if (!raw.isNullOrBlank()) {
             runCatching {
                 val bytes = Base64.getDecoder().decode(raw)
-                val preview = WaveformPreview(dataRef(player), ByteBuffer.wrap(bytes), WaveformFinder.WaveformStyle.RGB)
+                // 预览同样按 isColor 构造，交给 beat-link 依据原始格式解释上下方向/颜色层
+                val preview = WaveformPreview(dataRef(player), ByteBuffer.wrap(bytes), player.previewRawIsColor)
                 component.setWaveformPreview(preview, player.number, null)
             }
         }
