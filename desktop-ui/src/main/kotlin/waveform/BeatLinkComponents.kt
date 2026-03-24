@@ -114,7 +114,15 @@ fun BeatLinkPreviewWave(
     }
 
     if (nativeReady) {
-        SwingPanel(factory = { component }, update = { }, modifier = modifier)
+        SwingPanel(
+            factory = { component },
+            update = { c ->
+                val min = c.minimumSize
+                val pref = c.preferredSize
+                println("[PreviewLayout] player=${player.number} swingPanel=${c.width}x${c.height}px componentHeight=${c.height} min=${min.width}x${min.height} pref=${pref.width}x${pref.height}")
+            },
+            modifier = modifier
+        )
     } else {
         PreviewFallbackCanvas(player = player, modifier = modifier)
     }

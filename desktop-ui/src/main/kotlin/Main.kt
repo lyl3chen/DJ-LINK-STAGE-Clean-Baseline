@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -758,6 +759,10 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 .height(72.dp)
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
+                .onGloballyPositioned { coords ->
+                    val s = coords.size
+                    println("[PreviewLayout] player=${p?.number ?: index} outerBox=${s.width}x${s.height}px")
+                }
         ) {
             when {
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
