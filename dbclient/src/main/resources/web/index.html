@@ -1012,18 +1012,18 @@
     }
 
     function wavePoint(norm, useDetail, detailHeights, detailColors, sample) {
-      let h = 8, r = 100, g = 140, b = 220;
+      // 与桌面直出一致：不做pow/频段伪推导，直接用sample高度与颜色
+      let h = 0, r = 126, g = 168, b = 255;
       if (useDetail) {
         const x = Math.max(0, Math.min(1, norm)) * (detailHeights.length - 1);
         const a = Math.floor(x), bb = Math.min(detailHeights.length - 1, a + 1);
         const t = x - a;
         const dh = detailHeights[a] * (1 - t) + detailHeights[bb] * t;
-        const normH = Math.max(0, Math.min(1, dh / 31));
-        h = Math.max(2, Math.min(110, Math.round(Math.pow(normH, 1.7) * 108 + 2))); // boost contrast
-        const c = detailColors[a] | 0;
+        h = Math.max(0, Math.min(31, dh));
+        const c = (detailColors[a] || 0x6E86FF) | 0;
         r = (c >> 16) & 255; g = (c >> 8) & 255; b = c & 255;
       } else {
-        let v = 10;
+        let v = 0;
         if (sample.length > 1) {
           const x = Math.max(0, Math.min(1, norm)) * (sample.length - 1);
           const a = Math.floor(x), bb = Math.min(sample.length - 1, a + 1);
@@ -1032,11 +1032,9 @@
         } else if (sample.length === 1) {
           v = sample[0];
         }
-        const normH = Math.max(0, Math.min(1, v / 127));
-        h = Math.max(2, Math.min(110, Math.round(Math.pow(normH, 1.7) * 108 + 2)));
-        r = Math.min(255, Math.round(v * 1.8));
-        g = Math.min(255, Math.round(80 + v * 0.95));
-        b = Math.min(255, Math.round(255 - v * 0.75));
+        h = Math.max(0, Math.min(127, v));
+        // preview 固定单色
+        r = 126; g = 168; b = 255;
       }
       return {h, r, g, b};
     }
@@ -1109,58 +1107,52 @@
       off.height = h;
       const ctx = off.getContext('2d');
       const n = points.length;
-      const step = mode === 'top-mini' ? 3 : (n > 900 ? 2 : 1);
+      if (!n) return off;
 
-      if (mode === 'top' || mode === 'top-mini') {
-        const baseY = Math.round(h * 0.82);
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.beginPath();
-        ctx.moveTo(0, baseY + 1);
-        ctx.lineTo(w - 1, baseY + 1);
-        ctx.stroke();
+      const center = Math.round(h / 2);
+      const detailMode = !(mode === 'top' || mode === 'top-mini');
+      const maxH = detailMode ? 31 : 127;
 
-        for (let i = 0; i < n; i += step) {
+      const xs = new Array(n);
+      const yt = new Array(n);
+      const yb = new Array(n);
+
+      for (let i = 0; i < n; i++) {
+        const p = points[i];
+        const x = (i / Math.max(1, n - 1)) * (w - 1);
+        const amp = (Math.max(0, Math.min(maxH, p.h || 0)) / maxH) * (h * 0.47);
+        xs[i] = x;
+        yt[i] = center - amp;
+        yb[i] = center + amp;
+      }
+
+      if (detailMode) {
+        // detail：逐sample颜色直出连续带（与桌面一致）
+        for (let i = 0; i < n - 1; i++) {
           const p = points[i];
-          const x = Math.round((i / Math.max(1, n - 1)) * (w - 1));
-          let ampBack = Math.max(1, Math.min(h * 0.60, (p.h / 110) * (h * 0.58)));
-          let ampFront = Math.max(1, Math.min(h * 0.60, ampBack * 0.72));
-          if (mode === 'top-mini') {
-            ampBack = Math.round(ampBack / 3) * 3;
-            ampFront = Math.round(ampFront / 3) * 3;
-          }
           const r = Math.max(0, Math.min(255, p.r | 0));
           const g = Math.max(0, Math.min(255, p.g | 0));
           const b = Math.max(0, Math.min(255, p.b | 0));
-
-          const gLow = Math.round(g * 0.22);
-          const bHi = Math.min(255, Math.round(b * 1.12 + r * 0.08));
-          const rHi = Math.min(255, Math.round(r * 0.90));
-          const colW = Math.max(1, step + 1);
-          ctx.fillStyle = `rgba(${Math.round(rHi*0.72)},${Math.round(gLow*0.72)},${Math.round(bHi*0.72)},0.95)`;
-          ctx.fillRect(x, baseY - ampBack, colW, ampBack);
-          ctx.fillStyle = `rgba(${rHi},${gLow},${bHi},0.99)`;
-          ctx.fillRect(x, baseY - ampFront, colW, ampFront);
+          ctx.fillStyle = `rgba(${r},${g},${b},1)`;
+          ctx.beginPath();
+          ctx.moveTo(xs[i], yt[i]);
+          ctx.lineTo(xs[i + 1], yt[i + 1]);
+          ctx.lineTo(xs[i + 1], yb[i + 1]);
+          ctx.lineTo(xs[i], yb[i]);
+          ctx.closePath();
+          ctx.fill();
         }
       } else {
-        const center = Math.round(h / 2);
-        const baseHalf = Math.max(1, Math.round(h * 0.012));
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fillRect(0, center - baseHalf, w, baseHalf * 2);
-
-        for (let i = 0; i < n; i += step) {
-          const p = points[i];
-          const x = Math.round((i / Math.max(1, n - 1)) * (w - 1));
-          const amp = Math.max(1, Math.min(h * 0.48, (p.h / 110) * (h * 0.46)));
-          const r = Math.max(0, Math.min(255, p.r | 0));
-          const g = Math.max(0, Math.min(255, p.g | 0));
-          const b = Math.max(0, Math.min(255, p.b | 0));
-          const gLow = Math.round(g * 0.20);
-          const bHi = Math.min(255, Math.round(b * 1.15 + r * 0.05));
-          const rHi = Math.min(255, Math.round(r * 0.92));
-          ctx.fillStyle = `rgba(${rHi},${gLow},${bHi},0.97)`;
-          ctx.fillRect(x, center - amp, Math.max(1, step + 1), amp * 2);
-        }
+        // preview：单色上下对称总览轮廓
+        ctx.fillStyle = 'rgba(126,168,255,1)';
+        ctx.beginPath();
+        ctx.moveTo(xs[0], yt[0]);
+        for (let i = 1; i < n; i++) ctx.lineTo(xs[i], yt[i]);
+        for (let i = n - 1; i >= 0; i--) ctx.lineTo(xs[i], yb[i]);
+        ctx.closePath();
+        ctx.fill();
       }
+
       return off;
     }
 
