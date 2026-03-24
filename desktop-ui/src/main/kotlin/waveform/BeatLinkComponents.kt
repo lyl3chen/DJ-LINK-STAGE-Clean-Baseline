@@ -48,8 +48,16 @@ fun BeatLinkDetailWave(
             setAutoScroll(true)
             addMouseWheelListener { e ->
                 val current = getScale().coerceIn(1, 256)
+                val fitScale = currentDetail?.let { detail ->
+                    if (width > 0) ((detail.getFrameCount() + width - 1) / width).coerceIn(1, 256) else current
+                } ?: current
                 // 语义：滚轮向上(负值)放大=更细节(更小 scale)；向下缩小=更总览(更大 scale)
-                val next = if (e.wheelRotation < 0) max(1, current / 2) else min(256, current * 2)
+                // 边界：最小缩小到 fitScale（刚好铺满容器），不能再更小
+                val next = if (e.wheelRotation < 0) {
+                    max(1, current / 2)
+                } else {
+                    min(fitScale, current * 2)
+                }
                 if (next != current) {
                     setScale(next)
                     onScaleChangeState.value(next)
