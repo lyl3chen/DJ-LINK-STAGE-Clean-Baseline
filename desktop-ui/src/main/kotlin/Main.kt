@@ -38,6 +38,8 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 private val httpClient: HttpClient = HttpClient.newBuilder().build()
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -140,20 +142,10 @@ private fun AppRoot() {
     val baseUrl = "http://127.0.0.1:8080"
     var refreshMs by remember { mutableStateOf(500) }
     var state by remember { mutableStateOf(DashboardState()) }
-    var uiNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-
     LaunchedEffect(refreshMs) {
         while (isActive) {
             state = fetchDashboardState(baseUrl, state)
             delay(refreshMs.toLong())
-        }
-    }
-
-    // 本地高频时钟：用于播放态时间线性推进（视觉平滑，不增加后端负载）
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            uiNowMs = System.currentTimeMillis()
-            delay(33)
         }
     }
 
@@ -166,8 +158,8 @@ private fun AppRoot() {
     ) {
         TopToolbar()
         TopStatusBar(state, refreshMs) { refreshMs = it }
-        LiveMain(state.players, state.updatedAtMs, uiNowMs, modifier = Modifier.weight(1f))
-        MiniDeckOverview(state.players, state.updatedAtMs, uiNowMs)
+        LiveMain(state.players, state.updatedAtMs, modifier = Modifier.weight(1f))
+        MiniDeckOverview(state.players, state.updatedAtMs)
     }
 }
 
@@ -279,7 +271,7 @@ private fun TopMetric(label: String, value: String, modifier: Modifier, valueCol
 }
 
 @Composable
-private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
+private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, modifier: Modifier = Modifier) {
     var detailZoom by remember { mutableStateOf(1f) }
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
@@ -324,7 +316,6 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
             LiveChannelRow(
                 p = p,
                 sourceUpdatedAtMs = sourceUpdatedAtMs,
-                uiNowMs = uiNowMs,
                 detailZoom = detailZoom,
                 onDetailZoomChange = { z -> detailZoom = z.coerceIn(1f, 10f) }
             )
@@ -337,7 +328,6 @@ private fun LiveMain(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, ui
 private fun LiveChannelRow(
     p: DashboardPlayer,
     sourceUpdatedAtMs: Long,
-    uiNowMs: Long,
     detailZoom: Float,
     onDetailZoomChange: (Float) -> Unit
 ) {
@@ -350,10 +340,9 @@ private fun LiveChannelRow(
         else -> C_STOP
     }
 
-    val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
-    val elapsed = if (sourceUpdatedAtMs > 0) max(0L, uiNowMs - sourceUpdatedAtMs) else 0L
-    val displayedCurrentMs = if (isPlaying) p.currentTimeMs + elapsed else p.currentTimeMs
+    val displayedCurrentMs = p.currentTimeMs
     val displayedRemainMs = if (p.durationMs > 0) max(0L, p.durationMs - displayedCurrentMs) else p.remainTimeMs
+    RecomposeProbe("LiveChannelRow-P${p.number}")
 
     Column(
         modifier = Modifier
@@ -415,12 +404,16 @@ private fun LiveChannelRow(
                             if (heights.isEmpty() || colors.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
-                                val progress = if (p.durationMs > 0L) (displayedCurrentMs.toFloat() / p.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                                val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
                                 DetailWaveformDirect(
                                     heights = heights,
                                     colors = colors,
-                                    progress = progress,
+                                    baseCurrentMs = p.currentTimeMs,
+                                    durationMs = p.durationMs,
+                                    isPlaying = isPlaying,
+                                    sourceUpdatedAtMs = sourceUpdatedAtMs,
                                     zoom = detailZoom,
+                                    trackToken = "${p.number}:${p.rekordboxId}:${p.title}:${p.artist}:${p.durationMs}",
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
                                 Text(
@@ -612,7 +605,7 @@ private fun ArtworkSquare(artworkUrl: String?, sizeDp: Int) {
 }
 
 @Composable
-private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long, uiNowMs: Long) {
+private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: Long) {
     fun placeholder(idx: Int) = DashboardPlayer(
         number = idx,
         online = false,
@@ -663,7 +656,7 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 rowPlayers.forEach { p ->
-                    MiniDeckItem(p.number, p, sourceUpdatedAtMs, uiNowMs, Modifier.weight(1f))
+                    MiniDeckItem(p.number, p, sourceUpdatedAtMs, Modifier.weight(1f))
                 }
                 if (rowPlayers.size < 2) Spacer(Modifier.weight(1f))
             }
@@ -672,7 +665,7 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
 }
 
 @Composable
-private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Long, uiNowMs: Long, modifier: Modifier = Modifier) {
+private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Long, modifier: Modifier = Modifier) {
     val st = p?.stateText?.uppercase() ?: "OFFLINE"
     val stColor = when (st) {
         "PLAYING", "PLAY" -> C_PLAY
@@ -683,9 +676,8 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
     }
     val bpmTxt = p?.rawBpm?.let { "%.1f".format(it) } ?: "-"
     val pitchTxt = p?.pitch?.let { "%+.2f".format(it) } ?: "-"
-    val isPlaying = p?.stateText?.equals("PLAYING", true) == true || p?.stateText?.equals("PLAY", true) == true
-    val elapsed = if (sourceUpdatedAtMs > 0) max(0L, uiNowMs - sourceUpdatedAtMs) else 0L
-    val displayMs = if (p != null && isPlaying) p.currentTimeMs + elapsed else (p?.currentTimeMs ?: 0L)
+    val displayMs = p?.currentTimeMs ?: 0L
+    RecomposeProbe("MiniDeckItem-P$index")
 
     Column(
         modifier = modifier
@@ -920,6 +912,22 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
+}
+
+private val recomposeCounter = ConcurrentHashMap<String, AtomicInteger>()
+private val recomposeLastLogMs = ConcurrentHashMap<String, Long>()
+
+@Composable
+private fun RecomposeProbe(tag: String) {
+    SideEffect {
+        val c = recomposeCounter.computeIfAbsent(tag) { AtomicInteger(0) }.incrementAndGet()
+        val now = System.currentTimeMillis()
+        val last = recomposeLastLogMs[tag] ?: 0L
+        if (now - last >= 2000) {
+            println("[RECOMPOSE] $tag count=$c")
+            recomposeLastLogMs[tag] = now
+        }
+    }
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
