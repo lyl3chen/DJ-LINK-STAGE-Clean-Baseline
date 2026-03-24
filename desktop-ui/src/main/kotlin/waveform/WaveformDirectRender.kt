@@ -81,60 +81,34 @@ fun DetailWaveformDirect(
     var widthPx by remember { mutableIntStateOf(0) }
     var heightPx by remember { mutableIntStateOf(0) }
 
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(isPlaying) {
+        while (true) {
+            if (isPlaying) nowMs = System.currentTimeMillis()
+            delay(33)
+        }
+    }
+
+    // 只在窗口锚点变更时重建主体（播放头高频更新只走覆盖层）
     val total = heights.size.coerceAtLeast(1)
     val z = zoom.coerceIn(1f, 10f)
     val windowSize = (total / z).toInt().coerceIn(16, total)
-    val baseProgress = if (durationMs > 0L) (baseCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-    val baseCenter = (baseProgress * (total - 1)).toInt()
+    val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
+        baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
+    } else baseCurrentMs
+    val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+    val center = (progress * (total - 1)).toInt()
 
-    var windowStart by remember(trackToken, total, windowSize) {
-        mutableIntStateOf((baseCenter - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0)))
-    }
-    val localProgress = if (windowSize > 1) ((baseCenter - windowStart).toFloat() / (windowSize - 1).toFloat()) else 0f
+    var windowStart by remember(trackToken, total, windowSize) { mutableIntStateOf((center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))) }
+    val localProgress = if (windowSize > 1) ((center - windowStart).toFloat() / (windowSize - 1).toFloat()) else 0f
     if (localProgress < 0.35f || localProgress > 0.65f) {
-        windowStart = (baseCenter - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
+        windowStart = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
     }
 
-    Box(modifier = modifier.onSizeChanged { s -> widthPx = s.width; heightPx = s.height }) {
-        DetailWaveformBody(
-            heights = heights,
-            colors = colors,
-            widthPx = widthPx,
-            heightPx = heightPx,
-            trackToken = trackToken,
-            windowStart = windowStart,
-            windowSize = windowSize,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        DetailPlayheadOverlay(
-            baseCurrentMs = baseCurrentMs,
-            durationMs = durationMs,
-            isPlaying = isPlaying,
-            sourceUpdatedAtMs = sourceUpdatedAtMs,
-            heightsCount = total,
-            windowStart = windowStart,
-            windowSize = windowSize,
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-}
-
-@Composable
-private fun DetailWaveformBody(
-    heights: List<Int>,
-    colors: List<Int>,
-    widthPx: Int,
-    heightPx: Int,
-    trackToken: String,
-    windowStart: Int,
-    windowSize: Int,
-    modifier: Modifier = Modifier
-) {
     val hsFp = remember(heights) { sparseFingerprint(heights) }
     val csFp = remember(colors) { sparseFingerprint(colors) }
-    val baseKey = "d|$trackToken|$hsFp|$csFp|$widthPx|$heightPx|$windowStart|$windowSize"
 
+    val baseKey = "d|$trackToken|$hsFp|$csFp|$widthPx|$heightPx|$windowStart|$windowSize"
     WaveformRenderProbe.hit("DetailWaveformBody")
     val baseImage = remember(baseKey) {
         WaveformBitmapCache.getOrBuild(baseKey) {
@@ -149,40 +123,15 @@ private fun DetailWaveformBody(
         }
     }
 
-    Canvas(modifier = modifier) {
-        drawImage(baseImage, dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)))
-    }
-}
-
-@Composable
-private fun DetailPlayheadOverlay(
-    baseCurrentMs: Long,
-    durationMs: Long,
-    isPlaying: Boolean,
-    sourceUpdatedAtMs: Long,
-    heightsCount: Int,
-    windowStart: Int,
-    windowSize: Int,
-    modifier: Modifier = Modifier
-) {
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(isPlaying) {
-        while (true) {
-            if (isPlaying) nowMs = System.currentTimeMillis()
-            delay(33)
+    Box(modifier = modifier.onSizeChanged { s -> widthPx = s.width; heightPx = s.height }) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawImage(baseImage, dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)))
         }
-    }
-
-    val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
-        baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
-    } else baseCurrentMs
-    val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-    val center = (progress * (heightsCount - 1)).toInt()
-
-    Canvas(modifier = modifier) {
-        WaveformRenderProbe.hit("DetailPlayheadOverlay")
-        val px = (((center - windowStart).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f)) * size.width
-        drawLine(Color(0xFF00E5FF), Offset(px, 0f), Offset(px, size.height), 1.4f)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            WaveformRenderProbe.hit("DetailPlayheadLayer")
+            val px = (((center - windowStart).toFloat() / (windowSize - 1).toFloat()).coerceIn(0f, 1f)) * size.width
+            drawLine(Color(0xFF00E5FF), Offset(px, 0f), Offset(px, size.height), 1.4f)
+        }
     }
 }
 
