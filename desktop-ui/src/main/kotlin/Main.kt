@@ -128,6 +128,8 @@ data class DashboardPlayer(
     val beatTicksMs: List<Int>,
     val beatTicksInBar: List<Int>,
     val beatTicksBpmX100: List<Int>,
+    val cueRawTagsBase64: List<String>,
+    val cueRawExtendedTagsBase64: List<String>,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -349,6 +351,8 @@ private fun LiveMain(
         beatTicksMs = emptyList(),
         beatTicksInBar = emptyList(),
         beatTicksBpmX100 = emptyList(),
+        cueRawTagsBase64 = emptyList(),
+        cueRawExtendedTagsBase64 = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -676,6 +680,8 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         beatTicksMs = emptyList(),
         beatTicksInBar = emptyList(),
         beatTicksBpmX100 = emptyList(),
+        cueRawTagsBase64 = emptyList(),
+        cueRawExtendedTagsBase64 = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -859,6 +865,8 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val beatTicksMs = analysis?.optIntArray("beatTicksMs") ?: emptyList()
                 val beatTicksInBar = analysis?.optIntArray("beatTicksInBar") ?: emptyList()
                 val beatTicksBpmX100 = analysis?.optIntArray("beatTicksBpmX100") ?: emptyList()
+                val cueRawTagsBase64 = analysis?.optStringArray("cueRawTagsBase64") ?: emptyList()
+                val cueRawExtendedTagsBase64 = analysis?.optStringArray("cueRawExtendedTagsBase64") ?: emptyList()
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
@@ -923,6 +931,8 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     beatTicksMs = beatTicksMs,
                     beatTicksInBar = beatTicksInBar,
                     beatTicksBpmX100 = beatTicksBpmX100,
+                    cueRawTagsBase64 = cueRawTagsBase64,
+                    cueRawExtendedTagsBase64 = cueRawExtendedTagsBase64,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
@@ -1001,6 +1011,16 @@ private fun JsonObject.optIntArray(key: String): List<Int> {
     val out = ArrayList<Int>(arr.size())
     for (i in 0 until arr.size()) {
         out.add(runCatching { arr[i].asInt }.getOrElse { 0 })
+    }
+    return out
+}
+
+private fun JsonObject.optStringArray(key: String): List<String> {
+    val arr = optArray(key) ?: return emptyList()
+    val out = ArrayList<String>(arr.size())
+    for (i in 0 until arr.size()) {
+        val v = runCatching { arr[i].asString }.getOrElse { "" }
+        if (v.isNotBlank()) out.add(v)
     }
     return out
 }

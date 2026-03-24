@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import org.deepsymmetry.beatlink.CdjStatus
 import org.deepsymmetry.beatlink.data.BeatGrid
+import org.deepsymmetry.beatlink.data.CueList
 import org.deepsymmetry.beatlink.data.DataReference
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
@@ -76,8 +77,9 @@ fun BeatLinkDetailWave(
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
+        val cueList = buildCueListFromState(player)
         if (detail != null) {
-            println("[DetailBridge] player=${player.number} detail=true beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
+            println("[DetailBridge] player=${player.number} detail=true cueList=${cueList != null} beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
         }
         currentDetail = detail
         nativeReady = detail != null
@@ -87,7 +89,7 @@ fun BeatLinkDetailWave(
                 if (scale > 0) {
                     component.setScale(scale)
                 }
-                component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, beatGrid)
+                component.setWaveform(detail, cueList, beatGrid)
                 component.revalidate()
                 component.repaint()
             }
@@ -222,6 +224,19 @@ private fun buildBeatGridFromState(player: DashboardPlayer): BeatGrid? {
     }
     return runCatching {
         BeatGrid(buildDataReference(player), inBarArr, bpmArr, timesArr)
+    }.getOrNull()
+}
+
+private fun buildCueListFromState(player: DashboardPlayer): CueList? {
+    val rawTagBuffers = player.cueRawTagsBase64.mapNotNull { b64 ->
+        decodeBase64(b64)?.let { ByteBuffer.wrap(it) }
+    }
+    val rawExtTagBuffers = player.cueRawExtendedTagsBase64.mapNotNull { b64 ->
+        decodeBase64(b64)?.let { ByteBuffer.wrap(it) }
+    }
+    if (rawTagBuffers.isEmpty() && rawExtTagBuffers.isEmpty()) return null
+    return runCatching {
+        CueList(rawTagBuffers, rawExtTagBuffers)
     }.getOrNull()
 }
 

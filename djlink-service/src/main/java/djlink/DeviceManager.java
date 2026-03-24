@@ -1045,6 +1045,40 @@ public class DeviceManager {
             analysis.put("hotCueCount", hotCueCount);
             analysis.put("hotCueTimesMs", hotCueTimesMs);
 
+            // CueList raw tags for desktop bridge -> CueList(List<ByteBuffer>, List<ByteBuffer>)
+            try {
+                TrackMetadata meta = metadataFinder.getLatestMetadataFor(playerNum);
+                CueList cueListObj = (meta != null) ? meta.getCueList() : null;
+                if (cueListObj != null) {
+                    java.util.List<String> cueRawTagsBase64 = new java.util.ArrayList<>();
+                    if (cueListObj.rawTags != null) {
+                        for (java.nio.ByteBuffer b : cueListObj.rawTags) {
+                            if (b == null) continue;
+                            java.nio.ByteBuffer ro = b.asReadOnlyBuffer();
+                            ro.rewind();
+                            byte[] arr = new byte[ro.remaining()];
+                            ro.get(arr);
+                            cueRawTagsBase64.add(java.util.Base64.getEncoder().encodeToString(arr));
+                        }
+                    }
+                    java.util.List<String> cueRawExtendedTagsBase64 = new java.util.ArrayList<>();
+                    if (cueListObj.rawExtendedTags != null) {
+                        for (java.nio.ByteBuffer b : cueListObj.rawExtendedTags) {
+                            if (b == null) continue;
+                            java.nio.ByteBuffer ro = b.asReadOnlyBuffer();
+                            ro.rewind();
+                            byte[] arr = new byte[ro.remaining()];
+                            ro.get(arr);
+                            cueRawExtendedTagsBase64.add(java.util.Base64.getEncoder().encodeToString(arr));
+                        }
+                    }
+                    analysis.put("cueRawTagsBase64", cueRawTagsBase64);
+                    analysis.put("cueRawExtendedTagsBase64", cueRawExtendedTagsBase64);
+                }
+            } catch (Exception ignore) {
+                // keep cue summary fields even if raw tag export fails
+            }
+
             // Waveform output (beat-link native raw only)
             try {
                 WaveformPreview preview = waveformFinder.getLatestPreviewFor(playerNum);
