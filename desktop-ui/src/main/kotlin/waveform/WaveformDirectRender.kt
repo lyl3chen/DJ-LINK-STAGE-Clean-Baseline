@@ -3,7 +3,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import kotlin.math.max
 import kotlin.math.pow
 
@@ -41,38 +40,16 @@ fun DetailWaveformDirect(
         val axis = size.height / 2f
         val maxAmp = size.height * 0.47f
 
-        val xs = FloatArray(count)
-        val yTop = FloatArray(count)
-        val yBottom = FloatArray(count)
-
-        for (i in 0 until count) {
+        // 逐像素列直绘：避免菱形块拼接感
+        for (x in 0 until size.width.toInt().coerceAtLeast(1)) {
+            val t = if (size.width > 1f) x.toFloat() / (size.width - 1f) else 0f
+            val i = (t * (count - 1)).toInt().coerceIn(0, count - 1)
             val idx = start + i
-            val x = (i.toFloat() / (count - 1).toFloat()) * size.width
             val h = heights[idx].coerceIn(0, 31)
             val amp = (h / 31f) * maxAmp
-            xs[i] = x
-            yTop[i] = axis - amp
-            yBottom[i] = axis + amp
-        }
-
-        // 每个原始sample构成一段连续带（非统计重采样、非柱状聚合）
-        for (i in 0 until count - 1) {
-            val idx = start + i
-            val rgb = if (colors.isNotEmpty()) {
-                colors[idx.coerceIn(0, colors.lastIndex)]
-            } else {
-                0x6E86FF
-            }
+            val rgb = if (colors.isNotEmpty()) colors[idx.coerceIn(0, colors.lastIndex)] else 0x6E86FF
             val c = Color((((rgb and 0x00FFFFFF) or (0xFF shl 24)).toLong()))
-
-            val seg = Path().apply {
-                moveTo(xs[i], yTop[i])
-                lineTo(xs[i + 1], yTop[i + 1])
-                lineTo(xs[i + 1], yBottom[i + 1])
-                lineTo(xs[i], yBottom[i])
-                close()
-            }
-            drawPath(seg, color = c)
+            drawLine(c, Offset(x.toFloat(), axis - amp), Offset(x.toFloat(), axis + amp), 1f)
         }
 
         val localProgress = if (windowSize > 1) {
@@ -94,38 +71,15 @@ fun PreviewWaveformDirect(
 
         val total = heights.size
         val axis = size.height / 2f
-        val maxAmp = size.height * 0.47f
+        val maxAmp = size.height * 0.20f // 总览保持细带
 
-        val upper = Path()
-        val lower = Path()
-
-        for (i in 0 until total) {
-            val x = if (total > 1) (i.toFloat() / (total - 1).toFloat()) * size.width else 0f
+        for (x in 0 until size.width.toInt().coerceAtLeast(1)) {
+            val t = if (size.width > 1f) x.toFloat() / (size.width - 1f) else 0f
+            val i = (t * (total - 1)).toInt().coerceIn(0, total - 1)
             val h = heights[i].coerceIn(0, 127)
             val amp = (h / 127f) * maxAmp
-            val yt = axis - amp
-            val yb = axis + amp
-            if (i == 0) {
-                upper.moveTo(x, yt)
-                lower.moveTo(x, yb)
-            } else {
-                upper.lineTo(x, yt)
-                lower.lineTo(x, yb)
-            }
+            drawLine(Color(0xFF7EA8FF), Offset(x.toFloat(), axis - amp), Offset(x.toFloat(), axis + amp), 1f)
         }
-
-        val shape = Path().apply {
-            addPath(upper)
-            for (i in total - 1 downTo 0) {
-                val x = if (total > 1) (i.toFloat() / (total - 1).toFloat()) * size.width else 0f
-                val h = heights[i].coerceIn(0, 127)
-                val amp = (h / 127f) * maxAmp
-                lineTo(x, axis + amp)
-            }
-            close()
-        }
-
-        drawPath(shape, color = Color(0xFF7EA8FF))
 
         val px = progress.coerceIn(0f, 1f) * size.width
         drawLine(Color(0xFF00E5FF), Offset(px, 0f), Offset(px, size.height), 1.2f)
