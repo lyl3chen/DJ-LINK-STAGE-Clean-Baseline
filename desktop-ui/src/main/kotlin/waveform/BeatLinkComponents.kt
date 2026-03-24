@@ -76,6 +76,9 @@ fun BeatLinkDetailWave(
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
+        if (detail != null) {
+            println("[DetailBridge] player=${player.number} detail=true beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
+        }
         currentDetail = detail
         nativeReady = detail != null
         if (detail != null) {
