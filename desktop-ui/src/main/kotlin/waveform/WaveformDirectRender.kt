@@ -1,5 +1,4 @@
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -16,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
@@ -81,18 +81,6 @@ fun DetailWaveformDirect(
     var widthPx by remember { mutableIntStateOf(0) }
     var heightPx by remember { mutableIntStateOf(0) }
 
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(isPlaying) {
-        while (true) {
-            if (isPlaying) nowMs = System.currentTimeMillis()
-            delay(33)
-        }
-    }
-    val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
-        baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
-    } else baseCurrentMs
-    val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
     val total = heights.size.coerceAtLeast(1)
     val z = zoom.coerceIn(1f, 10f)
     val windowSize = (total / z).toInt().coerceIn(16, total)
@@ -147,9 +135,9 @@ private fun DetailWaveformBody(
     val csFp = remember(colors) { sparseFingerprint(colors) }
     val baseKey = "d|$trackToken|$hsFp|$csFp|$widthPx|$heightPx|$windowStart|$windowSize"
 
+    WaveformRenderProbe.hit("DetailWaveformBody")
     val baseImage = remember(baseKey) {
         WaveformBitmapCache.getOrBuild(baseKey) {
-            WaveformRenderProbe.hit("DetailWaveformBody")
             buildDetailImage(
                 heights = heights,
                 colors = colors,
@@ -161,7 +149,9 @@ private fun DetailWaveformBody(
         }
     }
 
-    Image(bitmap = baseImage, contentDescription = "detail-wave-body", modifier = modifier)
+    Canvas(modifier = modifier) {
+        drawImage(baseImage, dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)))
+    }
 }
 
 @Composable
@@ -248,39 +238,26 @@ private fun buildDetailImage(
 @Composable
 fun PreviewWaveformDirect(
     heights: List<Int>,
-    baseCurrentMs: Long,
-    durationMs: Long,
-    isPlaying: Boolean,
-    sourceUpdatedAtMs: Long,
+    progress: Float,
     modifier: Modifier = Modifier,
     trackToken: String = "-"
 ) {
     var widthPx by remember { mutableIntStateOf(0) }
     var heightPx by remember { mutableIntStateOf(0) }
 
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(isPlaying) {
-        while (true) {
-            if (isPlaying) nowMs = System.currentTimeMillis()
-            delay(33)
-        }
-    }
-    val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
-        baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
-    } else baseCurrentMs
-    val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
     val hsFp = remember(heights) { sparseFingerprint(heights) }
     val baseKey = "p|$trackToken|$hsFp|$widthPx|$heightPx"
+    WaveformRenderProbe.hit("PreviewWaveformBody")
     val baseImage = remember(baseKey) {
         WaveformBitmapCache.getOrBuild(baseKey) {
-            WaveformRenderProbe.hit("PreviewWaveformBody")
             buildPreviewImage(heights, widthPx.coerceAtLeast(1), heightPx.coerceAtLeast(1))
         }
     }
 
     Box(modifier = modifier.onSizeChanged { s -> widthPx = s.width; heightPx = s.height }) {
-        Image(bitmap = baseImage, contentDescription = "preview-wave-body", modifier = Modifier.fillMaxSize())
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawImage(baseImage, dstSize = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1)))
+        }
         Canvas(modifier = Modifier.fillMaxSize()) {
             WaveformRenderProbe.hit("PreviewPlayheadLayer")
             val px = progress.coerceIn(0f, 1f) * size.width
