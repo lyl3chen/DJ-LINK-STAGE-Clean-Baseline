@@ -1910,10 +1910,14 @@
           const total = detailHeights.length;
           const start = Math.max(0, Math.min(total - 1, Math.floor(zStart * (total - 1))));
           const end = Math.max(start + 1, Math.min(total, Math.ceil((zStart + span) * total)));
+          const centerIdx = Math.max(start, Math.min(total - 1, Math.floor((start + end) / 2)));
+          const centerColor = (detailColors[centerIdx] || 0x6E86FF) | 0; // 与桌面一致：整段主色
+          const cr = (centerColor >> 16) & 255;
+          const cg = (centerColor >> 8) & 255;
+          const cb = centerColor & 255;
           for (let i = start; i < end; i++) {
             const h = Math.max(0, Math.min(31, Number(detailHeights[i] || 0)));
-            const c = (detailColors[i] || 0x6E86FF) | 0;
-            zoomPts.push({ h, r: (c >> 16) & 255, g: (c >> 8) & 255, b: c & 255 });
+            zoomPts.push({ h, r: cr, g: cg, b: cb });
           }
         } else {
           // 无detail时退回preview sample切片
