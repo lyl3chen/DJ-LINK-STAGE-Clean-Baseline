@@ -16,11 +16,14 @@ import org.deepsymmetry.beatlink.CdjStatus
 import org.deepsymmetry.beatlink.data.BeatGrid
 import org.deepsymmetry.beatlink.data.CueList
 import org.deepsymmetry.beatlink.data.DataReference
+import org.deepsymmetry.beatlink.dbserver.Message
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
 import org.deepsymmetry.beatlink.data.WaveformFinder
 import org.deepsymmetry.beatlink.data.WaveformPreview
 import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
+import java.io.ByteArrayInputStream
+import java.io.DataInputStream
 import java.nio.ByteBuffer
 import java.util.Base64
 import javax.swing.SwingUtilities
@@ -228,6 +231,17 @@ private fun buildBeatGridFromState(player: DashboardPlayer): BeatGrid? {
 }
 
 private fun buildCueListFromState(player: DashboardPlayer): CueList? {
+    // Prefer dbserver cue messages when available.
+    val extMessage = decodeMessage(player.cueExtendedMessageBase64)
+    if (extMessage != null && extMessage.knownType == Message.KnownType.CUE_LIST_EXT) {
+        return runCatching { CueList(extMessage) }.getOrNull()
+    }
+    val cueMessage = decodeMessage(player.cueMessageBase64)
+    if (cueMessage != null && cueMessage.knownType == Message.KnownType.CUE_LIST) {
+        return runCatching { CueList(cueMessage) }.getOrNull()
+    }
+
+    // Fallback to raw cue tags when available.
     val rawTagBuffers = player.cueRawTagsBase64.mapNotNull { b64 ->
         decodeBase64(b64)?.let { ByteBuffer.wrap(it) }
     }
@@ -237,6 +251,15 @@ private fun buildCueListFromState(player: DashboardPlayer): CueList? {
     if (rawTagBuffers.isEmpty() && rawExtTagBuffers.isEmpty()) return null
     return runCatching {
         CueList(rawTagBuffers, rawExtTagBuffers)
+    }.getOrNull()
+}
+
+private fun decodeMessage(v: String?): Message? {
+    val bytes = decodeBase64(v) ?: return null
+    return runCatching {
+        DataInputStream(ByteArrayInputStream(bytes)).use { dis ->
+            Message.read(dis)
+        }
     }.getOrNull()
 }
 

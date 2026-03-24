@@ -130,6 +130,8 @@ data class DashboardPlayer(
     val beatTicksBpmX100: List<Int>,
     val cueRawTagsBase64: List<String>,
     val cueRawExtendedTagsBase64: List<String>,
+    val cueMessageBase64: String?,
+    val cueExtendedMessageBase64: String?,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -353,6 +355,8 @@ private fun LiveMain(
         beatTicksBpmX100 = emptyList(),
         cueRawTagsBase64 = emptyList(),
         cueRawExtendedTagsBase64 = emptyList(),
+        cueMessageBase64 = null,
+        cueExtendedMessageBase64 = null,
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -682,6 +686,8 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         beatTicksBpmX100 = emptyList(),
         cueRawTagsBase64 = emptyList(),
         cueRawExtendedTagsBase64 = emptyList(),
+        cueMessageBase64 = null,
+        cueExtendedMessageBase64 = null,
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -867,6 +873,8 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val beatTicksBpmX100 = analysis?.optIntArray("beatTicksBpmX100") ?: emptyList()
                 val cueRawTagsBase64 = analysis?.optStringArray("cueRawTagsBase64") ?: emptyList()
                 val cueRawExtendedTagsBase64 = analysis?.optStringArray("cueRawExtendedTagsBase64") ?: emptyList()
+                val cueMessageBase64 = analysis?.optString("cueMessageBase64")
+                val cueExtendedMessageBase64 = analysis?.optString("cueExtendedMessageBase64")
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
@@ -933,6 +941,8 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     beatTicksBpmX100 = beatTicksBpmX100,
                     cueRawTagsBase64 = cueRawTagsBase64,
                     cueRawExtendedTagsBase64 = cueRawExtendedTagsBase64,
+                    cueMessageBase64 = cueMessageBase64,
+                    cueExtendedMessageBase64 = cueExtendedMessageBase64,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
