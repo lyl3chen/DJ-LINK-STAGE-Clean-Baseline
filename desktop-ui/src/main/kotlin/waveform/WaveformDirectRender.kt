@@ -258,25 +258,17 @@ fun PreviewWaveformDirect(
     var widthPx by remember { mutableIntStateOf(0) }
     var heightPx by remember { mutableIntStateOf(0) }
 
-    var playheadPx by remember { mutableIntStateOf(0) }
-    LaunchedEffect(isPlaying, baseCurrentMs, durationMs, sourceUpdatedAtMs, widthPx) {
-        if (widthPx <= 0) return@LaunchedEffect
-        val tickMs = 110L // 100~120ms
-        var lastPx = -1
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(isPlaying) {
         while (true) {
-            val nowMs = System.currentTimeMillis()
-            val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
-                baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
-            } else baseCurrentMs
-            val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-            val px = (progress * (widthPx - 1).coerceAtLeast(1)).toInt().coerceIn(0, (widthPx - 1).coerceAtLeast(0))
-            if (px != lastPx) {
-                playheadPx = px
-                lastPx = px
-            }
-            delay(tickMs)
+            if (isPlaying) nowMs = System.currentTimeMillis()
+            delay(33)
         }
     }
+    val liveCurrentMs = if (isPlaying && sourceUpdatedAtMs > 0L) {
+        baseCurrentMs + (nowMs - sourceUpdatedAtMs).coerceAtLeast(0L)
+    } else baseCurrentMs
+    val progress = if (durationMs > 0L) (liveCurrentMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
 
     val hsFp = remember(heights) { sparseFingerprint(heights) }
     val baseKey = "p|$trackToken|$hsFp|$widthPx|$heightPx"
@@ -291,7 +283,7 @@ fun PreviewWaveformDirect(
         Image(bitmap = baseImage, contentDescription = "preview-wave-body", modifier = Modifier.fillMaxSize())
         Canvas(modifier = Modifier.fillMaxSize()) {
             WaveformRenderProbe.hit("PreviewPlayheadLayer")
-            val px = playheadPx.toFloat()
+            val px = progress.coerceIn(0f, 1f) * size.width
             drawLine(Color(0xFF00E5FF), Offset(px, 0f), Offset(px, size.height), 1.2f)
         }
     }
