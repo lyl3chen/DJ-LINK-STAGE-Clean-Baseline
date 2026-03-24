@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import kotlin.math.max
+import kotlin.math.pow
 
 @Composable
 fun DetailWaveformDirect(
@@ -12,6 +13,8 @@ fun DetailWaveformDirect(
     colors: List<Int>,
     progress: Float,
     zoom: Float,
+    bpm: Float?,
+    durationMs: Long,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
@@ -19,7 +22,17 @@ fun DetailWaveformDirect(
 
         val total = heights.size
         val z = zoom.coerceIn(1f, 10f)
-        val windowSize = (total / z).toInt().coerceIn(16, total)
+
+        // Rekordbox-like detail窗口语义：最小约12小节(48拍)，最大约3.5拍
+        val bpmSafe = (bpm ?: 128f).coerceIn(30f, 300f)
+        val t = ((z - 1f) / 9f).coerceIn(0f, 1f)
+        val maxBeats = 48f
+        val minBeats = 3.5f
+        val windowBeats = maxBeats * (minBeats / maxBeats).pow(t)
+        val windowMs = windowBeats * (60000f / bpmSafe)
+        val windowRatio = if (durationMs > 0L) (windowMs / durationMs.toFloat()) else (1f / z)
+        val windowSize = (total * windowRatio).toInt().coerceIn(16, total)
+
         val center = (progress.coerceIn(0f, 1f) * (total - 1)).toInt()
         val start = (center - windowSize / 2).coerceIn(0, (total - windowSize).coerceAtLeast(0))
         val end = (start + windowSize).coerceAtMost(total)

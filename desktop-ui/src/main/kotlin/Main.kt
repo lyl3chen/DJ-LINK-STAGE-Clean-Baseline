@@ -421,6 +421,8 @@ private fun LiveChannelRow(
                                     colors = colors,
                                     progress = progress,
                                     zoom = detailZoom,
+                                    bpm = (p.effectiveBpm ?: p.rawBpm)?.toFloat(),
+                                    durationMs = p.durationMs,
                                     modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
                                 Text(
