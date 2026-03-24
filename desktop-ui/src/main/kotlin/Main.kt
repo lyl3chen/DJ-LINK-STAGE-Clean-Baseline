@@ -689,7 +689,7 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (rows.size > 1) 300.dp else 150.dp)
+            .height(if (rows.size > 1) 320.dp else 160.dp)
             .background(Color(0xFF0F1319))
             .border(1.dp, C_BORDER)
             .padding(6.dp),
