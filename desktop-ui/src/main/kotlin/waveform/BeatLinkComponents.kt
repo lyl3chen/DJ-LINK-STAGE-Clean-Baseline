@@ -4,12 +4,85 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import kotlinx.coroutines.delay
+import org.deepsymmetry.beatlink.BeatFinder
+import org.deepsymmetry.beatlink.DeviceFinder
+import org.deepsymmetry.beatlink.VirtualCdj
+import org.deepsymmetry.beatlink.data.BeatGridFinder
 import org.deepsymmetry.beatlink.data.MetadataFinder
 import org.deepsymmetry.beatlink.data.TrackMetadata
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
 import org.deepsymmetry.beatlink.data.WaveformFinder
 import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
 import javax.swing.SwingUtilities
+
+private object BeatLinkStartup {
+    @Volatile
+    private var attempted = false
+
+    @Synchronized
+    fun ensureRunning() {
+        if (attempted && WaveformFinder.getInstance().isRunning) return
+        attempted = true
+
+        println("[BeatLinkStartup] begin")
+        try {
+            val deviceFinder = DeviceFinder.getInstance()
+            if (!deviceFinder.isRunning) {
+                deviceFinder.start()
+                println("[BeatLinkStartup] DeviceFinder started=true")
+            } else {
+                println("[BeatLinkStartup] DeviceFinder already running")
+            }
+
+            val virtualCdj = VirtualCdj.getInstance()
+            if (!virtualCdj.isRunning) {
+                virtualCdj.setDeviceNumber(4.toByte())
+                virtualCdj.start()
+                println("[BeatLinkStartup] VirtualCdj started=true device=4")
+            } else {
+                println("[BeatLinkStartup] VirtualCdj already running")
+            }
+
+            val beatFinder = BeatFinder.getInstance()
+            if (!beatFinder.isRunning) {
+                beatFinder.start()
+                println("[BeatLinkStartup] BeatFinder started=true")
+            } else {
+                println("[BeatLinkStartup] BeatFinder already running")
+            }
+
+            val metadataFinder = MetadataFinder.getInstance()
+            if (!metadataFinder.isRunning) {
+                metadataFinder.start()
+                println("[BeatLinkStartup] MetadataFinder started=true")
+            } else {
+                println("[BeatLinkStartup] MetadataFinder already running")
+            }
+
+            val beatGridFinder = BeatGridFinder.getInstance()
+            if (!beatGridFinder.isRunning) {
+                beatGridFinder.start()
+                println("[BeatLinkStartup] BeatGridFinder started=true")
+            } else {
+                println("[BeatLinkStartup] BeatGridFinder already running")
+            }
+
+            val waveformFinder = WaveformFinder.getInstance()
+            if (!waveformFinder.isRunning) {
+                waveformFinder.setFindDetails(true)
+                waveformFinder.start()
+                println("[BeatLinkStartup] WaveformFinder started=true")
+            } else {
+                println("[BeatLinkStartup] WaveformFinder already running")
+            }
+
+            println("[BeatLinkStartup] done waveformRunning=${waveformFinder.isRunning}")
+        } catch (e: Exception) {
+            println("[BeatLinkStartup] failed: ${e::class.java.name}: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+}
 
 @Composable
 fun BeatLinkDetailWave(
@@ -29,10 +102,17 @@ fun BeatLinkDetailWave(
         val metadataFinder = MetadataFinder.getInstance()
         var lastNullLogged = false
 
+        BeatLinkStartup.ensureRunning()
+
         while (true) {
             runCatching {
+                println("[WaveDetail] player=${player.number} finderRunning=${finder.isRunning}")
                 if (!finder.isRunning) {
-                    runCatching { finder.start() }
+                    BeatLinkStartup.ensureRunning()
+                }
+                if (!finder.isRunning) {
+                    delay(300)
+                    return@runCatching
                 }
                 if (!finder.isFindingDetails) {
                     finder.setFindDetails(true)
@@ -97,10 +177,17 @@ fun BeatLinkPreviewWave(
         val metadataFinder = MetadataFinder.getInstance()
         var lastNullLogged = false
 
+        BeatLinkStartup.ensureRunning()
+
         while (true) {
             runCatching {
+                println("[WavePreview] player=${player.number} finderRunning=${finder.isRunning}")
                 if (!finder.isRunning) {
-                    runCatching { finder.start() }
+                    BeatLinkStartup.ensureRunning()
+                }
+                if (!finder.isRunning) {
+                    delay(300)
+                    return@runCatching
                 }
 
                 var preview = finder.getLatestPreviewFor(player.number)
