@@ -87,6 +87,11 @@ private val C_STOP = Color(0xFF7B8796)
 private val C_OFFLINE = Color(0xFF5A6470)
 private val C_ALERT = Color(0xFFFF4D4F)
 
+private val WAVE_AB_MODE: String = (System.getenv("WAVE_AB_MODE") ?: "FULL").uppercase()
+private fun abDisableDetail(): Boolean = WAVE_AB_MODE == "A" || WAVE_AB_MODE == "C"
+private fun abDisablePreview(): Boolean = WAVE_AB_MODE == "B" || WAVE_AB_MODE == "C"
+private fun abWaveOnly(): Boolean = WAVE_AB_MODE == "D"
+
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = UiText.APP_TITLE) {
         MaterialTheme {
@@ -344,6 +349,54 @@ private fun LiveChannelRow(
     val displayedRemainMs = if (p.durationMs > 0) max(0L, p.durationMs - displayedCurrentMs) else p.remainTimeMs
     RecomposeProbe("LiveChannelRow-P${p.number}")
 
+    if (abWaveOnly()) {
+        val resolved = WaveformDataAdapter.resolve(p)
+        val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(C_PANEL)
+                .border(1.dp, C_BORDER)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(Modifier.fillMaxWidth().height(52.dp).background(Color(0xFF0C1117)).border(1.dp, Color(0xFF25303C))) {
+                if (abDisableDetail() || p.detailSampleHeights.isEmpty() || p.detailSampleColors.isEmpty()) {
+                    WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                } else {
+                    DetailWaveformDirect(
+                        heights = p.detailSampleHeights,
+                        colors = p.detailSampleColors,
+                        baseCurrentMs = p.currentTimeMs,
+                        durationMs = p.durationMs,
+                        isPlaying = isPlaying,
+                        sourceUpdatedAtMs = sourceUpdatedAtMs,
+                        zoom = detailZoom,
+                        trackToken = "${p.number}:${p.rekordboxId}:${p.title}:${p.artist}:${p.durationMs}",
+                        modifier = Modifier.fillMaxSize().padding(2.dp)
+                    )
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(28.dp).background(Color(0xFF0B1016)).border(1.dp, Color(0xFF2A3340))) {
+                if (abDisablePreview() || p.previewSample.isEmpty()) {
+                    WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
+                } else {
+                    PreviewWaveformDirect(
+                        heights = p.previewSample,
+                        baseCurrentMs = p.currentTimeMs,
+                        durationMs = p.durationMs,
+                        isPlaying = isPlaying,
+                        sourceUpdatedAtMs = sourceUpdatedAtMs,
+                        trackToken = "${p.number}:${p.rekordboxId}:${p.title}:${p.artist}:${p.durationMs}",
+                        modifier = Modifier.fillMaxSize().padding(1.dp)
+                    )
+                }
+            }
+            Text("src=${resolved.sourceTag}", color = C_MUTED, style = MaterialTheme.typography.labelSmall)
+        }
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -401,7 +454,9 @@ private fun LiveChannelRow(
                             val resolved = WaveformDataAdapter.resolve(p)
                             val heights = p.detailSampleHeights
                             val colors = p.detailSampleColors
-                            if (heights.isEmpty() || colors.isEmpty()) {
+                            if (abDisableDetail()) {
+                                WaveformEmptyState("DETAIL PLACEHOLDER", Modifier.align(Alignment.Center))
+                            } else if (heights.isEmpty() || colors.isEmpty()) {
                                 WaveformEmptyState("NO WAVEFORM", Modifier.align(Alignment.Center))
                             } else {
                                 val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
@@ -718,9 +773,10 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
                 !p.hasTrack -> WaveformEmptyState("NO TRACK", Modifier.align(Alignment.Center))
                 else -> {
-                    val resolved = WaveformDataAdapter.resolve(p)
                     val heights = p.previewSample
-                    if (heights.isEmpty()) {
+                    if (abDisablePreview()) {
+                        WaveformEmptyState("PREVIEW PLACEHOLDER", Modifier.align(Alignment.Center))
+                    } else if (heights.isEmpty()) {
                         WaveformEmptyState("NO WAVE", Modifier.align(Alignment.Center))
                     } else {
                         val isPlaying = p.stateText.equals("PLAYING", true) || p.stateText.equals("PLAY", true)
