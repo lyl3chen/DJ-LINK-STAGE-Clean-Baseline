@@ -151,7 +151,7 @@ private fun AppRoot() {
     var refreshMs by remember { mutableStateOf(500) }
     var state by remember { mutableStateOf(DashboardState()) }
     var uiNowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var detailScale by remember { mutableIntStateOf(1) }
+    var detailScale by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshMs) {
         while (isActive) {

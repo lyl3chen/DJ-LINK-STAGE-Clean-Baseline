@@ -40,14 +40,16 @@ fun BeatLinkDetailWave(
     onDetailScaleChange: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val scale = detailScale.coerceIn(1, 256)
+    val scale = detailScale.coerceIn(0, 256)
     val onScaleChangeState = rememberUpdatedState(onDetailScaleChange)
+    var currentDetail by remember(player.number) { mutableStateOf<WaveformDetail?>(null) }
     val component = remember(player.number) {
         WaveformDetailComponent(0).apply {
             setAutoScroll(true)
             addMouseWheelListener { e ->
                 val current = getScale().coerceIn(1, 256)
-                val next = if (e.wheelRotation < 0) min(256, current * 2) else max(1, current / 2)
+                // 语义：滚轮向上(负值)放大=更细节(更小 scale)；向下缩小=更总览(更大 scale)
+                val next = if (e.wheelRotation < 0) max(1, current / 2) else min(256, current * 2)
                 if (next != current) {
                     setScale(next)
                     onScaleChangeState.value(next)
@@ -64,11 +66,14 @@ fun BeatLinkDetailWave(
 
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
         val detail = buildDetailFromRaw(player)
+        currentDetail = detail
         nativeReady = detail != null
         if (detail != null) {
             SwingUtilities.invokeLater {
                 component.setMonitoredPlayer(0)
-                component.setScale(scale)
+                if (scale > 0) {
+                    component.setScale(scale)
+                }
                 component.setWaveform(detail, null as org.deepsymmetry.beatlink.data.TrackMetadata?, null)
                 component.revalidate()
                 component.repaint()
@@ -86,10 +91,18 @@ fun BeatLinkDetailWave(
 
     if (nativeReady) {
         SwingPanel(factory = { component }, update = { c ->
-            if (c.getScale() != scale) c.setScale(scale)
+            if (scale > 0) {
+                if (c.getScale() != scale) c.setScale(scale)
+            } else {
+                val detail = currentDetail
+                if (detail != null && c.width > 0) {
+                    val fitScale = ((detail.getFrameCount() + c.width - 1) / c.width).coerceIn(1, 256)
+                    if (c.getScale() != fitScale) c.setScale(fitScale)
+                }
+            }
         }, modifier = modifier)
     } else {
-        DetailFallbackCanvas(player = player, detailScale = scale, modifier = modifier)
+        DetailFallbackCanvas(player = player, detailScale = max(1, scale), modifier = modifier)
     }
 }
 
