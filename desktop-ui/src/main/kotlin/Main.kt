@@ -11,7 +11,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -128,10 +127,6 @@ data class DashboardPlayer(
     val beatTicksMs: List<Int>,
     val beatTicksInBar: List<Int>,
     val beatTicksBpmX100: List<Int>,
-    val cueRawTagsBase64: List<String>,
-    val cueRawExtendedTagsBase64: List<String>,
-    val cueMessageBase64: String?,
-    val cueExtendedMessageBase64: String?,
     val hotCueTimesMs: List<Int>,
     val currentTimeMs: Long,
     val durationMs: Long,
@@ -354,10 +349,6 @@ private fun LiveMain(
         beatTicksMs = emptyList(),
         beatTicksInBar = emptyList(),
         beatTicksBpmX100 = emptyList(),
-        cueRawTagsBase64 = emptyList(),
-        cueRawExtendedTagsBase64 = emptyList(),
-        cueMessageBase64 = null,
-        cueExtendedMessageBase64 = null,
         hotCueTimesMs = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
@@ -692,10 +683,6 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         beatTicksMs = emptyList(),
         beatTicksInBar = emptyList(),
         beatTicksBpmX100 = emptyList(),
-        cueRawTagsBase64 = emptyList(),
-        cueRawExtendedTagsBase64 = emptyList(),
-        cueMessageBase64 = null,
-        cueExtendedMessageBase64 = null,
         hotCueTimesMs = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
@@ -783,10 +770,6 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
                 .height(72.dp)
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
-                .onGloballyPositioned { coords ->
-                    val s = coords.size
-                    println("[PreviewLayout] player=${p?.number ?: index} outerBox=${s.width}x${s.height}px")
-                }
         ) {
             when {
                 p == null || !p.online -> WaveformEmptyState("OFFLINE", Modifier.align(Alignment.Center))
@@ -880,10 +863,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val beatTicksMs = analysis?.optIntArray("beatTicksMs") ?: emptyList()
                 val beatTicksInBar = analysis?.optIntArray("beatTicksInBar") ?: emptyList()
                 val beatTicksBpmX100 = analysis?.optIntArray("beatTicksBpmX100") ?: emptyList()
-                val cueRawTagsBase64 = analysis?.optStringArray("cueRawTagsBase64") ?: emptyList()
-                val cueRawExtendedTagsBase64 = analysis?.optStringArray("cueRawExtendedTagsBase64") ?: emptyList()
-                val cueMessageBase64 = analysis?.optString("cueMessageBase64")
-                val cueExtendedMessageBase64 = analysis?.optString("cueExtendedMessageBase64")
                 val hotCueTimesMs = analysis?.optIntArray("hotCueTimesMs") ?: emptyList()
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
@@ -949,10 +928,6 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     beatTicksMs = beatTicksMs,
                     beatTicksInBar = beatTicksInBar,
                     beatTicksBpmX100 = beatTicksBpmX100,
-                    cueRawTagsBase64 = cueRawTagsBase64,
-                    cueRawExtendedTagsBase64 = cueRawExtendedTagsBase64,
-                    cueMessageBase64 = cueMessageBase64,
-                    cueExtendedMessageBase64 = cueExtendedMessageBase64,
                     hotCueTimesMs = hotCueTimesMs,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
@@ -1037,15 +1012,6 @@ private fun JsonObject.optIntArray(key: String): List<Int> {
     return out
 }
 
-private fun JsonObject.optStringArray(key: String): List<String> {
-    val arr = optArray(key) ?: return emptyList()
-    val out = ArrayList<String>(arr.size())
-    for (i in 0 until arr.size()) {
-        val v = runCatching { arr[i].asString }.getOrElse { "" }
-        if (v.isNotBlank()) out.add(v)
-    }
-    return out
-}
 
 private fun JsonObject.optString(key: String): String? =
     if (has(key) && !get(key).isJsonNull) get(key).asString else null

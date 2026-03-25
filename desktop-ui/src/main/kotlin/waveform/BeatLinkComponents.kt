@@ -17,7 +17,6 @@ import org.deepsymmetry.beatlink.data.BeatGrid
 import org.deepsymmetry.beatlink.data.CueList
 import org.deepsymmetry.beatlink.data.DataReference
 import org.deepsymmetry.beatlink.data.OverlayPainter
-import org.deepsymmetry.beatlink.dbserver.Message
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
 import org.deepsymmetry.beatlink.data.WaveformFinder
@@ -26,8 +25,6 @@ import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.geom.AffineTransform
-import java.io.ByteArrayInputStream
-import java.io.DataInputStream
 import java.nio.ByteBuffer
 import java.util.Base64
 import javax.swing.SwingUtilities
@@ -113,9 +110,6 @@ fun BeatLinkDetailWave(
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, player.durationMs, player.hotCueTimesMs) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
-        if (detail != null) {
-            println("[DetailBridge] player=${player.number} detail=true beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
-        }
         currentDetail = detail
         nativeReady = detail != null
         if (detail != null) {
@@ -192,7 +186,6 @@ fun BeatLinkPreviewWave(
                 component.setMonitoredPlayer(0)
                 val overlayPainter = buildPreviewHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
                 component.setOverlayPainter(overlayPainter)
-                println("[PreviewOverlay] player=${player.number} overlay=${overlayPainter != null} hotCues=${player.hotCueTimesMs.size}")
                 component.setWaveformPreview(preview, durationSec, null)
                 component.revalidate()
                 component.repaint()
@@ -211,11 +204,7 @@ fun BeatLinkPreviewWave(
     if (nativeReady) {
         SwingPanel(
             factory = { component },
-            update = { c ->
-                val min = c.minimumSize
-                val pref = c.preferredSize
-                println("[PreviewLayout] player=${player.number} swingPanel=${c.width}x${c.height}px componentHeight=${c.height} min=${min.width}x${min.height} pref=${pref.width}x${pref.height}")
-            },
+            update = { },
             modifier = modifier
         )
     } else {
@@ -336,38 +325,6 @@ private fun buildBeatGridFromState(player: DashboardPlayer): BeatGrid? {
     }.getOrNull()
 }
 
-private fun buildCueListFromState(player: DashboardPlayer): CueList? {
-    // Prefer dbserver cue messages when available.
-    val extMessage = decodeMessage(player.cueExtendedMessageBase64)
-    if (extMessage != null && extMessage.knownType == Message.KnownType.CUE_LIST_EXT) {
-        return runCatching { CueList(extMessage) }.getOrNull()
-    }
-    val cueMessage = decodeMessage(player.cueMessageBase64)
-    if (cueMessage != null && cueMessage.knownType == Message.KnownType.CUE_LIST) {
-        return runCatching { CueList(cueMessage) }.getOrNull()
-    }
-
-    // Fallback to raw cue tags when available.
-    val rawTagBuffers = player.cueRawTagsBase64.mapNotNull { b64 ->
-        decodeBase64(b64)?.let { ByteBuffer.wrap(it) }
-    }
-    val rawExtTagBuffers = player.cueRawExtendedTagsBase64.mapNotNull { b64 ->
-        decodeBase64(b64)?.let { ByteBuffer.wrap(it) }
-    }
-    if (rawTagBuffers.isEmpty() && rawExtTagBuffers.isEmpty()) return null
-    return runCatching {
-        CueList(rawTagBuffers, rawExtTagBuffers)
-    }.getOrNull()
-}
-
-private fun decodeMessage(v: String?): Message? {
-    val bytes = decodeBase64(v) ?: return null
-    return runCatching {
-        DataInputStream(ByteArrayInputStream(bytes)).use { dis ->
-            Message.read(dis)
-        }
-    }.getOrNull()
-}
 
 @Composable
 private fun DetailFallbackCanvas(player: DashboardPlayer, detailScale: Int, modifier: Modifier = Modifier) {

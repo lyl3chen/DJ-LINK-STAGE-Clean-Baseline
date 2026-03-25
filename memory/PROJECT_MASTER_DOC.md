@@ -1,8 +1,37 @@
 # DJ LINK STAGE - 当前项目主文档
 
-> 更新时间：2026-03-24  
-> 当前运行版本：5b802bf（UI布局规则） / 3dc536e（mini波形调优） / ed14d81（mini落差恢复） / c68643a（在线播放器显示规则） / 20fa99d（真实波形渲染接入）  
+> 更新时间：2026-03-25  
+> 当前稳定基线：`483dd26`（布局收口） + `78e54e5`（detail顺滑与高度）  
 > 项目根目录：~/agents/dev/workspace/dj-link-stage/
+
+## 2026-03-25 稳定主线（正式收口）
+
+### 架构主线（锁定）
+- 服务端独占 beat-link（`djlink-service`）
+- 桌面端不启动 finder/manager
+- 波形主路径：服务端 `getData()` 原生输出 → 桌面端最小桥接恢复对象 → `WaveformPreviewComponent / WaveformDetailComponent` 原生组件显示
+- detail 缩放：原生 `WaveformDetailComponent.setScale(...)`
+- beat markers：服务端 beatgrid 三组字段桥接恢复 `BeatGrid` 后走原生显示
+- hot cue：停止 Compose 外层自绘；改为原生组件 OverlayPainter 扩展层
+
+### 当前可用状态
+- Preview：正常（非翻转、非细线）
+- Detail：正常（非细线），并已提高内容占比
+- Detail Zoom：滚轮缩放可用（含边界约束）
+- Beat markers：已接通
+- Hot cue：走 OverlayPainter（detail+preview）
+- UI：封面前移到标题区，波形窗口加宽，mini 区高度收紧
+
+### 已废弃/停止路线（不要再走）
+- 自研 waveform 主渲染（sample/envelope/path）
+- raw/base64 手工构造预览/细节对象作为主路线
+- Compose 外层 hot cue 自绘叠加路线
+- 顶部按钮式 zoom 控制路线
+
+### 暂保留但停用内容
+- 服务端/桌面端曾用于 CueList raw message/tag 恢复的字段与解析思路：
+  - 原因：当前数据来源不稳定，经常为空，已不再作为主链路
+  - 状态：保留历史可追溯，当前主链路不依赖
 
 ## 2026-03-24 基线备份说明（GitHub恢复锚点）
 

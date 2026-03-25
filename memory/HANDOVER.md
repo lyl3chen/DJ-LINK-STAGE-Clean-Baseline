@@ -1,7 +1,31 @@
 # 下一步开发建议与接力说明
 
 > 为新会话或新 agent 准备的接力说明  
-> 更新时间：2026-03-24
+> 更新时间：2026-03-25
+
+## 2026-03-25 收口后接力（最新优先）
+
+### 当前稳定基线
+- branch: `master`
+- 基线提交：`483dd26`（布局收口） + `78e54e5`（detail顺滑与高度）
+- 最新清理提交：见本次 cleanup baseline commit
+
+### 当前主线（不要偏离）
+1. 服务端独占 beat-link
+2. 桌面端不启动 finder/manager
+3. 原生组件主路径：WaveformPreview/Detail 组件显示
+4. detail zoom 保持原生 setScale
+5. beat markers 保持 BeatGrid 原生路径
+6. hot cue 保持原生 OverlayPainter 扩展（不再 Compose 外层自绘）
+
+### 明确停止路线
+- 自研 waveform/sample/envelope/path 主渲染
+- raw/base64 手工桥接作为主路径
+- CueList raw/message 恢复作为当前主链路依赖（数据源不稳定）
+- 顶部按钮式 zoom
+
+### 当前待办（最小）
+- 仅做稳定性微调与性能优化；禁止新增功能扩展。
 
 ## 当前交接状态（2026-03-24）
 
