@@ -101,6 +101,8 @@ fun BeatLinkDetailWave(
                 }
                 component.setOverlayPainter(buildDetailHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs))
                 component.setWaveform(detail, null as CueList?, beatGrid)
+                // 关键：scale 变化后 setWaveform 可能重置内部可视基准，立即重放最近播放头（暂停态也生效）
+                component.setPlaybackState(latestPlayer.value, latestPlaybackMs.value, latestPlaying.value)
                 component.revalidate()
                 component.repaint()
             }
@@ -237,14 +239,15 @@ private fun buildDetailHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs
             val rgb = palette[i % palette.size]
             val color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
             g.color = color
-            g.drawLine(x, 6, x, h - 6)
+            g.drawLine(x, 3, x, h - 3)
             val label = ('A'.code + i).toChar().toString()
             val boxW = 10
             val boxH = 10
+            val boxX = (x - boxW / 2).coerceIn(1, (comp.width - boxW - 1).coerceAtLeast(1))
             g.color = color
-            g.fillRoundRect(x - boxW / 2, 1, boxW, boxH, 3, 3)
+            g.fillRoundRect(boxX, 1, boxW, boxH, 3, 3)
             g.color = java.awt.Color.WHITE
-            g.drawString(label, x - 3, 9)
+            g.drawString(label, boxX + 2, 9)
         }
     }
 }
@@ -255,8 +258,8 @@ private fun buildPreviewHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationM
         val comp = c as? WaveformPreviewComponent ?: return@OverlayPainter
         val h = comp.height.coerceAtLeast(1)
         val palette = intArrayOf(0xE91E63, 0x03A9F4, 0x4CAF50, 0xFF9800, 0x9C27B0, 0xFFEB3B)
-        val top = 6
-        val bottom = (h * 0.52).toInt().coerceAtLeast(top + 8) // stay above lower progress bar area
+        val top = 8
+        val bottom = (h * 0.48).toInt().coerceAtLeast(top + 8) // keep inside waveform body, away from progress area
         val font = g.font.deriveFont(9f)
         g.font = font
         hotCueTimesMs.take(8).forEachIndexed { i, ms ->
@@ -268,10 +271,12 @@ private fun buildPreviewHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationM
             val label = ('A'.code + i).toChar().toString()
             val boxW = 10
             val boxH = 10
+            val boxX = (x - boxW / 2).coerceIn(1, (comp.width - boxW - 1).coerceAtLeast(1))
+            val boxY = 2
             g.color = color
-            g.fillRoundRect(x - boxW / 2, 0, boxW, boxH, 3, 3)
+            g.fillRoundRect(boxX, boxY, boxW, boxH, 3, 3)
             g.color = java.awt.Color.WHITE
-            g.drawString(label, x - 3, 8)
+            g.drawString(label, boxX + 2, boxY + 8)
         }
     }
 }
