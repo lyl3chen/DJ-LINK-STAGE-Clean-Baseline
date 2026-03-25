@@ -236,6 +236,7 @@ private fun buildDetailHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs
         g.font = font
         hotCueTimesMs.take(8).forEachIndexed { i, ms ->
             val x = comp.millisecondsToX(ms.toLong())
+            if (x < 1 || x > comp.width - 2) return@forEachIndexed
             val rgb = palette[i % palette.size]
             val color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
             g.color = color

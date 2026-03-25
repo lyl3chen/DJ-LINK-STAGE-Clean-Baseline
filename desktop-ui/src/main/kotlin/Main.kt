@@ -464,7 +464,7 @@ private fun LiveChannelRow(
                                 progressMs = displayedCurrentMs,
                                 detailScale = detailScale,
                                 onDetailScaleChange = onDetailScaleChange,
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 0.dp)
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 0.dp, vertical = 0.dp)
                             )
                         }
                     }
@@ -774,7 +774,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(66.dp)
+                .height(60.dp)
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
                 .onGloballyPositioned { coords ->
