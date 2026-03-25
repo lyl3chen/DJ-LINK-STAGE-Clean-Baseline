@@ -449,22 +449,14 @@ private fun LiveChannelRow(
                         artworkUrl = p.artworkUrl,
                         sizeDp = 32
                     )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            p.title.ifBlank { "-" },
-                            color = C_TEXT,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            p.artist.ifBlank { "-" },
-                            color = C_MUTED,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
+                    Text(
+                        "${p.title.ifBlank { "-" }} - ${p.artist.ifBlank { "-" }}",
+                        modifier = Modifier.weight(1f),
+                        color = C_TEXT,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
 
                 Box(
@@ -721,7 +713,7 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (rows.size > 1) 320.dp else 160.dp)
+            .height(if (rows.size > 1) 288.dp else 144.dp)
             .background(Color(0xFF0F1319))
             .border(1.dp, C_BORDER)
             .padding(6.dp),
@@ -788,7 +780,7 @@ private fun MiniDeckItem(index: Int, p: DashboardPlayer?, sourceUpdatedAtMs: Lon
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(72.dp)
                 .background(Color(0xFF0B1016))
                 .border(1.dp, Color(0xFF2A3340))
                 .onGloballyPositioned { coords ->
