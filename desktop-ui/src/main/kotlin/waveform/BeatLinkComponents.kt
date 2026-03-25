@@ -16,6 +16,7 @@ import org.deepsymmetry.beatlink.CdjStatus
 import org.deepsymmetry.beatlink.data.BeatGrid
 import org.deepsymmetry.beatlink.data.CueList
 import org.deepsymmetry.beatlink.data.DataReference
+import org.deepsymmetry.beatlink.data.OverlayPainter
 import org.deepsymmetry.beatlink.dbserver.Message
 import org.deepsymmetry.beatlink.data.WaveformDetail
 import org.deepsymmetry.beatlink.data.WaveformDetailComponent
@@ -77,7 +78,7 @@ fun BeatLinkDetailWave(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, scale) {
+    LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, player.durationMs, player.hotCueTimesMs, scale) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
         val cueList = buildCueListFromState(player)
@@ -92,6 +93,9 @@ fun BeatLinkDetailWave(
                 if (scale > 0) {
                     component.setScale(scale)
                 }
+                val overlayPainter = buildHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
+                component.setOverlayPainter(overlayPainter)
+                println("[DetailOverlay] player=${player.number} overlay=${overlayPainter != null} hotCues=${player.hotCueTimesMs.size}")
                 component.setWaveform(detail, cueList, beatGrid)
                 component.revalidate()
                 component.repaint()
@@ -207,6 +211,22 @@ private fun buildDataReference(player: DashboardPlayer): DataReference {
     val sourcePlayer = if (player.sourcePlayer > 0) player.sourcePlayer else player.number
     val rekordboxId = if (player.rekordboxId > 0) player.rekordboxId else 1
     return DataReference(sourcePlayer, parseSlot(player.sourceSlot), rekordboxId, CdjStatus.TrackType.REKORDBOX)
+}
+
+private fun buildHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs: Long): OverlayPainter? {
+    if (durationMs <= 0 || hotCueTimesMs.isEmpty()) return null
+    return OverlayPainter { c, g ->
+        val w = c.width.coerceAtLeast(1)
+        val h = c.height.coerceAtLeast(1)
+        val palette = intArrayOf(0xE91E63, 0x03A9F4, 0x4CAF50, 0xFF9800, 0x9C27B0, 0xFFEB3B)
+        hotCueTimesMs.take(8).forEachIndexed { i, ms ->
+            val ratio = (ms.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0)
+            val x = (ratio * (w - 1)).toInt()
+            val rgb = palette[i % palette.size]
+            g.color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
+            g.drawLine(x, 2, x, h - 3)
+        }
+    }
 }
 
 private fun buildBeatGridFromState(player: DashboardPlayer): BeatGrid? {
