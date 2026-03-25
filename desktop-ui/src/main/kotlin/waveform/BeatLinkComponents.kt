@@ -52,17 +52,19 @@ fun BeatLinkDetailWave(
     val component = remember(player.number) {
         WaveformDetailComponent(0).apply {
             setAutoScroll(true)
+            getLabelFont()?.let { setLabelFont(it.deriveFont(10f)) }
             addMouseWheelListener { e ->
                 val current = getScale().coerceIn(1, 256)
                 val fitScale = currentDetail?.let { detail ->
                     if (width > 0) ((detail.getFrameCount() + width - 1) / width).coerceIn(1, 256) else current
                 } ?: current
+                // 现场锁定：把“向上滚动 3 次后的 scale（fitScale/8）”作为可回退的最小边界
+                val minReturnBoundary = max(1, fitScale / 8)
                 // 语义：滚轮向上(负值)放大=更细节(更小 scale)；向下缩小=更总览(更大 scale)
-                // 边界：最小缩小到 fitScale（刚好铺满容器），不能再更小
                 val next = if (e.wheelRotation < 0) {
                     max(1, current / 2)
                 } else {
-                    min(fitScale, current * 2)
+                    min(minReturnBoundary, current * 2)
                 }
                 if (next != current) {
                     setScale(next)
@@ -93,9 +95,7 @@ fun BeatLinkDetailWave(
                 if (scale > 0) {
                     component.setScale(scale)
                 }
-                val overlayPainter = buildHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
-                component.setOverlayPainter(overlayPainter)
-                println("[DetailOverlay] player=${player.number} overlay=${overlayPainter != null} hotCues=${player.hotCueTimesMs.size}")
+                component.setOverlayPainter(null)
                 component.setWaveform(detail, cueList, beatGrid)
                 component.revalidate()
                 component.repaint()
@@ -119,7 +119,8 @@ fun BeatLinkDetailWave(
                 val detail = currentDetail
                 if (detail != null && c.width > 0) {
                     val fitScale = ((detail.getFrameCount() + c.width - 1) / c.width).coerceIn(1, 256)
-                    if (c.getScale() != fitScale) c.setScale(fitScale)
+                    val minReturnBoundary = max(1, fitScale / 8)
+                    if (c.getScale() != minReturnBoundary) c.setScale(minReturnBoundary)
                 }
             }
         }, modifier = modifier)
@@ -140,13 +141,16 @@ fun BeatLinkPreviewWave(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(player.number, player.previewRawBase64, player.previewRawStyle, player.previewRawFormat, player.durationMs) {
+    LaunchedEffect(player.number, player.previewRawBase64, player.previewRawStyle, player.previewRawFormat, player.durationMs, player.hotCueTimesMs) {
         val preview = buildPreviewFromRaw(player)
         nativeReady = preview != null
         if (preview != null) {
             val durationSec = (player.durationMs / 1000L).toInt().coerceAtLeast(0)
             SwingUtilities.invokeLater {
                 component.setMonitoredPlayer(0)
+                val overlayPainter = buildHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
+                component.setOverlayPainter(overlayPainter)
+                println("[PreviewOverlay] player=${player.number} overlay=${overlayPainter != null} hotCues=${player.hotCueTimesMs.size}")
                 component.setWaveformPreview(preview, durationSec, null)
                 component.revalidate()
                 component.repaint()
