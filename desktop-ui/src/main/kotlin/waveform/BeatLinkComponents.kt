@@ -49,6 +49,9 @@ fun BeatLinkDetailWave(
     val scale = detailScale.coerceIn(0, 256)
     val onScaleChangeState = rememberUpdatedState(onDetailScaleChange)
     var currentDetail by remember(player.number) { mutableStateOf<WaveformDetail?>(null) }
+    val latestPlaybackMs = remember { mutableStateOf(progressMs) }
+    val latestPlaying = remember { mutableStateOf(false) }
+    val latestPlayer = remember { mutableStateOf(player.number) }
     val component = remember(player.number) {
         WaveformDetailComponent(0).apply {
             setAutoScroll(true)
@@ -68,6 +71,8 @@ fun BeatLinkDetailWave(
                 }
                 if (next != current) {
                     setScale(next)
+                    // 关键修正：缩放后立刻重放最近播放头状态，暂停时也保持以当前位置为中心
+                    setPlaybackState(latestPlayer.value, latestPlaybackMs.value, latestPlaying.value)
                     onScaleChangeState.value(next)
                     revalidate()
                     repaint()
@@ -104,6 +109,9 @@ fun BeatLinkDetailWave(
 
     LaunchedEffect(progressMs, player.stateText, player.number) {
         val playing = player.stateText.equals("PLAYING", true) || player.stateText.equals("PLAY", true)
+        latestPlaybackMs.value = progressMs
+        latestPlaying.value = playing
+        latestPlayer.value = player.number
         SwingUtilities.invokeLater {
             component.setPlaybackState(player.number, progressMs, playing)
             component.repaint()
@@ -227,10 +235,16 @@ private fun buildDetailHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs
         hotCueTimesMs.take(8).forEachIndexed { i, ms ->
             val x = comp.millisecondsToX(ms.toLong())
             val rgb = palette[i % palette.size]
-            g.color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
-            g.drawLine(x, 4, x, h - 6)
+            val color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
+            g.color = color
+            g.drawLine(x, 6, x, h - 6)
             val label = ('A'.code + i).toChar().toString()
-            g.drawString(label, x + 2, 10)
+            val boxW = 10
+            val boxH = 10
+            g.color = color
+            g.fillRoundRect(x - boxW / 2, 1, boxW, boxH, 3, 3)
+            g.color = java.awt.Color.WHITE
+            g.drawString(label, x - 3, 9)
         }
     }
 }
@@ -241,17 +255,23 @@ private fun buildPreviewHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationM
         val comp = c as? WaveformPreviewComponent ?: return@OverlayPainter
         val h = comp.height.coerceAtLeast(1)
         val palette = intArrayOf(0xE91E63, 0x03A9F4, 0x4CAF50, 0xFF9800, 0x9C27B0, 0xFFEB3B)
-        val top = 5
-        val bottom = (h * 0.62).toInt().coerceAtLeast(top + 8) // avoid extending into lower progress area
+        val top = 6
+        val bottom = (h * 0.52).toInt().coerceAtLeast(top + 8) // stay above lower progress bar area
         val font = g.font.deriveFont(9f)
         g.font = font
         hotCueTimesMs.take(8).forEachIndexed { i, ms ->
             val x = comp.millisecondsToX(ms.toLong())
             val rgb = palette[i % palette.size]
-            g.color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
+            val color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
+            g.color = color
             g.drawLine(x, top, x, bottom)
             val label = ('A'.code + i).toChar().toString()
-            g.drawString(label, x + 2, top + 8)
+            val boxW = 10
+            val boxH = 10
+            g.color = color
+            g.fillRoundRect(x - boxW / 2, 0, boxW, boxH, 3, 3)
+            g.color = java.awt.Color.WHITE
+            g.drawString(label, x - 3, 8)
         }
     }
 }
