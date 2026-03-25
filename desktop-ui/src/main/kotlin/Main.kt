@@ -430,23 +430,42 @@ private fun LiveChannelRow(
                 Text(p.number.toString(), color = C_TEXT, fontWeight = FontWeight.Bold)
             }
 
-            // LEFT: 只显示歌曲-歌手名 + 波形 + 元数据
+            // LEFT: 封面前置到歌名区，波形窗口获得更宽空间
             Column(
                 modifier = Modifier
-                    .weight(0.45f)
+                    .weight(0.55f)
                     .height(98.dp)
                     .background(Color(0xFF0F141B))
                     .border(1.dp, C_BORDER)
                     .padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    "${p.title.ifBlank { "-" }} - ${p.artist.ifBlank { "-" }}",
-                    color = C_TEXT,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ArtworkSquare(
+                        artworkUrl = p.artworkUrl,
+                        sizeDp = 32
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            p.title.ifBlank { "-" },
+                            color = C_TEXT,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            p.artist.ifBlank { "-" },
+                            color = C_MUTED,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
 
                 Box(
                     modifier = Modifier
@@ -477,11 +496,6 @@ private fun LiveChannelRow(
                 }
             }
 
-            // Artwork: 改回原位并放大（可见性优先）
-            ArtworkSquare(
-                artworkUrl = p.artworkUrl,
-                sizeDp = 98
-            )
 
             // CENTER: 大号电子段码时间 + BPM/Pitch 次级
             Column(
