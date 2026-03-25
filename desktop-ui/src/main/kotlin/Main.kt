@@ -1,3 +1,4 @@
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -7,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -132,6 +134,7 @@ data class DashboardPlayer(
     val cueRawExtendedTagsBase64: List<String>,
     val cueMessageBase64: String?,
     val cueExtendedMessageBase64: String?,
+    val hotCueTimesMs: List<Int>,
     val currentTimeMs: Long,
     val durationMs: Long,
     val remainTimeMs: Long,
@@ -357,6 +360,7 @@ private fun LiveMain(
         cueRawExtendedTagsBase64 = emptyList(),
         cueMessageBase64 = null,
         cueExtendedMessageBase64 = null,
+        hotCueTimesMs = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -462,6 +466,11 @@ private fun LiveChannelRow(
                                 progressMs = displayedCurrentMs,
                                 detailScale = detailScale,
                                 onDetailScaleChange = onDetailScaleChange,
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
+                            )
+                            DetailHotCueOverlay(
+                                hotCueTimesMs = p.hotCueTimesMs,
+                                durationMs = p.durationMs,
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp)
                             )
                         }
@@ -688,6 +697,7 @@ private fun MiniDeckOverview(players: List<DashboardPlayer>, sourceUpdatedAtMs: 
         cueRawExtendedTagsBase64 = emptyList(),
         cueMessageBase64 = null,
         cueExtendedMessageBase64 = null,
+        hotCueTimesMs = emptyList(),
         currentTimeMs = 0,
         durationMs = 0,
         remainTimeMs = 0,
@@ -875,6 +885,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                 val cueRawExtendedTagsBase64 = analysis?.optStringArray("cueRawExtendedTagsBase64") ?: emptyList()
                 val cueMessageBase64 = analysis?.optString("cueMessageBase64")
                 val cueExtendedMessageBase64 = analysis?.optString("cueExtendedMessageBase64")
+                val hotCueTimesMs = analysis?.optIntArray("hotCueTimesMs") ?: emptyList()
 
                 val explicitState = (p.optString("state") ?: p.optString("playState") ?: p.optString("status"))?.uppercase()
                 val dbg = p.optObj("debugState")
@@ -943,6 +954,7 @@ private fun fetchDashboardState(baseUrl: String, old: DashboardState): Dashboard
                     cueRawExtendedTagsBase64 = cueRawExtendedTagsBase64,
                     cueMessageBase64 = cueMessageBase64,
                     cueExtendedMessageBase64 = cueExtendedMessageBase64,
+                    hotCueTimesMs = hotCueTimesMs,
                     currentTimeMs = currentTimeMs,
                     durationMs = durationMs,
                     remainTimeMs = remain,
@@ -1008,6 +1020,40 @@ private fun fmtTimeDigitalCs(ms: Long): String {
 @Composable
 private fun WaveformEmptyState(text: String, modifier: Modifier = Modifier) {
     Text(text, color = C_MUTED, style = MaterialTheme.typography.labelSmall, modifier = modifier)
+}
+
+@Composable
+private fun DetailHotCueOverlay(
+    hotCueTimesMs: List<Int>,
+    durationMs: Long,
+    modifier: Modifier = Modifier
+) {
+    if (durationMs <= 0 || hotCueTimesMs.isEmpty()) return
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val markerTop = 2f
+        val markerBottom = h - 2f
+        hotCueTimesMs.take(8).forEachIndexed { i, ms ->
+            val ratio = (ms.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+            val x = ratio * w
+            val color = when (i % 6) {
+                0 -> Color(0xFFE91E63)
+                1 -> Color(0xFF03A9F4)
+                2 -> Color(0xFF4CAF50)
+                3 -> Color(0xFFFF9800)
+                4 -> Color(0xFF9C27B0)
+                else -> Color(0xFFFFEB3B)
+            }
+            drawLine(
+                color = color.copy(alpha = 0.9f),
+                start = Offset(x, markerTop),
+                end = Offset(x, markerBottom),
+                strokeWidth = 2f
+            )
+        }
+    }
 }
 
 private fun JsonObject.optObj(key: String): JsonObject? =
