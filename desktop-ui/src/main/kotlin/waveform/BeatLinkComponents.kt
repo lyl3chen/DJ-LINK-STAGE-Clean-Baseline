@@ -42,7 +42,7 @@ import kotlin.math.min
 private data class WavePoint(val h: Int, val color: Color)
 
 private class StretchDetailComponent(player: Int) : WaveformDetailComponent(player) {
-    private val stretchY = 1.12
+    private val stretchY = 1.18
     override fun paintComponent(g: Graphics) {
         val g2 = g as? Graphics2D
         if (g2 == null) {
@@ -75,6 +75,8 @@ fun BeatLinkDetailWave(
     val latestPlaybackMs = remember { mutableStateOf(progressMs) }
     val latestPlaying = remember { mutableStateOf(false) }
     val latestPlayer = remember { mutableStateOf(player.number) }
+    val lastPushedPlaybackMs = remember { mutableStateOf(Long.MIN_VALUE) }
+    val lastPushedPlaying = remember { mutableStateOf<Boolean?>(null) }
     val component = remember(player.number) {
         StretchDetailComponent(0).apply {
             setAutoScroll(true)
@@ -137,6 +139,14 @@ fun BeatLinkDetailWave(
         latestPlaybackMs.value = progressMs
         latestPlaying.value = playing
         latestPlayer.value = player.number
+
+        // 最小节流：仅在状态变化或时间位移超过阈值时推送，降低无效重绘导致的卡顿。
+        val shouldPush = (lastPushedPlaying.value != playing) ||
+            (kotlin.math.abs(progressMs - lastPushedPlaybackMs.value) >= 24L)
+        if (!shouldPush) return@LaunchedEffect
+
+        lastPushedPlaying.value = playing
+        lastPushedPlaybackMs.value = progressMs
         SwingUtilities.invokeLater {
             component.setPlaybackState(player.number, progressMs, playing)
             component.repaint()
