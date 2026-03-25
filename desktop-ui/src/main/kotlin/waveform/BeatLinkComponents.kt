@@ -23,6 +23,9 @@ import org.deepsymmetry.beatlink.data.WaveformDetailComponent
 import org.deepsymmetry.beatlink.data.WaveformFinder
 import org.deepsymmetry.beatlink.data.WaveformPreview
 import org.deepsymmetry.beatlink.data.WaveformPreviewComponent
+import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.geom.AffineTransform
 import java.io.ByteArrayInputStream
 import java.io.DataInputStream
 import java.nio.ByteBuffer
@@ -37,6 +40,26 @@ import kotlin.math.min
  */
 
 private data class WavePoint(val h: Int, val color: Color)
+
+private class StretchDetailComponent(player: Int) : WaveformDetailComponent(player) {
+    private val stretchY = 1.12
+    override fun paintComponent(g: Graphics) {
+        val g2 = g as? Graphics2D
+        if (g2 == null) {
+            super.paintComponent(g)
+            return
+        }
+        val old: AffineTransform = g2.transform
+        try {
+            val center = height / 2.0
+            g2.translate(0.0, center * (1.0 - stretchY))
+            g2.scale(1.0, stretchY)
+            super.paintComponent(g2)
+        } finally {
+            g2.transform = old
+        }
+    }
+}
 
 @Composable
 fun BeatLinkDetailWave(
@@ -53,7 +76,7 @@ fun BeatLinkDetailWave(
     val latestPlaying = remember { mutableStateOf(false) }
     val latestPlayer = remember { mutableStateOf(player.number) }
     val component = remember(player.number) {
-        WaveformDetailComponent(0).apply {
+        StretchDetailComponent(0).apply {
             setAutoScroll(true)
             setLabelFont(null)
             addMouseWheelListener { e ->
@@ -85,7 +108,7 @@ fun BeatLinkDetailWave(
         mutableStateOf(false)
     }
 
-    LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, player.durationMs, player.hotCueTimesMs, scale) {
+    LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, player.durationMs, player.hotCueTimesMs) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
         if (detail != null) {
