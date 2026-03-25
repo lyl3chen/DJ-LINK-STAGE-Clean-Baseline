@@ -52,7 +52,7 @@ fun BeatLinkDetailWave(
     val component = remember(player.number) {
         WaveformDetailComponent(0).apply {
             setAutoScroll(true)
-            getLabelFont()?.let { setLabelFont(it.deriveFont(10f)) }
+            setLabelFont(null)
             addMouseWheelListener { e ->
                 val current = getScale().coerceIn(1, 256)
                 val fitScale = currentDetail?.let { detail ->
@@ -83,9 +83,8 @@ fun BeatLinkDetailWave(
     LaunchedEffect(player.number, player.detailRawBase64, player.detailRawStyle, player.detailRawFormat, player.durationMs, player.hotCueTimesMs, scale) {
         val detail = buildDetailFromRaw(player)
         val beatGrid = buildBeatGridFromState(player)
-        val cueList = buildCueListFromState(player)
         if (detail != null) {
-            println("[DetailBridge] player=${player.number} detail=true cueList=${cueList != null} beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
+            println("[DetailBridge] player=${player.number} detail=true beatGrid=${beatGrid != null} beatCount=${beatGrid?.beatCount ?: 0}")
         }
         currentDetail = detail
         nativeReady = detail != null
@@ -95,8 +94,8 @@ fun BeatLinkDetailWave(
                 if (scale > 0) {
                     component.setScale(scale)
                 }
-                component.setOverlayPainter(null)
-                component.setWaveform(detail, cueList, beatGrid)
+                component.setOverlayPainter(buildDetailHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs))
+                component.setWaveform(detail, null as CueList?, beatGrid)
                 component.revalidate()
                 component.repaint()
             }
@@ -148,7 +147,7 @@ fun BeatLinkPreviewWave(
             val durationSec = (player.durationMs / 1000L).toInt().coerceAtLeast(0)
             SwingUtilities.invokeLater {
                 component.setMonitoredPlayer(0)
-                val overlayPainter = buildHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
+                val overlayPainter = buildPreviewHotCueOverlayPainter(player.hotCueTimesMs, player.durationMs)
                 component.setOverlayPainter(overlayPainter)
                 println("[PreviewOverlay] player=${player.number} overlay=${overlayPainter != null} hotCues=${player.hotCueTimesMs.size}")
                 component.setWaveformPreview(preview, durationSec, null)
@@ -217,18 +216,42 @@ private fun buildDataReference(player: DashboardPlayer): DataReference {
     return DataReference(sourcePlayer, parseSlot(player.sourceSlot), rekordboxId, CdjStatus.TrackType.REKORDBOX)
 }
 
-private fun buildHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs: Long): OverlayPainter? {
+private fun buildDetailHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs: Long): OverlayPainter? {
     if (durationMs <= 0 || hotCueTimesMs.isEmpty()) return null
     return OverlayPainter { c, g ->
-        val w = c.width.coerceAtLeast(1)
-        val h = c.height.coerceAtLeast(1)
+        val comp = c as? WaveformDetailComponent ?: return@OverlayPainter
+        val h = comp.height.coerceAtLeast(1)
         val palette = intArrayOf(0xE91E63, 0x03A9F4, 0x4CAF50, 0xFF9800, 0x9C27B0, 0xFFEB3B)
+        val font = g.font.deriveFont(9f)
+        g.font = font
         hotCueTimesMs.take(8).forEachIndexed { i, ms ->
-            val ratio = (ms.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0)
-            val x = (ratio * (w - 1)).toInt()
+            val x = comp.millisecondsToX(ms.toLong())
             val rgb = palette[i % palette.size]
             g.color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
-            g.drawLine(x, 2, x, h - 3)
+            g.drawLine(x, 4, x, h - 6)
+            val label = ('A'.code + i).toChar().toString()
+            g.drawString(label, x + 2, 10)
+        }
+    }
+}
+
+private fun buildPreviewHotCueOverlayPainter(hotCueTimesMs: List<Int>, durationMs: Long): OverlayPainter? {
+    if (durationMs <= 0 || hotCueTimesMs.isEmpty()) return null
+    return OverlayPainter { c, g ->
+        val comp = c as? WaveformPreviewComponent ?: return@OverlayPainter
+        val h = comp.height.coerceAtLeast(1)
+        val palette = intArrayOf(0xE91E63, 0x03A9F4, 0x4CAF50, 0xFF9800, 0x9C27B0, 0xFFEB3B)
+        val top = 5
+        val bottom = (h * 0.62).toInt().coerceAtLeast(top + 8) // avoid extending into lower progress area
+        val font = g.font.deriveFont(9f)
+        g.font = font
+        hotCueTimesMs.take(8).forEachIndexed { i, ms ->
+            val x = comp.millisecondsToX(ms.toLong())
+            val rgb = palette[i % palette.size]
+            g.color = java.awt.Color((rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, 220)
+            g.drawLine(x, top, x, bottom)
+            val label = ('A'.code + i).toChar().toString()
+            g.drawString(label, x + 2, top + 8)
         }
     }
 }
